@@ -109,7 +109,7 @@ python <HARNESS>/agentguard/cli.py done --repo <端仓库根>
 它跑门禁 → 从台账回读本次记录 → 打出一行**凭证**（直接粘进你的回复）：
 
 ```
-[harness] gate=hy_hzy_pc repo=eagle-rmc-pc-net-hy-hzy rc=0 files=2 ts=2026-10-16T10:31:22 h=3fa9c2d1
+[harness] gate=my_project repo=/path/to/project rc=0 files=2 ts=2026-10-16T10:31:22 h=3fa9c2d1
 ```
 
 - 凭证里的 `h` 是**台账行的链哈希前 8 位**：你编不出对得上的 h，用户却可以一条命令复核：

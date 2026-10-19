@@ -154,7 +154,7 @@ def format_finding(fnd: Finding) -> str:
     转换点只拿 `fnd.message`，rule_id 就地丢弃，agent 只能靠猜 ID；② 后端一直是
     `❌ RULE L行:` 格式，三端就此对齐。
     see 非空时另起一行 `📖 See:`（与 backend_layer_check 的输出格式逐字同款）：
-    agent 被拦的那一刻是它最愿意读范式的时刻，文案只说「应走 eagle-form」
+    agent 被拦的那一刻是它最愿意读范式的时刻，文案只说「应走项目封装组件」
     不给路径，走廊就断在最后一步。只放**只读文档路径**，不放豁免语法
     （09-30 注入边界不变；锁：tests/test_paradigm_pointers.py，护盾 M134）。
     """

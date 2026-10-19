@@ -35,7 +35,7 @@ CRLF → 每一个文件都被判"行尾异常"）。所以修法不是换个新
   ② 否则读 `core.autocrlf`：`true` → CRLF，`input` → LF。这两个值是 git 的**保证**
      （`true` 时文本文件检出必转 CRLF；`input` 时工作树必是 LF），不是近似。
   ③ 否则（`false` / 未设）→ 还是跑 `ls-files --eol`。这条分支是**实测逼出来的**：
-     计划里原本让这一支直接落端默认，而本机 `eagle-rmc-mobile-net-hy` 实测
+     计划里原本让这一支直接落端默认，而实测某 H5 仓
      `core.autocrlf=false` 而工作树是 **1072 w/crlf / 0 w/lf** —— autocrlf=false 的含义是
      "git 不做任何转换"，于是工作树 = 索引内容，只有索引答得上来。落端默认就是 LF，
      **正好是那个仓的假红**（它的 22 个 H5 gate 里就有它）。
@@ -188,7 +188,7 @@ def _auto(repo):
         if ac == "input":
             return "LF", "git-config", "core.autocrlf=input"
         # ③ false / 未设 → git 不做转换 ⇒ 工作树 = 索引内容，还是只能问 ls-files。
-        #    实测反例：eagle-rmc-mobile-net-hy（autocrlf=false 而工作树 1072 w/crlf / 0 w/lf）。
+        #    实测反例：某 H5 仓（autocrlf=false 而工作树 1072 w/crlf / 0 w/lf）。
         val, c, n = eol_majority(repo)
         if val:
             return val, "checkout-majority", "%d/%d" % (c[val.lower()], n)

@@ -1619,7 +1619,7 @@ MUTATIONS = [
             "M125 不会红 —— 那条是**放宽**，得靠 "
             "`test_qualified_name_channel_does_not_report_lookalikes` 里那条「裸 `Business.X` 不报」"
             "的用例兜住（判据是行为，不是这一行源码）。"},
-    {"id": "M126-r3-qualified-eagle-prefix-killed", "file": "checks/backend_ruleset.py",
+    {"id": "M126-r3-qualified-prefix-killed", "file": "checks/backend_ruleset.py",
      "kind": "exact",
      "old": '        alts = [r"\\bEagle(?:\\s*\\.\\s*[A-Za-z_]\\w*)*\\s*\\.\\s*(?:%s)\\s*\\.\\s*[A-Za-z_]\\w*"\n'
             '                % "|".join(re.escape(s) for s in forbidden)]\n',
@@ -1729,7 +1729,7 @@ MUTATIONS = [
      "lock": "test_paradigm_pointers.py",
      "expect": "test_rule_run_stamps_see_onto_findings",
      "why": "把 Rule.run 的 see 盖章拆掉：规则类上声明的范式指针再也到不了 Finding ——"
-            "命中文案退回「只说应走 eagle-form、不给路径」，走廊断在最后一步。"
+            "命中文案退回「只说应走 project-form、不给路径」，走廊断在最后一步。"
             "★ 坏的形状是「看着完好」：各类的 see 声明与格式化函数都还在，唯独没接线，"
             "只有把 run() 到 Finding 这一环锁住才防得住。"},
 
@@ -1747,26 +1747,26 @@ MUTATIONS = [
     {"id": "M135-el-dialog-scan-dropped", "file": "checks/pc_ruleset.py",
      "kind": "exact",
      "old": '        (r"<\\s*el-dialog(?![\\w-])",\n'
-            '         "直用原生 el-dialog ×%d（弹窗应走 eagle-model：title / footer / 白卡容器由它统一，"\n'
+            '         "直用原生 el-dialog ×%d（弹窗应走 project-model：title / footer / 白卡容器由它统一，"\n'
             '         "见 pc_page_patterns.md §6.2）"),\n',
      "new": '        # mutation-smoke: el-dialog 扫描项被移除\n',
      "lock": "test_pc_elform_modal.py",
      "expect": "test_el_dialog_new_file_is_error",
      "why": "把批次 2 新加的 el-dialog 扫描项拆掉：新代码直用 <el-dialog> 退回不拦 ——"
             "范式走廊刚接上的第三根线又断掉。复量数据（11 仓：views 350 文件存量、"
-            "eagle-model 8558 文件在用）证明判据成立，锁住它防止后人以「存量多」为由静默移除。"
-            "★ el-drawer 刻意不在 _SCANS 里（09-19 业务决定，无 eagle-drawer）—— 变异只拆"
+            "project-model 8558 文件在用）证明判据成立，锁住它防止后人以「存量多」为由静默移除。"
+            "★ el-drawer 刻意不在 _SCANS 里（09-19 业务决定，无 project-drawer）—— 变异只拆"
             "el-dialog，若有人把 el-drawer 加回来，由 allowlist 注释与评审记录挡。"},
 
     # ── el-drawer 回禁止清单（2026-10-15c：用户当场抓到的陈旧清单）──────────────
     {"id": "M136-el-drawer-put-back-into-forbidden-list", "file": "golden-patterns/rules/pc_CODE_RULES.md",
      "kind": "exact",
-     "old": '禁止绕过封装直接用 `el-table`、`el-form`、`el-dialog` 等底层组件自建（eagle-xxx 确无对应能力的除外 —— 如抽屉无 `eagle-drawer`，**直接用 `el-drawer`**，见 §6.3 / §10.1；门禁 `PC-ELFORM` 拦这些底层标签的新增行）',
-     "new": '禁止绕过封装直接用 `el-table`、`el-form`、`el-dialog`、`el-drawer` 等底层组件自建（除非 eagle-xxx 确无对应能力）',
+     "old": '禁止绕过封装直接用 `el-table`、`el-form`、`el-dialog` 等底层组件自建（project-xxx 确无对应能力的除外 —— 如抽屉无 `project-drawer`，**直接用 `el-drawer`**，见 §6.3 / §10.1；门禁 `PC-ELFORM` 拦这些底层标签的新增行）',
+     "new": '禁止绕过封装直接用 `el-table`、`el-form`、`el-dialog`、`el-drawer` 等底层组件自建（除非 project-xxx 确无对应能力）',
      "lock": "test_docs_consistency.py",
      "expect": "test_no_rule_doc_line_forbids_el_drawer",
      "why": "把第二章的句**整句**变回旧文案：`el-drawer` 又留在「禁止绕过封装直接用」的枚举里"
-            "（旧文案的尾巴「除非 eagle-xxx 确无对应能力」是**笼统豁免**，看着像留了出口，"
+            "（旧文案的尾巴「除非 project-xxx 确无对应能力」是**笼统豁免**，看着像留了出口，"
             "实际让读者把 el-drawer 读成禁用项——与同文件 §6.3/§10.1「可直接用」自相矛盾）。"
             "★ 锁里的放行标记刻意不收「确无对应能力」，正是为了能咬住这个旧形状（详见锁 docstring）。"
             "★ 本变异第一版只换尾句、枚举里没有 el-drawer —— 锁正确地没响（判据是「同行 el-drawer+禁」），"
