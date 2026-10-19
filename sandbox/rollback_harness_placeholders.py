@@ -16,7 +16,7 @@ except Exception:
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "eaglermc_gate"))
+sys.path.insert(0, os.path.join(ROOT, "agentguard"))
 sys.path.insert(0, os.path.join(ROOT, "harness"))
 
 from _config import load as load_config

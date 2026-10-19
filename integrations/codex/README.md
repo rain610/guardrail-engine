@@ -1,7 +1,7 @@
-# Codex 接入 eaglermc_harness
+# Codex 接入 agentguard
 
-> **路径说明（分享给同事时必读）**：本文中的 `<HARNESS>` 指 eaglermc_harness 工程根目录。
-> 取值二选一：① 设环境变量 `EAGLERMC_HARNESS_DIR=<你的路径>`（旧名 `HARNESS_DIR` 兼容）；② 在工程里执行 `sh <HARNESS>/sandbox/where.sh` 直接打印。
+> **路径说明（分享给同事时必读）**：本文中的 `<HARNESS>` 指 agentguard 工程根目录。
+> 取值二选一：① 设环境变量 `AGENTGUARD_DIR=<你的路径>`（旧名 `HARNESS_DIR` 兼容）；② 在工程里执行 `sh <HARNESS>/sandbox/where.sh` 直接打印。
 > 门禁脚本内部一律用相对路径定位资源，**clone 到任何目录都能跑**；只有本机的编辑器/客户端钩子配置需要写绝对路径。
 
 Codex 读 `AGENTS.md`（全局 `~/.codex/AGENTS.md` 会注入，仓库根 AGENTS.md 在打开的工程内生效），
@@ -13,7 +13,7 @@ Codex 读 `AGENTS.md`（全局 `~/.codex/AGENTS.md` 会注入，仓库根 AGENTS
 
 ```md
 ## 门禁
-改 Eagle RMC 任意客户×三端仓库代码后，必须在仓库根跑：
+改 AgentGuard 任意客户×三端仓库代码后，必须在仓库根跑：
 python <HARNESS>/harness/agents/auto-gate.py
 退出码 0=通过，1=拦截（修复后重跑，不要 --no-verify 绕过），3=非受管仓库跳过。
 ```
@@ -32,7 +32,7 @@ Codex 从 `~/.codex/hooks.json` 读钩子（也支持 `config.toml` 内联 `[hoo
         "hooks": [
           {
             "type": "command",
-            "command": "<PY> <HARNESS>/integrations/hooks/eaglermc-harness-gate.py codex PostToolUse",
+            "command": "<PY> <HARNESS>/integrations/hooks/agentguard-gate.py codex PostToolUse",
             "timeout": 200,
             "statusMessage": "harness 门禁检查"
           }
@@ -44,7 +44,7 @@ Codex 从 `~/.codex/hooks.json` 读钩子（也支持 `config.toml` 内联 `[hoo
         "hooks": [
           {
             "type": "command",
-            "command": "<PY> <HARNESS>/integrations/hooks/eaglermc-harness-gate.py codex Stop",
+            "command": "<PY> <HARNESS>/integrations/hooks/agentguard-gate.py codex Stop",
             "timeout": 200
           }
         ]

@@ -41,14 +41,14 @@ FIXER = os.path.join(ROOT, "sandbox", "fix_paths.py")
 _GIT = shutil.which("git")
 
 #: 引擎仓的判据（与 bootstrap.ENGINE_MARKER / fix_paths.py 的 fail-fast 同一条）
-MARKER = os.path.join("eaglermc_gate", "mcp.py")
+MARKER = os.path.join("agentguard", "mcp.py")
 
 MCP_TEMPLATE = """{
   "mcpServers": {
-    "eaglermc-gate": {
+    "agentguard": {
       "command": "__PY__",
       "args": ["__MCP__"],
-      "env": {"EAGLERMC_HARNESS_DIR": "__HARNESS__"}
+      "env": {"AGENTGUARD_DIR": "__HARNESS__"}
     }
   }
 }
@@ -75,13 +75,13 @@ def _write(p, text):
 def _make_repo(path, engine):
     """造一个能被真 clone 的仓。
 
-    engine=True → 带 `eaglermc_gate/mcp.py`（= 引擎仓）；False → 一个别的仓
+    engine=True → 带 `agentguard/mcp.py`（= 引擎仓）；False → 一个别的仓
     （用来看"克隆到的不是引擎仓"那条分支）。**必须有一次提交**：没有提交的空仓
     clone 出来是空的，测不到"文件到位"。
     """
     os.makedirs(path)
     if engine:
-        os.makedirs(os.path.join(path, "eaglermc_gate"))
+        os.makedirs(os.path.join(path, "agentguard"))
         _write(os.path.join(path, *MARKER.split("/")), "# 只为让判据成立\n")
     _write(os.path.join(path, "seed.txt"), "seed\n")
     _git(path, "init", "-q")
@@ -105,7 +105,7 @@ class BootstrapTest(unittest.TestCase):
         self.src = os.path.join(self.base, "engine-src")      # 假装是内网那个引擎仓
         _make_repo(self.src, engine=True)
         # 目标刻意放在**还不存在的父目录**下：顺带覆盖"父目录要不要建"这条
-        self.dst = os.path.join(self.base, "deep", "eaglermc_harness")
+        self.dst = os.path.join(self.base, "deep", "agentguard")
 
     def run_bs(self, *args, **kw):
         return _run("--dir", self.dst, "--url", self.src, *args, **kw)
@@ -199,7 +199,7 @@ class BootstrapTest(unittest.TestCase):
 class CriterionMatchesFixPaths(unittest.TestCase):
     """跨工具判据锁：bootstrap 说"就位"了，`fix_paths.py` 就必须不再拦。
 
-    为什么值得单列：两支脚本各自硬写了一份判据（`eaglermc_gate/mcp.py` 在不在）。
+    为什么值得单列：两支脚本各自硬写了一份判据（`agentguard/mcp.py` 在不在）。
     bootstrap 判据一旦比 fix_paths 松，就会出现"引导说好了、下一步照样 ✗"的鬼故事 ——
     而这正是本次要消灭的那个坑的**同款形状**（报错与真实原因错位）。
     判据不是对拍字符串（那种锁会随措辞变动假红），而是**真跑一遍 fix_paths**。
@@ -215,7 +215,7 @@ class CriterionMatchesFixPaths(unittest.TestCase):
         _make_repo(self.src, engine=True)
         self.dst = os.path.join(self.base, "cloned")
         self.mkt = os.path.join(self.base, "pkg", "marketplace")
-        d = os.path.join(self.mkt, "plugins", "eaglermc-gate")
+        d = os.path.join(self.mkt, "plugins", "agentguard")
         os.makedirs(d)
         _write(os.path.join(d, ".mcp.json"), MCP_TEMPLATE)
 

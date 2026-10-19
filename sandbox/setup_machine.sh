@@ -1,5 +1,5 @@
 #!/bin/sh
-# eaglermc_harness/sandbox/setup_machine.sh —— 新机器一键接入（2026-09-06）
+# agentguard/sandbox/setup_machine.sh —— 新机器一键接入（2026-09-06）
 # ============================================================
 # 做三件事：
 #   1. 检测 config/harness.local.yaml 缺失 → 从 example 复制生成，提示编辑后重跑
@@ -69,7 +69,7 @@ if [ ! -f "$LOCAL" ]; then
     exit 0
 fi
 
-echo "=== eaglermc_harness 新机器接入（harness=$HARNESS_WIN）==="
+echo "=== agentguard 新机器接入（harness=$HARNESS_WIN）==="
 echo ""
 
 # ---------- 第 1.5 步：确保 harness.local.yaml 里有 harness: 键 ----------
@@ -99,24 +99,24 @@ else
     fi
 fi
 
-# ---------- 第 1.6 步：写 ~/.eagle-agents/harness.path ----------
-# 业务仓 AGENTS.md 的「路径约定」让 AI 按顺序取工程根：① $EAGLERMC_HARNESS_DIR（旧名 $HARNESS_DIR 兼容）② 本文件。
+# ---------- 第 1.6 步：写 ~/.agentguard/harness.path ----------
+# 业务仓 AGENTS.md 的「路径约定」让 AI 按顺序取工程根：① $AGENTGUARD_DIR（旧名 $HARNESS_DIR 兼容）② 本文件。
 # 不写本文件 → 同事跑完 setup_machine.sh 后第 ② 级落空，AI 在业务仓里照样解析不出 <HARNESS>
 # （指针写法就白注入了）。此前只有 install_shim.py / bootstrap_agent_env.sh 写它，
 # 而标准三步接入只跑本脚本 —— 缺口就在这。
 # 幂等：内容已是当前工程根就不重写。
-EAGLE_DIR="$HOME/.eagle-agents"
+EAGLE_DIR="$HOME/.agentguard"
 if [ ! -f "$EAGLE_DIR/harness.path" ] || [ "$(cat "$EAGLE_DIR/harness.path" 2>/dev/null)" != "$HARNESS_WIN" ]; then
     if [ "$DRY_RUN" = "1" ]; then
         # dry-run 只预览：不建目录、不落文件，否则"预览"就有了副作用
-        echo "⏭️  [dry-run] 将写 ~/.eagle-agents/harness.path → $HARNESS_WIN"
+        echo "⏭️  [dry-run] 将写 ~/.agentguard/harness.path → $HARNESS_WIN"
     else
         mkdir -p "$EAGLE_DIR"
         printf '%s\n' "$HARNESS_WIN" > "$EAGLE_DIR/harness.path"
-        echo "✅ 已写 ~/.eagle-agents/harness.path → $HARNESS_WIN"
+        echo "✅ 已写 ~/.agentguard/harness.path → $HARNESS_WIN"
     fi
 else
-    echo "⏭️  ~/.eagle-agents/harness.path 已是当前工程根，未改动"
+    echo "⏭️  ~/.agentguard/harness.path 已是当前工程根，未改动"
 fi
 
 # ---------- 第 2 步：枚举 gate，逐仓装 hook ----------

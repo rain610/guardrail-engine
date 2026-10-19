@@ -25,14 +25,14 @@
         由包内 `fix_paths.py` 现场填本机路径。**每一步通道刷新都建立在它之上**：
         漏跑 = 装出来的副本指向不存在的解释器，MCP 起不来、编辑期门禁整体无声失效。
   [2/6] Claude Code 插件：`marketplace add <本包>/marketplace` → `plugin update`
-  [3/6] OpenClaw 扩展：就地把新 bundle 覆盖进 `extensions/eaglermc-gate`（重启桌面端生效）
+  [3/6] OpenClaw 扩展：就地把新 bundle 覆盖进 `extensions/agentguard`（重启桌面端生效）
   [4/6] 人用 CLI（pip 包）：**只在装过时** `pip install -U <新轮子>`，装完对账产物是否真的换了
-  [5/6] 技能副本：转发 `<HARNESS>/eaglermc_gate/cli.py skill install --dir <宿主技能目录>`
+  [5/6] 技能副本：转发 `<HARNESS>/agentguard/cli.py skill install --dir <宿主技能目录>`
   [6/6] 编辑期 shim：**只在装过时**刷新（`<HARNESS>/sandbox/install_shim.py`）
 
 用法（默认只预演，不改任何东西；确认无误后加 --yes 执行）
 ==========================================================
-    python upgrade.py --harness <你的 eaglermc_harness 路径>                  # 预演
+    python upgrade.py --harness <你的 agentguard 路径>                  # 预演
     python upgrade.py --harness <...> --yes                                  # 执行
     python upgrade.py --harness <...> --yes --skip pip,openclaw              # 想保留某几项时
     python upgrade.py --harness <...> --pack <包目录>                         # 包不在本脚本所在目录时
@@ -57,11 +57,11 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-SKILL_NAME = "eaglermc-harness"
-PLUGIN_NAME = "eaglermc-gate"
-PLUGIN_FULL = "eaglermc-gate@eaglermc-tools"
-MARKETPLACE_NAME = "eaglermc-tools"
-# 与 eaglermc_gate/cli.py 的 SKILL_PRESETS 保持一致（壳层常量镜像，别单边改）
+SKILL_NAME = "agentguard"
+PLUGIN_NAME = "agentguard"
+PLUGIN_FULL = "agentguard@agentguard-tools"
+MARKETPLACE_NAME = "agentguard-tools"
+# 与 agentguard/cli.py 的 SKILL_PRESETS 保持一致（壳层常量镜像，别单边改）
 SKILL_PRESETS = {
     "claude": os.path.join(os.path.expanduser("~"), ".claude", "skills"),
     "opencode": os.path.join(os.path.expanduser("~"), ".config", "opencode", "skills"),
@@ -70,7 +70,7 @@ SKILL_PRESETS = {
 SKIP_KEYS = ("claude", "openclaw", "pip", "skills", "shim")
 # 装机时由 fix_paths.py 现场填充的三个字段（与安装说明、verify_release.py 同一份定义）
 FILLED_FIELDS = (("command", "__PY__"), ("args[0]", "__MCP__"),
-                 ("env.EAGLERMC_HARNESS_DIR", "__HARNESS__"))
+                 ("env.AGENTGUARD_DIR", "__HARNESS__"))
 # 内容对账时**排除**的文件：`.mcp.json` 本来就是"每台机器一份"（fix_paths 现场填），
 # 把它算进去会让"换了台机器"表现成"内容不同"—— 那是假警报，不是发现。
 HASH_SKIP = (".mcp.json",)
@@ -103,7 +103,7 @@ def run_cmd(args, timeout=600):
     `.cmd` ⇒ 是**操作系统本人**认它，不需要谁替它转交（Python 文档同此："batch files may be
     launched by the operating system in a system shell"）。而那层 cmd 会在**路径与参数都含空格**时
     按 cmd 自己的规则再剥一遍引号（`cmd /c "<含空格路径>" "<含空格参数>"`）⇒ 引号错位、rc=1 且输出为空。
-    判据与 `sandbox/check_contracts.py::_client_version`、`eaglermc_gate/mcp.py::run_cmd` 同源；
+    判据与 `sandbox/check_contracts.py::_client_version`、`agentguard/mcp.py::run_cmd` 同源；
     锁见 `tests/test_review_2026_09_23.py::TestL14BatchFileIsNotHandedToAShell`。
     """
     exe = shutil.which(args[0]) or args[0]
@@ -117,7 +117,7 @@ def run_cmd(args, timeout=600):
 
 def record(a, step, result, reason=""):
     """运维台账：与 cli.py / uninstall.py 同文件同风格（entry=upgrade）；失败提示但不阻断。"""
-    p = os.environ.get("EAGLERMC_OPS_LOG") or (
+    p = os.environ.get("AGENTGUARD_OPS_LOG") or (
         os.path.join(a.harness_norm, "reports", "ops_log.jsonl") if a.harness_norm else "")
     if not p:
         return
@@ -218,7 +218,7 @@ def _mcp_fields(mj):
         srv = (data.get("mcpServers") or {}).get(PLUGIN_NAME) or {}
         return (srv.get("command"),
                 (srv.get("args") or [None])[0],
-                (srv.get("env") or {}).get("EAGLERMC_HARNESS_DIR"))
+                (srv.get("env") or {}).get("AGENTGUARD_DIR"))
     except (OSError, ValueError, AttributeError):
         return None
 
@@ -240,7 +240,7 @@ def check_installed_mcp(plugin_dir, harness, python):
     got = _mcp_fields(mj)
     if got is None:
         return [("bad", "副本里的 .mcp.json 读不出来（不是合法 JSON？）")]
-    want = (norm(python), norm(os.path.join(harness, "eaglermc_gate", "mcp.py")), norm(harness))
+    want = (norm(python), norm(os.path.join(harness, "agentguard", "mcp.py")), norm(harness))
     exists = (os.path.isfile, os.path.isfile, os.path.isdir)
     out = []
     for (label, ph), cur, exp, ok in zip(FILLED_FIELDS, got, want, exists):
@@ -321,24 +321,24 @@ def step_claude(a):
 # ---- [3/6] OpenClaw 扩展 ------------------------------------------------------------
 
 def step_openclaw(a):
-    """[3/6] 就地覆盖 `extensions/eaglermc-gate`（**不删**；旧文件只列出来给人判断）。"""
+    """[3/6] 就地覆盖 `extensions/agentguard`（**不删**；旧文件只列出来给人判断）。"""
     fails = []
     state = os.path.abspath(a.openclaw_state or os.environ.get("OPENCLAW_STATE_DIR")
                             or os.path.join(os.path.expanduser("~"), ".openclaw-autoclaw"))
     ext = os.path.join(state, "extensions", PLUGIN_NAME)
     if not os.path.isdir(ext):
-        print("  · %s 下未发现 eaglermc-gate 扩展（升级不替你新增通道）" % norm(state))
+        print("  · %s 下未发现 agentguard 扩展（升级不替你新增通道）" % norm(state))
         return fails
     markers = (os.path.join(ext, ".claude-plugin", "plugin.json"), os.path.join(ext, ".mcp.json"))
     if not any(os.path.isfile(m) for m in markers):
-        print("  · ⚠️ 目录存在但缺少 eaglermc-gate 特征文件，拒绝自动覆盖（防误伤同名目录）：")
+        print("  · ⚠️ 目录存在但缺少 agentguard 特征文件，拒绝自动覆盖（防误伤同名目录）：")
         print("      %s" % norm(ext))
         fails.append("OpenClaw 扩展需人工确认：%s" % norm(ext))
         return fails
     src = os.path.join(a.pack, "marketplace", "plugins", PLUGIN_NAME)
     if not os.path.isdir(src):
         print("  · ✗ 本包里没有 bundle：%s" % norm(src))
-        return ["本包缺 marketplace/plugins/eaglermc-gate"]
+        return ["本包缺 marketplace/plugins/agentguard"]
     extra = []
     for dp, _dns, fns in os.walk(ext):
         for fn in fns:
@@ -390,17 +390,17 @@ def step_openclaw(a):
 #   在这条通道上"升"完了、rc=0、什么也没发生。这正是 G3 在插件通道修掉的那个形状，
 #   而本格当时只留了一句**挂在 `rc != 0` 分支上**的提示 —— 同版本时 rc 本来就是 0，
 #   那句提示永远不会执行。所以改成与插件通道同一套判据：**跑完去读产物本身**
-#   （site-packages 里 `eaglermc_gate/**.py` 逐字节比轮子里的同名文件），一致才算刷新成功。
+#   （site-packages 里 `agentguard/**.py` 逐字节比轮子里的同名文件），一致才算刷新成功。
 #   刻意不比版本号大小：`0.1.2-dev`（VERSION 文件）与 `0.1.2.dev0`（包元数据）本就不是同一个
 #   字符串，为比大小再抄一份 PEP440 归一化进来，只会多出一处要跟着同步的东西。
 
 def wheel_pkg_files(wheel):
-    """轮子里 `eaglermc_gate/**.py` → {路径: sha1}；读不出来返回 None（不是空字典）。"""
+    """轮子里 `agentguard/**.py` → {路径: sha1}；读不出来返回 None（不是空字典）。"""
     out = {}
     try:
         with zipfile.ZipFile(wheel) as z:
             for n in z.namelist():
-                if n.startswith("eaglermc_gate/") and n.endswith(".py"):
+                if n.startswith("agentguard/") and n.endswith(".py"):
                     out[n] = hashlib.sha1(z.read(n)).hexdigest()
     except Exception:
         return None
@@ -408,14 +408,14 @@ def wheel_pkg_files(wheel):
 
 
 def installed_pkg_files(location):
-    """site-packages 里 `eaglermc_gate/**.py` → {路径: sha1}；目录不在/读不了返回 None。
+    """site-packages 里 `agentguard/**.py` → {路径: sha1}；目录不在/读不了返回 None。
 
     None 与 {} 必须分开：前者是"读不到，无法对账"，后者是"读到了、包是空的"。
     混成一个值，这条对账就会在一次 OSError 之后静默变成"一致"。
     """
     if not location:
         return None
-    root = os.path.join(location, "eaglermc_gate")
+    root = os.path.join(location, "agentguard")
     if not os.path.isdir(root):
         return None
     out = {}
@@ -432,7 +432,7 @@ def installed_pkg_files(location):
                         h.update(chunk)
             except OSError:
                 return None
-            out["eaglermc_gate/" + os.path.relpath(fp, root).replace("\\", "/")] = h.hexdigest()
+            out["agentguard/" + os.path.relpath(fp, root).replace("\\", "/")] = h.hexdigest()
     return out
 
 
@@ -483,9 +483,9 @@ def step_pip(a):
     代跑只有这一条命令、不递归重试 —— 装/卸之外一律由人确认这条边界仍然成立。
     """
     fails = []
-    rc, out = run_cmd([a.python, "-m", "pip", "show", "eaglermc-gate"])
+    rc, out = run_cmd([a.python, "-m", "pip", "show", "agentguard"])
     if rc != 0:
-        print("  · pip 未见 eaglermc-gate（未装过 → 升级不动它；只装 CLI 见《安装说明》一）")
+        print("  · pip 未见 agentguard（未装过 → 升级不动它；只装 CLI 见《安装说明》一）")
         return fails
     ver, loc = pip_show_fields(out)
     wheels = sorted(glob.glob(os.path.join(a.pack, "*.whl")))
@@ -525,7 +525,7 @@ def step_pip(a):
     if now is None:
         print("  · ✗ 读不到安装位置里的包内容（Location=%r）→ **无法确认这次到底换没换**。" % loc)
         print("      （`pip install -e .` 这类可编辑安装就是这种：登记在、包却不在 Location 下）")
-        print("      处置：%s -m pip show -f eaglermc-gate 与包内轮子手工对一遍。" % a.python)
+        print("      处置：%s -m pip show -f agentguard 与包内轮子手工对一遍。" % a.python)
         fails.append("pip 装完读不到产物（无法确认是否刷新）")
         record(a, "pip", "unverified", norm(loc))
         return fails
@@ -551,7 +551,7 @@ def step_pip(a):
         after = installed_pkg_files(loc)
         if after is None:
             print("        ✗ 代跑之后仍读不到安装位置里的包内容（Location=%r）→ **无法确认到底换没换**。" % loc)
-            print("          处置：%s -m pip show -f eaglermc-gate 与包内轮子手工对一遍。" % a.python)
+            print("          处置：%s -m pip show -f agentguard 与包内轮子手工对一遍。" % a.python)
             fails.append("pip 代跑 --force-reinstall 后读不到产物（无法确认是否刷新）")
             record(a, "pip", "unverified", norm(loc))
             return fails
@@ -603,7 +603,7 @@ def step_skills(a):
     for name, t in targets:
         if not a.harness_cli:
             print("  · 技能副本[%s]：未找到引擎仓的 cli.py → 请手动执行：" % name)
-            print("      python <HARNESS>/eaglermc_gate/cli.py skill install --dir \"%s\"" % norm(t))
+            print("      python <HARNESS>/agentguard/cli.py skill install --dir \"%s\"" % norm(t))
             continue
         if not a.yes:
             print("  · 技能副本[%s]：将刷新 %s" % (name, norm(t)))
@@ -623,8 +623,8 @@ def step_skills(a):
 def step_shim(a):
     """[6/6] 编辑期 shim：**只在装过时**刷新（它指向仓库，所以多半不用动；换过路径才需要）。"""
     fails = []
-    shim = os.path.join(os.path.expanduser("~"), ".eagle-agents", "hooks",
-                        "eaglermc-harness-gate.py")
+    shim = os.path.join(os.path.expanduser("~"), ".agentguard", "hooks",
+                        "agentguard-gate.py")
     script = os.path.join(a.harness_norm, "sandbox", "install_shim.py") if a.harness_norm else ""
     if not os.path.isfile(shim):
         print("  · 未装编辑期 shim（升级不替你新增通道）。它是 7 家客户端编辑期门禁的唯一入口，")
@@ -664,7 +664,7 @@ def main(argv=None):
     _require_python()
     ap = argparse.ArgumentParser(description="一键升级：用新包刷新本机装过的副本（默认预演）")
     ap.add_argument("--harness", default=None,
-                    help="你的 eaglermc_harness 仓库路径（缺省读 EAGLERMC_HARNESS_DIR、HARNESS_DIR）")
+                    help="你的 agentguard 仓库路径（缺省读 AGENTGUARD_DIR、HARNESS_DIR）")
     ap.add_argument("--python", default=None, help="跑 pip / cli.py 用的解释器（默认：当前解释器）")
     ap.add_argument("--pack", default=None,
                     help="安装包目录（默认：本脚本所在目录 —— 解压出来的包里就有本脚本）")
@@ -687,23 +687,23 @@ def main(argv=None):
         return 1
 
     a.pack = os.path.abspath(a.pack or os.path.dirname(os.path.abspath(__file__)))
-    harness = (a.harness or os.environ.get("EAGLERMC_HARNESS_DIR")
+    harness = (a.harness or os.environ.get("AGENTGUARD_DIR")
                or os.environ.get("HARNESS_DIR") or "").strip()
     a.harness_norm = norm(harness) if harness else ""
     a.harness_cli = ""
     if a.harness_norm:
-        c = os.path.join(a.harness_norm, "eaglermc_gate", "cli.py")
+        c = os.path.join(a.harness_norm, "agentguard", "cli.py")
         if os.path.isfile(c):
             a.harness_cli = c
 
-    print("== eaglermc-gate 一键升级 ==================================")
+    print("== agentguard 一键升级 ==================================")
     print("   模式    : %s" % ("执行（--yes）" if a.yes else "预演（不改任何东西；确认后加 --yes 执行）"))
     print("   包目录  : %s" % norm(a.pack))
     print("   引擎库  : %s" % (a.harness_norm or "(未指定 —— 路径适配与技能/矩阵刷新都做不了)"))
     print("   解释器  : %s" % a.python)
     if not a.harness_norm:
         print("")
-        print("✗ 请用 --harness 指定 eaglermc_harness 路径（或设 EAGLERMC_HARNESS_DIR）。")
+        print("✗ 请用 --harness 指定 agentguard 路径（或设 AGENTGUARD_DIR）。")
         print("  为什么必须给：新包里的 .mcp.json 是占位符，要靠引擎仓的 fix_paths.py 填成本机路径；")
         print("  漏了这一步，装出来的副本会指向一个不存在的解释器，而**没有任何一步会报错**。")
         return 1
@@ -782,7 +782,7 @@ def main(argv=None):
         return 1
     print("✅ 升级完成（台账已记录）。")
     print(" · 重启宿主（Claude Code / OpenClaw 桌面端）让插件与扩展重新加载。")
-    print(" · 复核：python <HARNESS>/eaglermc_gate/cli.py installed")
+    print(" · 复核：python <HARNESS>/agentguard/cli.py installed")
     record(a, "summary", "done", "")
     return 0
 

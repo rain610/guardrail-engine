@@ -13,9 +13,9 @@
     "stdout": {
       "kind": "json",
       "json_keys": [
-        "eaglermc_harness",
-        "eaglermc_harness.gate_rc",
-        "eaglermc_harness.message"
+        "agentguard",
+        "agentguard.gate_rc",
+        "agentguard.message"
       ]
     },
     "stderr": {
@@ -34,9 +34,9 @@
     "stdout": {
       "kind": "json",
       "json_keys": [
-        "eaglermc_harness",
-        "eaglermc_harness.gate_rc",
-        "eaglermc_harness.message"
+        "agentguard",
+        "agentguard.gate_rc",
+        "agentguard.message"
       ]
     },
     "stderr": {
@@ -55,9 +55,9 @@
     "stdout": {
       "kind": "json",
       "json_keys": [
-        "eaglermc_harness",
-        "eaglermc_harness.gate_rc",
-        "eaglermc_harness.message"
+        "agentguard",
+        "agentguard.gate_rc",
+        "agentguard.message"
       ]
     },
     "stderr": {

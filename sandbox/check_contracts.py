@@ -44,7 +44,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HOOK = os.path.join(ROOT, "integrations", "hooks", "eaglermc-harness-gate.py")
+HOOK = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate.py")
 BASE_DIR = os.path.join(ROOT, "tests", "contracts", "baseline")
 CLIENTS = ("claude", "codex", "opencode", "codebuddy", "zcode", "qoder", "trae")
 EVENTS = ("PreToolUse", "PostToolUse", "Stop")   # PreToolUse 也纳入：qoder/codebuddy 的 deny 契约在那里

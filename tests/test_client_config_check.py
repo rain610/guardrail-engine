@@ -54,7 +54,7 @@ class TestClientConfigCheck(unittest.TestCase):
         # 显式清理：不清理会在 GC 期抛 ResourceWarning（被测的 CI 严格句柄门槛会红）
         self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
-        self.gate = os.path.join(self.home, "eaglermc-harness-gate.py")   # 名字要带门禁关键字（体检器按它认）
+        self.gate = os.path.join(self.home, "agentguard-gate.py")   # 名字要带门禁关键字（体检器按它认）
         pathlib.Path(self.gate).write_text("# stub\n", encoding="utf-8")
         self.cfg = [c for c in CCC.CLIENTS if c["name"] == "trae"][0]
         _isolate_managed_repos(self)
@@ -123,7 +123,7 @@ class TestClientConfigCheck(unittest.TestCase):
         self.assertTrue(any("缺关键事件" in p for p in probs), probs)
 
     def test_nonexistent_gate_script_flagged(self):
-        bad = "C:/x/python.exe C:/nope/eaglermc-harness-gate.py trae; exit $LASTEXITCODE"
+        bad = "C:/x/python.exe C:/nope/agentguard-gate.py trae; exit $LASTEXITCODE"
         self._write(".trae-cn/hooks.json", self._trae(bad))
         lvl, probs, _ = CCC.check_client(self.cfg, self.home)
         self.assertEqual(lvl, "bad")
@@ -144,7 +144,7 @@ class TestClientConfigCheck(unittest.TestCase):
 class TestShimForwardTargetChecked(unittest.TestCase):
     """体检器必须校验 **shim 的转发目标**，不能只看"配置里写的脚本文件在不在"。
 
-    2026-09-13 外部评审 G2：客户端配置里写的是本机薄转发器（~/.eagle-agents/hooks/…），
+    2026-09-13 外部评审 G2：客户端配置里写的是本机薄转发器（~/.agentguard/hooks/…），
     它转发到工程仓里的正本；工程仓挪走/换机器后 shim 会静默 exit 0 →
     7 家客户端的编辑期门禁**整体无声失效**。这正是本项目最想消灭的失败类型，
     所以体检器必须把它抓出来（原实现只校验 shim 文件本身存在 → 抓不到）。
@@ -158,8 +158,8 @@ class TestShimForwardTargetChecked(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
         os.makedirs(os.path.join(self.home, ".trae-cn"))
-        os.makedirs(os.path.join(self.home, ".eagle-agents", "hooks"))
-        self.shim = os.path.join(self.home, ".eagle-agents", "hooks", "eaglermc-harness-gate.py")
+        os.makedirs(os.path.join(self.home, ".agentguard", "hooks"))
+        self.shim = os.path.join(self.home, ".agentguard", "hooks", "agentguard-gate.py")
         self.cfg = [c for c in CCC.CLIENTS if c["name"] == "trae"][0]
 
     def tearDown(self):
@@ -174,7 +174,7 @@ class TestShimForwardTargetChecked(unittest.TestCase):
     def _real_shim(self, gen_path):
         """按**真实模板**造 shim —— 体检器已改为按内容特征识别（H5b），
         手写的假文件（只含 GEN_PATH、没有 runpy）会被当作"直连正本"而跳过校验。"""
-        tmpl = os.path.join(ROOT, "integrations", "hooks", "eaglermc-harness-gate-shim.py")
+        tmpl = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate-shim.py")
         src = __import__('pathlib').Path(tmpl).read_text(encoding="utf-8").replace("__HARNESS__", gen_path)
         pathlib.Path(self.shim).write_text(src, encoding="utf-8", newline="")
 
@@ -188,7 +188,7 @@ class TestShimForwardTargetChecked(unittest.TestCase):
     def test_resolvable_shim_target_passes(self):
         ok_root = os.path.join(self.tmp.name, "harness_ok")
         os.makedirs(os.path.join(ok_root, "integrations", "hooks"))
-        pathlib.Path(os.path.join(ok_root, "integrations", "hooks", "eaglermc-harness-gate.py")).write_text("# stub\n", encoding="utf-8")
+        pathlib.Path(os.path.join(ok_root, "integrations", "hooks", "agentguard-gate.py")).write_text("# stub\n", encoding="utf-8")
         self._real_shim(ok_root.replace("\\", "/"))
         self._write_cfg()
         lvl, probs, _ = CCC.check_client(self.cfg, self.home)
@@ -209,7 +209,7 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
         # 显式清理：不清理会在 GC 期抛 ResourceWarning（被测的 CI 严格句柄门槛会红）
         self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
-        tmpl = os.path.join(ROOT, "integrations", "hooks", "eaglermc-harness-gate-shim.py")
+        tmpl = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate-shim.py")
         src = __import__('pathlib').Path(tmpl).read_text(encoding="utf-8").replace("__HARNESS__", "C:/definitely/not/here")
         self.shim = os.path.join(self.home, "shim.py")
         pathlib.Path(self.shim).write_text(src, encoding="utf-8", newline="")
@@ -218,7 +218,7 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
         self.tmp.cleanup()
 
     def _run(self):
-        env = dict(os.environ, HOME=self.home, USERPROFILE=self.home, HARNESS_DIR="", EAGLERMC_HARNESS_DIR="")
+        env = dict(os.environ, HOME=self.home, USERPROFILE=self.home, HARNESS_DIR="", AGENTGUARD_DIR="")
         return subprocess.run([PY, self.shim, "claude", "PostToolUse"], input='{"cwd":"x"}',
                               capture_output=True, text=True, encoding="utf-8", errors="replace",
                               env=env, timeout=90)
@@ -227,7 +227,7 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
         r1 = self._run()
         self.assertEqual(r1.returncode, 0, "shim 目标缺失不得阻塞（exit 0）")
         self.assertIn("找不到门禁实现", r1.stderr, "必须出声，否则失效不可见")
-        flag = os.path.join(self.home, ".eagle-agents", "shim-missing.log")
+        flag = os.path.join(self.home, ".agentguard", "shim-missing.log")
         self.assertTrue(os.path.isfile(flag), "应落去重标记")
         r2 = self._run()
         self.assertEqual(r2.returncode, 0)
@@ -237,12 +237,12 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
     # ── 以下四条 = 外部评审 v3 的 H1b / H1 / H3 锁 ──────────────────────────────
 
     def _write_shim(self, gen_path):
-        tmpl = os.path.join(ROOT, "integrations", "hooks", "eaglermc-harness-gate-shim.py")
+        tmpl = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate-shim.py")
         src = __import__('pathlib').Path(tmpl).read_text(encoding="utf-8").replace("__HARNESS__", gen_path)
         pathlib.Path(self.shim).write_text(src, encoding="utf-8", newline="")
 
     def _run_env(self, extra_env):
-        env = dict(os.environ, HOME=self.home, USERPROFILE=self.home, HARNESS_DIR="", EAGLERMC_HARNESS_DIR="")
+        env = dict(os.environ, HOME=self.home, USERPROFILE=self.home, HARNESS_DIR="", AGENTGUARD_DIR="")
         env.update(extra_env)
         return subprocess.run([PY, self.shim, "claude", "PostToolUse"], input='{"cwd":"x"}',
                               capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -254,10 +254,10 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
         原实现只有"首次出声 / 第二次去重"两条断言，"恢复即清标记"这条路径没有任何锁
         —— 一旦清标记的代码坏了，故障会被永久静默（反静默机制的自我背叛）。
         """
-        flag = os.path.join(self.home, ".eagle-agents", "shim-missing.log")
+        flag = os.path.join(self.home, ".agentguard", "shim-missing.log")
         ok_root = os.path.join(self.home, "harness_ok")
         os.makedirs(os.path.join(ok_root, "integrations", "hooks"))
-        pathlib.Path(os.path.join(ok_root, "integrations", "hooks", "eaglermc-harness-gate.py")).write_text("# stub\n", encoding="utf-8")
+        pathlib.Path(os.path.join(ok_root, "integrations", "hooks", "agentguard-gate.py")).write_text("# stub\n", encoding="utf-8")
 
         self._write_shim("C:/definitely/not/here")
         r1 = self._run_env({})
@@ -290,7 +290,7 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
         self._write_shim("C:/definitely/not/here")
         r1 = self._run_env({})
         self.assertIn("找不到门禁实现", r1.stderr)
-        flag = os.path.join(self.home, ".eagle-agents", "shim-missing.log")
+        flag = os.path.join(self.home, ".agentguard", "shim-missing.log")
         old = _t.time() - 8 * 86400
         os.utime(flag, (old, old))
         r2 = self._run_env({})
@@ -327,7 +327,7 @@ class TestCheckerThreeTierQ4(unittest.TestCase):
         解释器同理（2026-09-23 L11）：写 `C:/x/python.exe` 这种占位路径会先被判 ❌，
         这条锁就永远验不到 ⚠ 分级了。"""
         os.makedirs(os.path.join(self.home, "h", "integrations", "hooks"), exist_ok=True)
-        gate = os.path.join(self.home, "h", "integrations", "hooks", "eaglermc-harness-gate.py")
+        gate = os.path.join(self.home, "h", "integrations", "hooks", "agentguard-gate.py")
         if not os.path.isfile(gate):
             pathlib.Path(gate).write_text("# stub\n", encoding="utf-8")
         return "%s %s trae; exit $LASTEXITCODE" % (PY_FWD, gate.replace("\\", "/"))
@@ -359,7 +359,7 @@ class TestCheckerThreeTierQ4(unittest.TestCase):
 
     def test_host_rule_violation_still_bad(self):
         """反向锁：宿主规则命中（引号）仍是 ❌。"""
-        bad = '"C:/x/python.exe" "C:/h/integrations/hooks/eaglermc-harness-gate.py" trae; exit $LASTEXITCODE'
+        bad = '"C:/x/python.exe" "C:/h/integrations/hooks/agentguard-gate.py" trae; exit $LASTEXITCODE'
         self._write({"hooks": {"PostToolUse": [{"hooks": [{"type": "command", "command": bad}]}],
                                "Stop": [{"hooks": [{"type": "command", "command": bad}]}]}})
         lvl, _probs, _ = CCC.check_client(self.cfg, self.home)
@@ -399,7 +399,7 @@ class TestProjectLevelConfigsAreChecked(unittest.TestCase):
         '          {\n'
         '            "type": "command",\n'
         '            "command": "\\"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.11-windows-x86_64-none\\python.exe\\" '
-        '\\"C:\\Users\\HP\\.eagle-agents\\hooks\\eaglermc-harness-gate.py\\" codex PostToolUse",\n'
+        '\\"C:\\Users\\HP\\.agentguard\\hooks\\agentguard-gate.py\\" codex PostToolUse",\n'
         '            "timeout": 200\n'
         '          }\n'
         '        ]\n'
@@ -427,7 +427,7 @@ class TestProjectLevelConfigsAreChecked(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
-        self.repo = os.path.join(self.tmp.name, "eaglermc_pc_net-demo")
+        self.repo = os.path.join(self.tmp.name, "agentguard_pc_net-demo")
         os.makedirs(self.repo)
         _isolate_managed_repos(self)
 
@@ -456,7 +456,7 @@ class TestProjectLevelConfigsAreChecked(unittest.TestCase):
         self.assertEqual(f[0]["level"], "bad")
         self.assertTrue(any("JSON 非法" in p for p in f[0]["problems"]), f[0]["problems"])
         self.assertTrue(any("本机绝对路径" in p for p in f[0]["problems"]), f[0]["problems"])
-        self.assertIn("eaglermc_pc_net-demo/zcode.json", f[0]["config"])
+        self.assertIn("agentguard_pc_net-demo/zcode.json", f[0]["config"])
 
     # ---------- 反例②（关键）：JSON 合法了也必须仍然被抓 ----------
     def test_json_valid_but_machine_path_still_caught(self):
@@ -534,7 +534,7 @@ class TestShippedExamplesMatchDocumentedContract(unittest.TestCase):
         "trae-cn/hooks.example.json": "trae",
         "qoder-cn/settings.example.json": "qoder",
     }
-    GATE_PY = os.path.join(ROOT, "integrations", "hooks", "eaglermc-harness-gate.py").replace("\\", "/")
+    GATE_PY = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate.py").replace("\\", "/")
     PLACEHOLDERS = ("<PYTHON>", "<HARNESS_SHIM>")
 
     def setUp(self):
@@ -553,7 +553,7 @@ class TestShippedExamplesMatchDocumentedContract(unittest.TestCase):
     def _subst(self, text):
         """把占位符换成**本机一定存在**的真值。
 
-        `<HARNESS_SHIM>` 故意换成**仓内正本**（而不是 ~/.eagle-agents 下的转发壳）：
+        `<HARNESS_SHIM>` 故意换成**仓内正本**（而不是 ~/.agentguard 下的转发壳）：
         正本里没有 `GEN_PATH` / `runpy.run_path`，`_shim_target_problem` 会干净返回 None；
         换成正斜杠是因为 trae 那条命令要求路径无空格、整条命令无引号。
         """

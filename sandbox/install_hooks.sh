@@ -1,5 +1,5 @@
 #!/bin/sh
-# eaglermc_harness/sandbox/install_hooks.sh —— 端仓库接入 pre-commit 门禁
+# agentguard/sandbox/install_hooks.sh —— 端仓库接入 pre-commit 门禁
 # ============================================================
 # 用法（在端仓库/worktree 根执行）：
 #   sh <harness工程>/sandbox/install_hooks.sh [gate名]
@@ -79,7 +79,7 @@ SHARED_TARGET="$SHARED_DIR/pre-commit"
 OLD_TARGET="$HOOKS_DIR/pre-commit"
 if [ -f "$OLD_TARGET" ] && [ "$OLD_TARGET" != "$SHARED_TARGET" ] \
    && [ "$(cd "$(dirname "$OLD_TARGET")" && pwd)" != "$(cd "$SHARED_DIR" && pwd)" ] \
-   && grep -q "eaglermc_harness" "$OLD_TARGET" 2>/dev/null; then
+   && grep -q "agentguard" "$OLD_TARGET" 2>/dev/null; then
     rm -f "$OLD_TARGET"
     echo "↺ 已清理旧拷贝模式 hook: $OLD_TARGET"
 fi
@@ -87,7 +87,7 @@ fi
 # ---- 评审 v8（Codex P1）：接管前枚举并备份端仓原有 hook ----------------------------
 # core.hooksPath 是"整目录接管"：git 只会执行 hooksPath 下的 hook，仓里原有的
 # pre-commit / commit-msg / pre-push 等会**静默失效**。安装时把它们备份到
-# <gitdir>/eaglermc-original-hooks/，共享分发器会在跑门禁前**链式调用**同名备份，
+# <gitdir>/agentguard-original-hooks/，共享分发器会在跑门禁前**链式调用**同名备份，
 # 做到"接管但不吞掉别人的质量流程"。
 # 评审 v3 P1（2026-09-15）：「真正生效的 hooks 目录」与「备份根」的判定
 #   ① 已有**自定义 core.hooksPath** → 那才是实际生效的目录（默认 .git/hooks 此时是死的，
@@ -115,7 +115,7 @@ else
     REAL_HOOKS="$GITDIR/hooks"
 fi
 BACKUP_BASE="${COMMON:-$GITDIR}"
-BACKUP="$BACKUP_BASE/eaglermc-original-hooks"
+BACKUP="$BACKUP_BASE/agentguard-original-hooks"
 BK_OK=0
 BK_FAIL=0
 # 评审 v9（V9-10）：把**安装前**的 core.hooksPath 值与它当时实际生效的目录落档。
@@ -145,7 +145,7 @@ if [ -n "$REAL_HOOKS" ] && [ -d "$REAL_HOOKS" ]; then
     for f in "$REAL_HOOKS"/*; do
         [ -f "$f" ] || continue
         case "$f" in *.sample) continue ;; esac
-        grep -q "eaglermc_harness" "$f" 2>/dev/null && continue   # 自己旧的拷贝模式 hook，不算"别人的"
+        grep -q "agentguard" "$f" 2>/dev/null && continue   # 自己旧的拷贝模式 hook，不算"别人的"
         FOUND="$FOUND $(basename "$f")"
     done
     if [ -n "$FOUND" ]; then

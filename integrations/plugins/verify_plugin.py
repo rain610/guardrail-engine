@@ -38,10 +38,10 @@ def read_manifest(plugin_dir):
     with io.open(p, encoding="utf-8") as f:
         cfg = json.load(f)
     servers = cfg.get("mcpServers") or {}
-    if "eaglermc-gate" not in servers:
-        print("✗ .mcp.json 里没有 eaglermc-gate server：%s" % list(servers))
+    if "agentguard" not in servers:
+        print("✗ .mcp.json 里没有 agentguard server：%s" % list(servers))
         return None
-    s = servers["eaglermc-gate"]
+    s = servers["agentguard"]
     cmd = [s["command"]] + list(s.get("args") or [])
     return cmd, dict(s.get("env") or {})
 
@@ -104,7 +104,7 @@ def main(argv=None):
 
     r0 = req("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                             "clientInfo": {"name": "verify-plugin", "version": "0"}})
-    ok_init = r0.get("result", {}).get("serverInfo", {}).get("name") == "eaglermc-gate"
+    ok_init = r0.get("result", {}).get("serverInfo", {}).get("name") == "agentguard"
     print("initialize: serverInfo=%s" % r0.get("result", {}).get("serverInfo"))
 
     p.stdin.write((json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n").encode())

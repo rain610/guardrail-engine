@@ -6,11 +6,11 @@
 ## 规则正文
 
 ```md
-## 代码门禁（Eagle RMC，必做）
+## 代码门禁（AgentGuard，必做）
 
-本机装了统一代码门禁 harness（工程根见 `EAGLERMC_HARNESS_DIR`，旧名 `HARNESS_DIR` 兼容；或 `~/.eagle-agents/harness.path`）。
+本机装了统一代码门禁 harness（工程根见 `AGENTGUARD_DIR`，旧名 `HARNESS_DIR` 兼容；或 `~/.agentguard/harness.path`）。
 
-改完任意 Eagle RMC 客户×三端仓库（PC / H5 / .NET 后端）的代码后，**在改动仓库根目录**执行：
+改完任意 AgentGuard 客户×三端仓库（PC / H5 / .NET 后端）的代码后，**在改动仓库根目录**执行：
 
 ```sh
 python <HARNESS>/harness/agents/auto-gate.py

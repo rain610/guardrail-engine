@@ -17,7 +17,7 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-# 工程根由**本文件位置**推导（2026-09-18 批次 5）：原先写死 `D:/Rain/project/eaglermc_harness`，
+# 工程根由**本文件位置**推导（2026-09-18 批次 5）：原先写死 `D:/Rain/project/agentguard`，
 # 同事机器上必然指错。范式同 sandbox/install_shim.py、integrations/plugins/build_plugin.py。
 # 四处锚点（config/ reports/ sandbox/ docs/）全在本工程同树内，推导完全等价。
 R = pathlib.Path(__file__).resolve().parent.parent

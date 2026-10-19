@@ -8,7 +8,7 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 """
-eaglermc_harness 统一门禁调度器（对标 Codex hooks / exec 接口）
+agentguard 统一门禁调度器（对标 Codex hooks / exec 接口）
 ===============================================================
 按 gate 名（客户_端）从 config 解析策略，调用对应 checks/ 脚本。
 各端仓库的 pipeline / git hook 统一调本文件，不直接调 checks/ 下脚本。
@@ -33,8 +33,8 @@ reports/gate_log-YYYY-MM.jsonl（git 忽略；旧单文件 gate_log.jsonl 若在
 import sys, os, json, time, glob, hashlib, subprocess, tempfile, threading, socket, getpass
 from contextlib import contextmanager
 
-HARNESS = os.path.dirname(os.path.abspath(__file__))  # = eaglermc_harness/harness/
-ROOT = os.path.dirname(HARNESS)  # = eaglermc_harness 工程根
+HARNESS = os.path.dirname(os.path.abspath(__file__))  # = agentguard/harness/
+ROOT = os.path.dirname(HARNESS)  # = agentguard 工程根
 CHECKS = os.path.join(ROOT, "checks")
 LOG_DIR = os.environ.get("HARNESS_LOG_DIR") or os.path.join(ROOT, "reports")
 LOG_FILE = os.environ.get("HARNESS_LOG_FILE") or os.path.join(LOG_DIR, "gate_log.jsonl")   # env 覆盖：便于测试密闭
@@ -163,7 +163,7 @@ def _mode_override(g, mode_val):
     旗标，而三个入口把调用方给的"文件名"原样拼在 gate 名之后 —— 一个内容为 `--mode` 的
     "文件"就能把判定口径从 strict 翻成 loose（实测 PC-COMP 拦截 rc=1 → 放行 rc=0），
     **且台账那一行与"真检查过且通过"逐字不可区分**（没有 mode、没有 weakened）。
-    与 2026-09-16 修掉的 `--gate` 冒充同类。收口在调用方（见 eaglermc_gate 的 flag_like）；
+    与 2026-09-16 修掉的 `--gate` 冒充同类。收口在调用方（见 agentguard 的 flag_like）；
     引擎侧无法区分"人敲的 --mode"与"files 注入的 --mode"，所以这里退而求其次：
     **让它至少留痕**。
 
@@ -202,7 +202,7 @@ def _ledger_files():
 
     env 密闭 → 只有 HARNESS_LOG_FILE 那一本（与旧版逐字一致）。
     三个读者共用本函数：--summary（本文件）/ coverage.py（跨文件契约）/ 壳侧
-    eaglermc_gate/cli.py 的 _ledger_paths（壳不 import 引擎，两份实现靠
+    agentguard/cli.py 的 _ledger_paths（壳不 import 引擎，两份实现靠
     tests/test_gate_log_anchor.py 的对拍锁咬住 —— 漂移即红，与 archive_name 三份同款纪律）。
     """
     env = os.environ.get("HARNESS_LOG_FILE")
@@ -341,7 +341,7 @@ def _log_run(gate_name, scope, n_files, rc, ms, rules=None, skipped=False, weake
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception as e:
         # 2026-09-16（剖析报告 N8）：原先是裸 `except Exception: pass` —— 全仓唯一一处
-        # "写失败没人知道"的台账（对照：运维台账 eaglermc_gate/cli.py 的 ops 写入会打印）。
+        # "写失败没人知道"的台账（对照：运维台账 agentguard/cli.py 的 ops 写入会打印）。
         # 台账是审计链的一环，哑掉等于审计链静默断；仍然**不阻断**（日志绝不挡提交），但出声。
         sys.stderr.write(f"[run_gate] ⚠ 判定台账写入失败（不影响本次判定）：{e}\n")
     if rc == 1:  # 只在拦截时通知；通过/配置错不推（本地噪音）
@@ -895,7 +895,7 @@ def _dispatch(argv):
         if cfg_err:
             print(f"[run_gate] ✗ 配置读不出来（rc=2）：{cfg_err}")
             return 2
-        print("=== eaglermc_harness gates ===")
+        print("=== agentguard gates ===")
         for k, g in sorted(gates.items()):
             print(f"  [{'ON ' if g.get('enabled') else 'off'}] {k}: {g.get('script')} @ {g.get('_repo_path') or '(未配置)'}")
         # 2026-09-18（跨平台批次 2）：逐行 `@ (未配置)` 在同事的新机器上是**一整屏**，

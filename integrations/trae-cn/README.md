@@ -1,4 +1,4 @@
-# Trae CN 接入 eaglermc_harness
+# Trae CN 接入 agentguard
 
 > 实证：Trae CN 3.3.95 的 Electron 包内**命中了 `.trae/rules`**（`resources/app/**/index.mjs`），
 > 且包内 6 个文件出现 `AGENTS.md` 字符串 —— 即它同时吃「项目规则目录」与「AGENTS.md」。
@@ -18,7 +18,7 @@ Trae CN 里的提交最终走 `git commit` → 端仓共享 `core.hooksPath` 分
 
 ## 3. 验证（人工三步，GUI 无法脚本化）
 
-1. 用 Trae CN 打开一个受管端仓（如 `eaglermc_pc_net-gxgk`），把下面这句交给它的 AI：
+1. 用 Trae CN 打开一个受管端仓（如 `agentguard_pc_net-gxgk`），把下面这句交给它的 AI：
 
    > 在 src/ 下新建 `__probe_trae.vue`，内容为：`<template><div v-auth="p">x</div></template>` +
    > `<script setup>console.log("probe")</script>`（逐字写，别改）
@@ -70,7 +70,7 @@ Trae 自带这个功能（包内文案原文）：
 所以在 Trae 里：**设置 → Hooks → 全局 → 从 Claude 导入** ≈ 一键完成。
 
 > ⚠️ 导入会把 Claude 里的**所有**钩子一起带过来（本机还有几个 `cbm-*` 的插件钩子）——
-> 导入后把不需要的删掉即可，只留 `eaglermc-harness-gate` 那条。
+> 导入后把不需要的删掉即可，只留 `agentguard-gate` 那条。
 >
 > 🚫 **这条路子已被 §5.7 根因 B 推翻（2026-09-13 实测，2026-09-23 补标）：别用导入。**
 > 导入进来的 Claude 版条目会与手写的 `hooks.json` **并存**（不是覆盖），而它带引号的命令形态
@@ -99,7 +99,7 @@ Trae 自带这个功能（包内文案原文）：
 > PowerShell 拼崩、退出码被吞成 1、client 也不对）。2026-09-23 按 §5.6 改正，此处不再重复解释，
 > 两个坑的现场证据都在 §5.6。
 
-`<HARNESS_SHIM>`（用 `python <HARNESS>/sandbox/install_shim.py` 生成，别手搓） 指我们那份通用钩子（本机 `C:\Users\HP\.eagle-agents\hooks\eaglermc-harness-gate.py`，
+`<HARNESS_SHIM>`（用 `python <HARNESS>/sandbox/install_shim.py` 生成，别手搓） 指我们那份通用钩子（本机 `C:\Users\HP\.agentguard\hooks\agentguard-gate.py`，
 它转发到仓内正本，换机器只改这一处）。**两个路径都不许含空格、都要写成正斜杠。**
 项目级 `.trae/hooks.json` 建议提交进仓库（团队共享）。
 
@@ -114,7 +114,7 @@ Trae 自带这个功能（包内文案原文）：
     "PostToolUse": [
       { "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [ { "type": "command",
-                     "command": "\"…python.exe\" \"…eaglermc-harness-gate.py\" claude",
+                     "command": "\"…python.exe\" \"…agentguard-gate.py\" claude",
                      "timeout": 200 } ] }
     ]
   }
@@ -178,7 +178,7 @@ Qoder 有独立产品 `qoderclicn`（未装，见 `integrations/qoder-cn/README.
    ```json
    { "hooks": { "PostToolUse": [ { "matcher": "Write|Edit|MultiEdit|NotebookEdit",
        "hooks": [ { "type": "command",
-                    "command": "<你的python.exe> <HARNESS>/integrations/hooks/eaglermc-harness-gate.py trae; exit $LASTEXITCODE",
+                    "command": "<你的python.exe> <HARNESS>/integrations/hooks/agentguard-gate.py trae; exit $LASTEXITCODE",
                     "timeout": 200 } ] } ] } }
    ```
 
@@ -216,7 +216,7 @@ stderr = harness 门禁未通过…                  ← 官方口径那一路
 ```
 Exit Code: 1
 stderr: Traceback (most recent call last):
-          File "...eaglermc-harness-gate.py", line 246, in main
+          File "...agentguard-gate.py", line 246, in main
             print(json.dumps({"hookSpecificOutput": {...
         UnicodeEncodeError: 'gbk' codec can't encode character '\u2717' in position 129
 ```

@@ -605,7 +605,7 @@ class TestIsolationAndScripts(unittest.TestCase):
                      # 2026-09-17 批 2：余下 >10s 的五条（逐例量过：29.6 / 27.5 / 25.8 /
                      # 21.1 / 15.5s；每份都满足"整文件 >5s 且 有单例 ≥1s"）
                      "test_review_v13_batch2.py", "test_review_v13_batch3.py",
-                     "test_eaglermc_gate.py", "test_review_v8_batch2.py",
+                     "test_agentguard.py", "test_review_v8_batch2.py",
                      "test_audit_reconcile.py",
                      # 2026-09-17 批 4：余下 >5s 且 有单例 ≥1s 的五条（快跑档单跑复量：
                      # test_upgrade_path 10.7~15.3 / test_review_v9_batch3 10.2~17.5 /

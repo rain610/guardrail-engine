@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-eaglermc_harness/hooks/pre-edit.py —— 改码前门禁（Codex hooks 的 pre-edit 点）
+agentguard/hooks/pre-edit.py —— 改码前门禁（Codex hooks 的 pre-edit 点）
 ================================================================================
 职责：① 校验「方案已确认」（工单系统走 confirm_items；对话驱动模式仅提示，不阻断）
       ② 打印该端的**范式指针**（M3，2026-09-19）——「动手前该读哪几份」

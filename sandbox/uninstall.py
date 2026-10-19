@@ -7,8 +7,8 @@
   [2/6] 提交期钩子（core.hooksPath）          → 只对你 --unhook 点名的仓库撤回；不删文件
   [3/6] Claude Code 插件                      → plugin uninstall + marketplace remove
   [4/6] OpenClaw 扩展                         → 移出 extensions 归档（重启桌面端生效）
-  [5/6] 人用 CLI（pip 包）                    → pip uninstall eaglermc-gate
-  [6/6] 编辑期 shim（~/.eagle-agents/）       → 改名归档（可逆）；7 家客户端的编辑期门禁入口
+  [5/6] 人用 CLI（pip 包）                    → pip uninstall agentguard
+  [6/6] 编辑期 shim（~/.agentguard/）       → 改名归档（可逆）；7 家客户端的编辑期门禁入口
 
 用法（默认只预演，不改任何东西；确认无误后加 --yes 执行）：
 
@@ -18,7 +18,7 @@
     python uninstall.py --yes --skip openclaw,pip         # 想保留某几项时
 
 [6/6] 是 2026-09-17 剖析报告 G5 补的：shim 与指针此前在安装说明、本脚本里**都没有名字**，
-于是"整机退出"之后 ~/.eagle-agents/ 下会原样留着它们、指针还指着别人的引擎仓。
+于是"整机退出"之后 ~/.agentguard/ 下会原样留着它们、指针还指着别人的引擎仓。
 本步转发 <HARNESS>/sandbox/install_shim.py --uninstall（单一实现）；没有引擎仓时按同口径兜底归档。
 
 原则：能自动做的自动做；够不着的打印现成命令；防误删（特征校验）；全程留痕（台账）。
@@ -39,9 +39,9 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-SKILL_NAME = "eaglermc-harness"
+SKILL_NAME = "agentguard"
 ARCHIVE_SUFFIX = ".disabled-"      # 与 cli.py 同口径（见 archive_name 的说明）
-# 与 eaglermc_gate/cli.py 的 SKILL_PRESETS 保持一致（壳层常量镜像，别单边改）
+# 与 agentguard/cli.py 的 SKILL_PRESETS 保持一致（壳层常量镜像，别单边改）
 SKILL_PRESETS = {
     "claude": os.path.join(os.path.expanduser("~"), ".claude", "skills"),
     "opencode": os.path.join(os.path.expanduser("~"), ".config", "opencode", "skills"),
@@ -49,8 +49,8 @@ SKILL_PRESETS = {
 }
 SKIP_KEYS = ("skills", "hooks", "claude", "openclaw", "pip", "shim")
 CLAUDE_PLUGIN_CMDS = (
-    ["claude", "plugin", "uninstall", "eaglermc-gate@eaglermc-tools"],
-    ["claude", "plugin", "marketplace", "remove", "eaglermc-tools"],
+    ["claude", "plugin", "uninstall", "agentguard@agentguard-tools"],
+    ["claude", "plugin", "marketplace", "remove", "agentguard-tools"],
 )
 
 
@@ -65,7 +65,7 @@ def stamp():
 def archive_name(target, suffix=ARCHIVE_SUFFIX):
     """挑一个没被占用的归档名：`<target><suffix><戳>`，撞车就加序号 `-2`、`-3`…
 
-    **跨文件同口径**：eaglermc_gate/cli.py:archive_name 是主实现，sandbox/install_shim.py
+    **跨文件同口径**：agentguard/cli.py:archive_name 是主实现，sandbox/install_shim.py
     是第二份镜像（三份都随包/随仓分发，谁也不能 import 谁）。改动任一侧都要同步，
     tests/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一输入喂三份实现做对拍。
 
@@ -82,10 +82,10 @@ def archive_name(target, suffix=ARCHIVE_SUFFIX):
 
 
 # ---- 「安装前 core.hooksPath」存档（评审 v13 中 17）----------------------------------
-# 格式与 eaglermc_gate/cli.py:read_prev_hookspath **必须一致**（那边是主实现，
+# 格式与 agentguard/cli.py:read_prev_hookspath **必须一致**（那边是主实现，
 # 这里是"CLI 转发不了"时的兜底镜像）。本脚本随安装包分发，不能 import 包内模块：
 # [5/6] 那步正是把包卸掉，而 [2/6] 可能在此之前跑。改动任一侧都要同步另一侧，有对拍锁。
-BACKUP_DIRNAME = "eaglermc-original-hooks"
+BACKUP_DIRNAME = "agentguard-original-hooks"
 PREV_HP_NAME = "PREVIOUS-hooksPath.txt"
 PREV_HP_PREFIX = "安装前 core.hooksPath："
 PREV_HP_UNSET = "<未设置>"
@@ -160,7 +160,7 @@ def run_cmd(args, timeout=300):
 
 def record(a, step, result, reason=""):
     """运维台账：与 cli.py 同文件同风格（entry=uninstall）；失败提示但不阻断。"""
-    p = os.environ.get("EAGLERMC_OPS_LOG") or (
+    p = os.environ.get("AGENTGUARD_OPS_LOG") or (
         os.path.join(a.harness_norm, "reports", "ops_log.jsonl") if a.harness_norm else "")
     if not p:
         return
@@ -251,7 +251,7 @@ def step_hooks(a):
         else:
             # 评审 v13 中 17：兜底分支同样要读安装存档（这条路径恰恰是"pip 包已被卸掉、
             # CLI 转发不了"时走的），否则同一次卸载会因为「CLI 在不在」而给出两种结果：
-            # 有 CLI → 还原原值；没 CLI → 一律清空。判定与 eaglermc_gate/cli.py:read_prev_hookspath
+            # 有 CLI → 还原原值；没 CLI → 一律清空。判定与 agentguard/cli.py:read_prev_hookspath
             # 同源（tests/test_review_v13_batch6.py 有对拍锁）。
             state, prev = prev_hookspath(repo)
             if state == "ok":
@@ -286,8 +286,8 @@ def step_claude(a):
     """[3/6] Claude Code 插件：检测到 claude CLI 才自动；否则打印手动命令。"""
     if not shutil.which("claude"):
         print("  · 未检测到 claude CLI：若你装过 Claude Code 插件，手动执行：")
-        print("      claude plugin uninstall eaglermc-gate@eaglermc-tools")
-        print("      claude plugin marketplace remove eaglermc-tools")
+        print("      claude plugin uninstall agentguard@agentguard-tools")
+        print("      claude plugin marketplace remove agentguard-tools")
         return []
     if not a.yes:
         for c in CLAUDE_PLUGIN_CMDS:
@@ -311,21 +311,21 @@ def step_openclaw(a):
     fails = []
     state = os.path.abspath(a.openclaw_state or os.environ.get("OPENCLAW_STATE_DIR")
                             or os.path.join(os.path.expanduser("~"), ".openclaw-autoclaw"))
-    ext = os.path.join(state, "extensions", "eaglermc-gate")
+    ext = os.path.join(state, "extensions", "agentguard")
     if not os.path.isdir(ext):
-        print("  · %s 下未发现 eaglermc-gate 扩展（无需处理）" % norm(state))
+        print("  · %s 下未发现 agentguard 扩展（无需处理）" % norm(state))
         return fails
     markers = (os.path.join(ext, ".claude-plugin", "plugin.json"),
                os.path.join(ext, ".mcp.json"))
     if not any(os.path.isfile(m) for m in markers):
-        print("  · ⚠️ 目录存在但缺少 eaglermc-gate 特征文件，拒绝自动处理（防误删同名目录）：")
+        print("  · ⚠️ 目录存在但缺少 agentguard 特征文件，拒绝自动处理（防误删同名目录）：")
         print("      %s" % norm(ext))
         print("      确认确为门禁扩展且不再需要时，请手动删除该目录。")
         fails.append("OpenClaw 扩展需人工确认：%s" % norm(ext))
         return fails
     # 同一个撞车问题（同秒内两次卸载 → 目录已存在 → rename 抛错）：走同一个挑选器；
     # 后缀沿用原来的 `.uninstalled-`（磁盘上已有这种名字，不动它）
-    arch = archive_name(os.path.join(state, "eaglermc-gate"), ".uninstalled-")
+    arch = archive_name(os.path.join(state, "agentguard"), ".uninstalled-")
     if not a.yes:
         print("  · 将移出归档：%s" % norm(ext))
         print("                    → %s（重启桌面端生效）" % norm(arch))
@@ -344,16 +344,16 @@ def step_openclaw(a):
 
 
 def step_pip(a):
-    """[5/6] 人用 CLI：pip uninstall eaglermc-gate（-y；用 --python 指定解释器）。"""
+    """[5/6] 人用 CLI：pip uninstall agentguard（-y；用 --python 指定解释器）。"""
     fails = []
-    rc, out = run_cmd([a.python, "-m", "pip", "show", "eaglermc-gate"])
+    rc, out = run_cmd([a.python, "-m", "pip", "show", "agentguard"])
     if rc != 0:
-        print("  · pip 未见 eaglermc-gate（无需处理）")
+        print("  · pip 未见 agentguard（无需处理）")
         return fails
     if not a.yes:
-        print("  · 将执行：%s -m pip uninstall -y eaglermc-gate" % a.python)
+        print("  · 将执行：%s -m pip uninstall -y agentguard" % a.python)
         return fails
-    rc, out = run_cmd([a.python, "-m", "pip", "uninstall", "-y", "eaglermc-gate"], timeout=600)
+    rc, out = run_cmd([a.python, "-m", "pip", "uninstall", "-y", "agentguard"], timeout=600)
     ok = rc == 0
     tail = " ｜ ".join(ln.strip() for ln in out.strip().splitlines()[-2:] if ln.strip())
     print("  · pip uninstall → rc=%s%s" % (rc, ("：" + tail[:160]) if tail else ""))
@@ -371,8 +371,8 @@ def step_shim(a):
     （本脚本随包分发，正是"包还在、仓联系不上"的场景）时按同一命名口径归档。
     """
     fails = []
-    agents = os.path.join(os.path.expanduser("~"), ".eagle-agents")
-    have = [p for p in (os.path.join(agents, "hooks", "eaglermc-harness-gate.py"),
+    agents = os.path.join(os.path.expanduser("~"), ".agentguard")
+    have = [p for p in (os.path.join(agents, "hooks", "agentguard-gate.py"),
                         os.path.join(agents, "harness.path")) if os.path.isfile(p)]
     if not have:
         print("  · 未装编辑期 shim（无需处理）")
@@ -430,7 +430,7 @@ def main(argv=None):
     _require_python()   # 前置检查（Python 3.11+）
     ap = argparse.ArgumentParser(description="一键卸载：把「内部安装包」装过的东西逐项撤回（默认预演）")
     ap.add_argument("--harness", default=None,
-                    help="你的 eaglermc_harness 仓库路径（用于转发 cli.py / 写台账；缺省读 EAGLERMC_HARNESS_DIR、HARNESS_DIR）")
+                    help="你的 agentguard 仓库路径（用于转发 cli.py / 写台账；缺省读 AGENTGUARD_DIR、HARNESS_DIR）")
     ap.add_argument("--python", default=None, help="pip 卸载用的解释器（默认：当前解释器）")
     ap.add_argument("--yes", action="store_true", help="确认执行（缺省只预演，不改任何东西）")
     ap.add_argument("--dry-run", action="store_true", help="与缺省相同的显式预演开关")
@@ -451,20 +451,20 @@ def main(argv=None):
         print("✗ --skip 不认识这几项：%s（可选：%s）" % (",".join(sorted(unknown)), ",".join(SKIP_KEYS)))
         return 1
 
-    harness = (a.harness or os.environ.get("EAGLERMC_HARNESS_DIR")
+    harness = (a.harness or os.environ.get("AGENTGUARD_DIR")
                or os.environ.get("HARNESS_DIR") or "").strip()
     a.harness_norm = norm(harness) if harness else ""
     a.harness_cli = ""
     if a.harness_norm:
-        c = os.path.join(a.harness_norm, "eaglermc_gate", "cli.py")
+        c = os.path.join(a.harness_norm, "agentguard", "cli.py")
         if os.path.isfile(c):
             a.harness_cli = c
         else:
-            print("提示：%s 下没找到 eaglermc_gate/cli.py —— 技能/钩子将走内置同规则处理" % a.harness_norm)
+            print("提示：%s 下没找到 agentguard/cli.py —— 技能/钩子将走内置同规则处理" % a.harness_norm)
 
     state_show = (a.openclaw_state or os.environ.get("OPENCLAW_STATE_DIR")
                   or os.path.join(os.path.expanduser("~"), ".openclaw-autoclaw"))
-    print("== eaglermc-gate 一键卸载 ==================================")
+    print("== agentguard 一键卸载 ==================================")
     print("   模式    : %s" % ("执行（--yes）" if a.yes else "预演（不改任何东西；确认后加 --yes 执行）"))
     print("   引擎库  : %s" % (a.harness_norm or "(未指定——技能/钩子走内置处理)"))
     print("   解释器  : %s（pip 卸载目标）" % a.python)
@@ -478,7 +478,7 @@ def main(argv=None):
         ("claude", "[3/6] Claude Code 插件", step_claude),
         ("openclaw", "[4/6] OpenClaw 扩展", step_openclaw),
         ("pip", "[5/6] 人用 CLI（pip 包）", step_pip),
-        ("shim", "[6/6] 编辑期 shim（~/.eagle-agents/）", step_shim),
+        ("shim", "[6/6] 编辑期 shim（~/.agentguard/）", step_shim),
     )
     for key, title, fn in steps:
         if key in skip:
@@ -489,13 +489,13 @@ def main(argv=None):
 
     print("")
     print("── 收尾提示 ──────────────────────────────")
-    print(" · 重启 OpenClaw 桌面端：让扩展卸载生效（重启后 plugins list 应查无 eaglermc-gate）。")
+    print(" · 重启 OpenClaw 桌面端：让扩展卸载生效（重启后 plugins list 应查无 agentguard）。")
     print(" · 手工注册过 MCP 的客户端（claude mcp add / codex mcp add 等）：到对应宿主 mcp remove（见 RUNBOOK「4. 卸载与回滚」）。")
     print(" · 安装包目录：不再需要时整目录删除即可（含本脚本与 marketplace/）。")
     print(" · 你的引擎仓库：本工具全程未改动%s；去留由你决定。" % (("（%s）" % a.harness_norm) if a.harness_norm else ""))
     print(" · 客户端 hook 配置：编辑期 shim 已归档，但各家 hook 配置里还写着它 → 到宿主配置里删掉该 hook，")
     print("   否则编辑期门禁会静默失效（见 RUNBOOK「4. 卸载与回滚」）。")
-    print(" · 验证查无：pip show eaglermc-gate ｜ claude plugin list ｜ OpenClaw plugins list ｜ cli.py skill status"
+    print(" · 验证查无：pip show agentguard ｜ claude plugin list ｜ OpenClaw plugins list ｜ cli.py skill status"
           "（会列归档残骸）｜ python <HARNESS>/sandbox/install_shim.py --check。")
     if not a.yes:
         print("")

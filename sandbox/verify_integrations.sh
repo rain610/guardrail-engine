@@ -206,8 +206,8 @@ done
 
 # ---------------- 钩子契约验证（不依赖模型：提供方抖动时这节仍然保证 harness 侧正确）----------------
 echo "--------------------------------------------------------------"
-echo "▶ 钩子契约验证（合成 payload 直喂 integrations/hooks/eaglermc-harness-gate.py）"
-HOOK="$HARNESS_WIN/integrations/hooks/eaglermc-harness-gate.py"
+echo "▶ 钩子契约验证（合成 payload 直喂 integrations/hooks/agentguard-gate.py）"
+HOOK="$HARNESS_WIN/integrations/hooks/agentguard-gate.py"
 PAY="$TMP/verify_payload.json"
 PROBE="$REPO_WIN/src/__verify_probe_hook.vue"
 printf '<template>\r\n  <div v-auth="p">x</div>\r\n</template>\r\n<script setup>\r\nconsole.log("probe");\r\n</script>\r\n' > "$PROBE"
@@ -225,7 +225,7 @@ fi
 
 # opencode：期望 stdout JSON 带 gate_rc（插件靠它分"未通过"与"调用出错"）
 "$PY" "$HOOK" opencode PostToolUse < "$PAY" 2>/dev/null > "$TMP/verify_hook_opencode.json"
-if "$PY" -c "import json,sys;d=json.load(open(r'$TMP/verify_hook_opencode.json',encoding='utf-8'));sys.exit(0 if d['eaglermc_harness']['gate_rc']==1 else 1)" 2>/dev/null; then
+if "$PY" -c "import json,sys;d=json.load(open(r'$TMP/verify_hook_opencode.json',encoding='utf-8'));sys.exit(0 if d['agentguard']['gate_rc']==1 else 1)" 2>/dev/null; then
   echo "  ✅ opencode 契约：JSON gate_rc=1"
   SUMMARY="$SUMMARY\n  钩子契约 opencode: ✅ JSON gate_rc=1"
 else

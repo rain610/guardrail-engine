@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""eaglermc_harness 配置读取（零依赖 mini-yaml，支持本工程 harness.yaml 子集）。"""
+"""agentguard 配置读取（零依赖 mini-yaml，支持本工程 harness.yaml 子集）。"""
 import hashlib
 import os
 import sys
@@ -13,7 +13,7 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-_HARNESS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = eaglermc_harness 工程根
+_HARNESS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = agentguard 工程根
 
 
 class ConfigError(Exception):
@@ -518,7 +518,7 @@ def _sanity_check(cfg):
     if missing:
         # 收敛成**一条**（2026-09-15）：逐 gate 各发一条时，同事机器上 30+ 条诊断会把钩子的
         # 回灌窗口（_compact，40 行）整段占满，把"到底要改哪一行"挤出模型视野
-        # —— CI 上 4 条钩子契约锁齐红就是这个形状（见 integrations/hooks/eaglermc-harness-gate.py）。
+        # —— CI 上 4 条钩子契约锁齐红就是这个形状（见 integrations/hooks/agentguard-gate.py）。
         # 汇总后仍然保留三样信息：数量 / gate 名 / 一条真实路径样例（要看全表用 `run_gate.py --list`）。
         names = "、".join(n for n, _ in missing[:8])
         more = "，等共 %d 个" % len(missing) if len(missing) > 8 else ""

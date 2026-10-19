@@ -10,7 +10,7 @@
 
 规则
   · 文件存在 + JSON 可解析（Trae「从 Claude 导入」曾产出**非法 JSON**，客户端会整份忽略）
-  · 必须引用 integrations/hooks/eaglermc-harness-gate.py，且该文件真实存在（被删/挪走=静默失效）
+  · 必须引用 integrations/hooks/agentguard-gate.py，且该文件真实存在（被删/挪走=静默失效）
   · 命令里的**解释器**必须真实存在（uv 升级/重建环境后那条绝对路径会消失 = 同样静默失效，L11）
   · 客户端参数必须匹配（claude/codebuddy/codex/zcode/qoder/trae），否则按别家契约输出、结论进不了模型
   · **宿主 shell 规则**：宿主是 PowerShell 的客户端（目前 trae）命令不得含引号，且必须含 `exit $LASTEXITCODE`
@@ -41,7 +41,7 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-HARNESS_HINT = "eaglermc-harness-gate"
+HARNESS_HINT = "agentguard-gate"
 
 # 判据知识截止日（评审 v4 Q4-④）：每条硬判据都标"基于哪个客户端版本 + 哪天实测"，
 # 客户端升级后用户知道先复核哪条，而不是直接不信任体检器。
@@ -170,8 +170,8 @@ def _interpreter_finding(cmd):
 
 
 
-# 本机 shim 的目录特征：客户端配置里写的是 ~/.eagle-agents/hooks/…（转发到工程仓里的正本）
-_SHIM_DIR_HINT = ".eagle-agents"
+# 本机 shim 的目录特征：客户端配置里写的是 ~/.agentguard/hooks/…（转发到工程仓里的正本）
+_SHIM_DIR_HINT = ".agentguard"
 
 
 def _shim_target_problem(shim_path, home):
@@ -195,19 +195,19 @@ def _shim_target_problem(shim_path, home):
     for pat in pats:
         for m in re.finditer(pat, src):
             roots.append(m.group(1))
-    ptr = os.path.join(home, ".eagle-agents", "harness.path")   # 必须用传入的 home（证伪测试抓到过：用真实 ~ 会假绿）
+    ptr = os.path.join(home, ".agentguard", "harness.path")   # 必须用传入的 home（证伪测试抓到过：用真实 ~ 会假绿）
     if os.path.isfile(ptr):
         try:
             roots.append(pathlib.Path(ptr).read_text(encoding="utf-8").strip())
         except Exception:
             pass
-    env = (os.environ.get("EAGLERMC_HARNESS_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
+    env = (os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
     if env:
         roots.append(env)
     for r in roots:
         if not r:
             continue
-        tgt = os.path.join(r.replace("\\", "/"), "integrations", "hooks", "eaglermc-harness-gate.py")
+        tgt = os.path.join(r.replace("\\", "/"), "integrations", "hooks", "agentguard-gate.py")
         if os.path.isfile(tgt):
             return None
     return ("shim 的转发目标全部失效（GEN_PATH/指针/环境变量都解析不到正本）→ "

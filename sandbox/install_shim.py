@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""安装/刷新本机钩子 shim（把占位符换成当前工程仓路径，写进 ~/.eagle-agents/hooks/）。
+"""安装/刷新本机钩子 shim（把占位符换成当前工程仓路径，写进 ~/.agentguard/hooks/）。
 
 为什么需要它：客户端（Claude Code / CodeBuddy / Qoder / ZCode / Trae / Codex）的钩子配置里写的是
-**本机路径**，而实现只应该有一份（仓内的 `integrations/hooks/eaglermc-harness-gate.py`）。
-本脚本负责把「本机薄转发器」生成到位，并写好指针文件 `~/.eagle-agents/harness.path`。
+**本机路径**，而实现只应该有一份（仓内的 `integrations/hooks/agentguard-gate.py`）。
+本脚本负责把「本机薄转发器」生成到位，并写好指针文件 `~/.agentguard/harness.path`。
 
 用法：
     python sandbox/install_shim.py              # 生成/刷新 shim + 指针 + 全局守则
@@ -17,9 +17,9 @@
 
 --uninstall 的由来（2026-09-17 剖析报告 G5）：本脚本产出的两支文件此前**没有任何撤回入口**
 —— 安装说明里没有它们、`uninstall.py` 的五项清理里也没有，于是"整机退出"之后
-`~/.eagle-agents/` 下会原样留下 shim 与指针，而指针还指着别人的引擎仓。
+`~/.agentguard/` 下会原样留下 shim 与指针，而指针还指着别人的引擎仓。
 
-顺带渲染全局守则的由来（2026-09-19）：`~/.eagle-agents/GLOBAL_AGENTS.md` 是各 AI 工具
+顺带渲染全局守则的由来（2026-09-19）：`~/.agentguard/GLOBAL_AGENTS.md` 是各 AI 工具
 **自动加载**的入口路由（三份端级模板 `AGENTS_{pc,h5,backend}_slim.md` 都指着它），
 而此前只有 `sandbox/bootstrap_agent_env.sh` 会生成它 —— 那支脚本**没有任何调用方**
 （不在安装包里、CI 不跑、`setup_machine.sh` 也不跑），于是同事照《安装说明》「二、Agent 接入」
@@ -58,14 +58,14 @@ except ImportError:
     global_agents = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEMPLATE = os.path.join(ROOT, "integrations", "hooks", "eaglermc-harness-gate-shim.py")
-AGENTS = os.path.join(os.path.expanduser("~"), ".eagle-agents")
-SHIM = os.path.join(AGENTS, "hooks", "eaglermc-harness-gate.py")
+TEMPLATE = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate-shim.py")
+AGENTS = os.path.join(os.path.expanduser("~"), ".agentguard")
+SHIM = os.path.join(AGENTS, "hooks", "agentguard-gate.py")
 POINTER = os.path.join(AGENTS, "harness.path")
 # shim 转发目标在候选目录下的**相对路径** —— 必须与模板里的 `REL` 逐字一致，否则体检的判据
 # 与运行时的判据分叉（L13：判据必须与产品同源）。锁：tests/test_install_shim.py::
 # TestCheckMatchesRuntimeChain::test_rel_matches_the_shim_template。
-REL = os.path.join("integrations", "hooks", "eaglermc-harness-gate.py")
+REL = os.path.join("integrations", "hooks", "agentguard-gate.py")
 PLACEHOLDER = "__HARNESS__"
 ARCHIVE_SUFFIX = ".disabled-"
 
@@ -73,7 +73,7 @@ ARCHIVE_SUFFIX = ".disabled-"
 def archive_name(target):
     """挑一个没被占用的归档名：`<target>.disabled-<戳>`，撞车就加序号 `-2`、`-3`…
 
-    **跨文件同口径**：eaglermc_gate/cli.py 与 sandbox/uninstall.py 各有一份镜像
+    **跨文件同口径**：agentguard/cli.py 与 sandbox/uninstall.py 各有一份镜像
     （本脚本随包/随仓分发，不能 import 包内模块）。改动任一侧都要同步，
     tests/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一输入喂三份实现做对拍。
 
@@ -105,7 +105,7 @@ def uninstall():
     **它的哨兵区之外属于用户** —— 那里可能写着同事自己加的规矩，归档走就等于把那些一起拿走，
     而"撤回"本该只退掉 harness 装的东西。所以它留在原地，退出后照常可用（哨兵区继续由
     harness 维护，下次装回来即是最新）。
-    `~/.eagle-agents/` 下、`hooks/` 下还可能有别的东西：**目录本身一律不碰**，
+    `~/.agentguard/` 下、`hooks/` 下还可能有别的东西：**目录本身一律不碰**，
     也绝不做 rmtree/remove（tests/test_install_shim.py 有 AST 锁盯着）。
     """
     labels = ((SHIM, "shim"), (POINTER, "指针"))
@@ -146,7 +146,7 @@ def check():
 
     判据 = **整链是否至少有一跳可达**（评审 2026-09-23 L13）。原先的判据是「GEN_PATH 可达
     **且** 指针可达」—— 两跳必须同时好 —— 与运行时语义不符：模板的 `resolve()` 是
-    「EAGLERMC_HARNESS_DIR（旧名 HARNESS_DIR）→ 指针 → GEN_PATH 逐个试，**取第一个 `REL` 存在的**」。于是
+    「AGENTGUARD_DIR（旧名 HARNESS_DIR）→ 指针 → GEN_PATH 逐个试，**取第一个 `REL` 存在的**」。于是
     「指针有效、GEN_PATH 因挪仓/换克隆而失效」这种**运行时完全正常**的状态被判 ✗ ——
     偏严的假红。而假红与假绿同害：它会把人训练成"这条自检的输出不用看"，那时真红也没人信了。
     现在：任一跳可达 = ✅（并点名**实际会被用到的那一跳**）；"陈旧跳"与"指针 ≠ GEN_PATH
@@ -166,7 +166,7 @@ def check():
     ptr_val = None
     if os.path.isfile(POINTER):
         ptr_val = pathlib.Path(POINTER).read_text(encoding="utf-8").strip()
-    env = (os.environ.get("EAGLERMC_HARNESS_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
+    env = (os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
 
     # 与模板 resolve() **同一判据**：候选逐个试，取第一个 `REL` 存在的。别在这里另写一套
     # "看着差不多"的规则（例：只判目录存在）—— 两套判据必然分叉成"自检说好、运行时说坏"。
@@ -188,7 +188,7 @@ def check():
         # 被跳过（模板里那条出口：不阻塞、但出声 + 落 shim-missing.log）。
         print("[check] ✗ 解析链**整条失效**：环境变量 / 指针 / GEN_PATH 都到不了 %s ——"
               "该机器上的编辑期门禁会被跳过（不阻塞，但 shim 会打一次提示并落 shim-missing.log）。"
-              "修法：重跑本脚本，或设 EAGLERMC_HARNESS_DIR（旧名 HARNESS_DIR 兼容）。" % REL)
+              "修法：重跑本脚本，或设 AGENTGUARD_DIR（旧名 HARNESS_DIR 兼容）。" % REL)
         return False
     print("[check] ✅ 运行时实际会用到的：%s → %s"
           % (live[0][0], os.path.join(live[0][1], REL)))
@@ -225,7 +225,7 @@ def check():
 
 
 def install_global_agents():
-    """顺带渲染 `~/.eagle-agents/GLOBAL_AGENTS.md`（2026-09-19）；成功返回 True。
+    """顺带渲染 `~/.agentguard/GLOBAL_AGENTS.md`（2026-09-19）；成功返回 True。
 
     为什么归这一步、为什么正文不在这里，见模块 docstring「顺带渲染全局守则的由来」。
 

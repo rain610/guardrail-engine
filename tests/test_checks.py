@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-eaglermc_harness checks 层单元测试（零依赖，仅标准库 unittest）
+agentguard checks 层单元测试（零依赖，仅标准库 unittest）
 ================================================================
 覆盖：
   - _config.py        mini-yaml 解析 / gate 装配 / _sanity_check 告警 / changed_files 收集器
@@ -1061,7 +1061,7 @@ class TestGuard(unittest.TestCase):
             # 2026-09-12 P0-2：调度层纳入保护（评审指出改弱 run_gate/hook 不提交时 guard 零反应）
             "harness/run_gate.py": True,
             # 2026-09-12 第三轮 N-δ：AI 客户端的自动门禁钩子同等对待
-            "integrations/hooks/eaglermc-harness-gate.py": True,
+            "integrations/hooks/agentguard-gate.py": True,
             "integrations/codex/README.md": False,
             "harness/_config.py": True,
             "harness/hooks/pre-commit.py": True,

@@ -1,4 +1,4 @@
-# ZCode 接入 eaglermc_harness
+# ZCode 接入 agentguard
 
 > **2026-09-13 实证更新**：ZCode **不是黑盒**——它的内置运行时 `resources/glm/zcode.cjs` 里能直接读到它的约定：
 > - **支持 `AGENTS.md`**（bundle 内命中 20 次，其自带说明文本写作 *"instruction files such as AGENTS.md in the ZCode client"*）；
@@ -28,7 +28,7 @@
 **参数三行**（逐行填）：
 
 ```
-C:\Users\HP\.eagle-agents\hooks\eaglermc-harness-gate.py
+C:\Users\HP\.agentguard\hooks\agentguard-gate.py
 zcode
 PostToolUse
 ```
@@ -63,7 +63,7 @@ PostToolUse
 > 的形态。中间有一段时间，`--only` 一个都没匹配上会走 rc=2，于是把门禁接在 PreToolUse 上会
 > **把新建文件全拒掉**、理由还写成"门禁调用出错 rc=2（多半是配置问题）"（2026-09-23 实测
 > qoder / trae / codebuddy 三种客户端都是 deny）。现在正本对"PreToolUse + 文件不存在"显式放行
-> （`integrations/hooks/eaglermc-harness-gate.py`，锁在
+> （`integrations/hooks/agentguard-gate.py`，锁在
 > `tests/test_review_2026_09_23.py::TestPreToolUseNewFile`），**结论仍不变：内容门禁放 PostToolUse**。
 
 ## 4. 落盘位置与确切 schema（2026-09-13 实证，已填好并自检通过）

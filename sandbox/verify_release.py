@@ -11,12 +11,12 @@
 打开过产物看一眼**：`release.yml` 只校验了 zip 的 SHA1/大小/文件数，`pack_release.py`
 打印 ✅ 时也没看过 wheel 里面。于是"修好了但没出货"这件事没有任何地方会红。
 
-同类问题在同一次评审里还有一条（§07 ③）：`tests/test_eaglermc_gate.py::_wheel_form()`
+同类问题在同一次评审里还有一条（§07 ③）：`tests/test_agentguard.py::_wheel_form()`
 是把**当前工作树**的 .py 拷进临时目录再扮成轮子 —— 它证明的是"源码是对的"，
 不是"出货的那个轮子是对的"。自我印证看起来很像验收，但它不问那个真问题。
 
 因此本脚本只做一件事：**把产物当成第三方交付物来验**，每一项都对着"单一来源"比：
-  · 轮子里有没有该有的模块   ← 对照 `eaglermc_gate/` 目录（**不写死清单**：写死清单
+  · 轮子里有没有该有的模块   ← 对照 `agentguard/` 目录（**不写死清单**：写死清单
     正是本次漂移的成因；将来加模块时会自动纳入检查）
   · `Requires-Python`        ← 对照 `pyproject.toml` 的 `requires-python`
   · 入口点 / 包名 / 版本      ← 对照 `pyproject.toml` 与 `VERSION` 文件
@@ -56,7 +56,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_PKG = os.path.join(ROOT, "eaglermc_gate")          # 包源码单一来源
+SRC_PKG = os.path.join(ROOT, "agentguard")          # 包源码单一来源
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
@@ -134,16 +134,16 @@ def check_wheel(wheel, p, proj, version, modules, label="wheel"):
     with z:
         names = z.namelist()
         # ① 源码里每一个 .py 都必须在轮子里
-        # 路径形态：wheel 条目是相对路径，包内文件就是 `eaglermc_gate/x.py`（**没有**前导
-        # 目录）。首版写成 `endswith("/eaglermc_gate/" + m)`，于是顶层那四个模块全被判"缺失"
+        # 路径形态：wheel 条目是相对路径，包内文件就是 `agentguard/x.py`（**没有**前导
+        # 目录）。首版写成 `endswith("/agentguard/" + m)`，于是顶层那四个模块全被判"缺失"
         # —— 假警报比漏报更磨损可信度，所以这里同时认两种形态。
         missing = [m for m in modules
-                   if not any(n == "eaglermc_gate/" + m or n.endswith("/eaglermc_gate/" + m)
+                   if not any(n == "agentguard/" + m or n.endswith("/agentguard/" + m)
                               for n in names)]
         if missing:
             p.add(label, "轮子里缺模块 %s（源码 %s 下一共 %d 个 .py）—— "
                          "「修好了但没出货」就是这个形状"
-                  % ("、".join(missing), "eaglermc_gate/", len(modules)))
+                  % ("、".join(missing), "agentguard/", len(modules)))
         # ② Requires-Python 必须等于 pyproject
         metas = [n for n in names if n.endswith(".dist-info/METADATA")]
         if not metas:
@@ -325,14 +325,14 @@ def check_package(stage, p, proj, version, modules):
 # 装机时由 fix_paths.py 现场填充的三个字段（模板里的写法）
 _PLACEHOLDERS = {"command": "__PY__",
                  "args[0]": "__MCP__",
-                 "env.EAGLERMC_HARNESS_DIR": "__HARNESS__"}
+                 "env.AGENTGUARD_DIR": "__HARNESS__"}
 
 
 def _srv_fields(srv):
-    """从 `mcpServers.eaglermc-gate` 里取三个机器相关字段的现值（缺项取 None）。"""
+    """从 `mcpServers.agentguard` 里取三个机器相关字段的现值（缺项取 None）。"""
     return {"command": (srv or {}).get("command"),
             "args[0]": ((srv or {}).get("args") or [None])[0],
-            "env.EAGLERMC_HARNESS_DIR": ((srv or {}).get("env") or {}).get("EAGLERMC_HARNESS_DIR")}
+            "env.AGENTGUARD_DIR": ((srv or {}).get("env") or {}).get("AGENTGUARD_DIR")}
 
 
 def _check_machine_independent(mj, p):
@@ -347,9 +347,9 @@ def _check_machine_independent(mj, p):
     肉眼可辨。判据只针对 fix_paths.py 会填的那三个字段：别的字段本来就该是常量。
     """
     try:
-        srv = json.loads(_read(mj))["mcpServers"]["eaglermc-gate"]
+        srv = json.loads(_read(mj))["mcpServers"]["agentguard"]
     except Exception as ex:
-        p.add(mj, "解析不出 mcpServers.eaglermc-gate：%r" % (ex,))
+        p.add(mj, "解析不出 mcpServers.agentguard：%r" % (ex,))
         return
     got = _srv_fields(srv)
     for k, want in sorted(_PLACEHOLDERS.items()):
@@ -459,7 +459,7 @@ def _check_pack_info(stage, p, version):
                       "包被改动过，或指纹记错了" % (info.get("marketplace_sha1"), want_mkt))
 
 
-_MACHINE_FIELDS = ("command", "args[0]", "env.EAGLERMC_HARNESS_DIR")
+_MACHINE_FIELDS = ("command", "args[0]", "env.AGENTGUARD_DIR")
 
 
 def _mcp_jsons(stage):
@@ -485,8 +485,8 @@ def _check_adapter(stage, fixer, p):
     tmp = tempfile.mkdtemp(prefix="vrel-")
     try:
         fake_harness = os.path.join(tmp, "fake-harness")
-        os.makedirs(os.path.join(fake_harness, "eaglermc_gate"))
-        with io.open(os.path.join(fake_harness, "eaglermc_gate", "mcp.py"),
+        os.makedirs(os.path.join(fake_harness, "agentguard"))
+        with io.open(os.path.join(fake_harness, "agentguard", "mcp.py"),
                      "w", encoding="utf-8") as f:
             f.write("# 只为让 fix_paths 的 --harness 校验通过\n")
         fake_python = os.path.join(tmp, "fake-python.exe")
@@ -505,23 +505,23 @@ def _check_adapter(stage, fixer, p):
                 continue
             try:
                 data = json.loads(_read(copy))
-                srv = data["mcpServers"]["eaglermc-gate"]
+                srv = data["mcpServers"]["agentguard"]
             except Exception as ex:
                 p.add(mj, "适配后反而解析不了：%r" % (ex,))
                 continue
             want = {
                 "command": fake_python.replace(os.sep, "/"),
-                "args[0]": (fake_harness + "/eaglermc_gate/mcp.py").replace(os.sep, "/"),
-                "env.EAGLERMC_HARNESS_DIR": fake_harness.replace(os.sep, "/"),
+                "args[0]": (fake_harness + "/agentguard/mcp.py").replace(os.sep, "/"),
+                "env.AGENTGUARD_DIR": fake_harness.replace(os.sep, "/"),
             }
             got = {
                 "command": srv.get("command"),
                 "args[0]": (srv.get("args") or [None])[0],
-                "env.EAGLERMC_HARNESS_DIR": (srv.get("env") or {}).get("EAGLERMC_HARNESS_DIR"),
+                "env.AGENTGUARD_DIR": (srv.get("env") or {}).get("AGENTGUARD_DIR"),
             }
             # 先看打包时的原值里有没有"适配器不管"的机器相关字段：
             # 判据 = 原值不是本机可解析路径，或干脆形如绝对路径，而 fix_paths 没碰它。
-            orig = json.loads(_read(mj))["mcpServers"]["eaglermc-gate"]
+            orig = json.loads(_read(mj))["mcpServers"]["agentguard"]
             extra = _uncovered_machine_fields(orig)
             if extra:
                 p.add(mj, "有机器相关字段 %s 不在 fix_paths.py 的改写范围内 —— "
@@ -538,7 +538,7 @@ def _uncovered_machine_fields(srv):
     """列出 .mcp.json 里"看起来是打包机绝对路径、但 fix_paths 不会改"的字段。
 
     只报**同层级、同形状**的字段：顶层除了 command 之外还有别的绝对路径值，
-    或 args 里第 1 个之后的绝对路径，或 env 里除 EAGLERMC_HARNESS_DIR 外指向
+    或 args 里第 1 个之后的绝对路径，或 env 里除 AGENTGUARD_DIR 外指向
     Windows/Unix 绝对路径的值。判据故意保守 —— 假警报的代价是下次真问题没人看。
     """
     out = []
@@ -552,7 +552,7 @@ def _uncovered_machine_fields(srv):
             continue
         if k == "env":
             for ek, ev in (v or {}).items():
-                if ek != "EAGLERMC_HARNESS_DIR" and isinstance(ev, str) and _looks_absolute(ev):
+                if ek != "AGENTGUARD_DIR" and isinstance(ev, str) and _looks_absolute(ev):
                     out.append("env.%s" % ek)
             continue
         if isinstance(v, str) and _looks_absolute(v):
@@ -611,7 +611,7 @@ def main(argv=None):
     targets = list(a.paths)
     if not targets:
         stage = os.path.join(ROOT, "dist", "install-package",
-                             "eaglermc-gate-内部安装包-v%s" % version)
+                             "agentguard-内部安装包-v%s" % version)
         if not os.path.isdir(stage):
             print("✗ 找不到 %s" % stage)
             print("  说明：本仓库还没有 v%s 的安装包产物 —— 先跑 "

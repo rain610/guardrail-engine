@@ -1,25 +1,25 @@
-# eaglermc-gate 打包配置（M1 · 推荐版尾巴）
+# agentguard 打包配置（M1 · 推荐版尾巴）
 # 原则（ADR-0001）：壳只转发；版本单一来源 = VERSION 文件（构建时读取）。
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "eaglermc-gate"
-description = "eaglermc_harness packaging shells: a thin MCP service + CLI over one shared gate engine (shells only forward; engine stays stdlib-only)."
+name = "agentguard"
+description = "agentguard packaging shells: a thin MCP service + CLI over one shared gate engine (shells only forward; engine stays stdlib-only)."
 readme = "README.md"
 # 与《安装说明》和入口守卫一致：实测 3.11/3.12/3.13；引擎用到 3.9+ 的 API（is_relative_to），
 # 3.11 以下从未测试 —— 别再写 >=3.8（那会让用户装完撞 AttributeError）。
 requires-python = ">=3.11"
-authors = [{ name = "eaglermc_harness" }]
+authors = [{ name = "agentguard" }]
 license = { text = "Internal use (license decision pending)" }
 dynamic = ["version"]
 
 [project.scripts]
-eaglermc-gate = "eaglermc_gate.cli:main"
+agentguard = "agentguard.cli:main"
 
 [tool.setuptools]
-packages = ["eaglermc_gate"]
+packages = ["agentguard"]
 
 [tool.setuptools.dynamic]
 version = { file = "VERSION" }

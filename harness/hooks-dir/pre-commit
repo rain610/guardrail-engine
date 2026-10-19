@@ -1,6 +1,6 @@
 #!/bin/sh
-# eaglermc-harness dispatcher · pre-commit（指纹标记：链式调用前检测自身，防自递归）
-# eaglermc_harness 共享 hook 分发器（core.hooksPath 模式）
+# agentguard dispatcher · pre-commit（指纹标记：链式调用前检测自身，防自递归）
+# agentguard 共享 hook 分发器（core.hooksPath 模式）
 # ============================================================
 # 各端仓库执行 `git config core.hooksPath <harness>/harness/hooks-dir` 后，
 # 所有 commit 的 pre-commit 都会执行本文件。gate 不写死——由 pre-commit.py
@@ -55,7 +55,7 @@ fi
 
 # ---- 评审 v8（Codex P1）：链式调用端仓原有 hook ---------------------------------
 # 设置 core.hooksPath 会**整体接管** hook 目录，仓里原有的同名 hook 会静默失效。
-# sandbox/install_hooks.sh 安装时会把它们备份到 <gitdir>/eaglermc-original-hooks/，
+# sandbox/install_hooks.sh 安装时会把它们备份到 <gitdir>/agentguard-original-hooks/，
 # 这里在执行门禁**之前**调用同名备份 —— 接管不等于吞掉别人的质量流程。
 # 备份位置判定必须与 sandbox/install_hooks.sh **同步**（2026-09-15 评审 v3 P1）：
 #   common-dir 优先（worktree 下真实共享 hooks 所在、备份也落这里），
@@ -71,12 +71,12 @@ GITDIR=$(git rev-parse --absolute-git-dir 2>/dev/null || git rev-parse --git-dir
 ORIG=""
 for _base in "$COMMON" "$GITDIR"; do
     [ -n "$_base" ] || continue
-    if [ -f "$_base/eaglermc-original-hooks/pre-commit" ]; then
-        ORIG="$_base/eaglermc-original-hooks/pre-commit"
+    if [ -f "$_base/agentguard-original-hooks/pre-commit" ]; then
+        ORIG="$_base/agentguard-original-hooks/pre-commit"
         break
     fi
 done
-if [ -n "$ORIG" ] && head -2 "$ORIG" | grep -q "eaglermc-harness dispatcher" 2>/dev/null; then
+if [ -n "$ORIG" ] && head -2 "$ORIG" | grep -q "agentguard dispatcher" 2>/dev/null; then
     # 评审 v9（V9-7）：备份可能就是本分发器自己（重复安装/误备份）→ 链式调用会自递归。
     echo "[chain] ⚠ 备份命中本分发器指纹 → 跳过链式调用（防自递归）"
     ORIG=""
@@ -86,7 +86,7 @@ if [ -n "$ORIG" ]; then
     if [ -x "$ORIG" ]; then "$ORIG" "$@"; else sh "$ORIG" "$@"; fi
     chained_rc=$?
     if [ "$chained_rc" -ne 0 ]; then
-        echo "✗ 端仓原有 pre-commit 未通过（由 eaglermc-harness 链式调用），本次提交已阻断。"
+        echo "✗ 端仓原有 pre-commit 未通过（由 agentguard 链式调用），本次提交已阻断。"
         exit "$chained_rc"
     fi
 fi

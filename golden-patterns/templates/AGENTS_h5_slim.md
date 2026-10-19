@@ -1,4 +1,4 @@
-# Eagle RMC H5 端（uni-app + Vue 2.6）—— AI 编码规则地图
+# AgentGuard H5 端（uni-app + Vue 2.6）—— AI 编码规则地图
 
 > **这份文件不是某个仓的 AGENTS.md**，而是**端级知识**：所有 H5 客户仓共用的那一份。
 > 客户仓的 `AGENTS.md` **用指针指向本文件**，不要把它复制进仓里（复制 = 漂移源）。
@@ -55,5 +55,5 @@
 `// harness-ok: <规则ID> <理由>` —— **规则 ID 必须写对**（写错不生效，设计上不允许一句话静默所有规则）。
 紧急 `--no-verify` 须先留痕并向负责人说明。
 
-> 跑门禁的命令与退出码语义**不在这里重复** —— 那是**用户级全局守则**（`~/.eagle-agents/GLOBAL_AGENTS.md`，
+> 跑门禁的命令与退出码语义**不在这里重复** —— 那是**用户级全局守则**（`~/.agentguard/GLOBAL_AGENTS.md`，
 > 各工具自动加载）的内容。若你的 agent 读不到它，跑 `sh <HARNESS>/sandbox/bootstrap_agent_env.sh`。

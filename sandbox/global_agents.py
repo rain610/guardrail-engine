@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`~/.eagle-agents/GLOBAL_AGENTS.md` 的**唯一**渲染器（正文 + 哨兵分区拼装）。
+"""`~/.agentguard/GLOBAL_AGENTS.md` 的**唯一**渲染器（正文 + 哨兵分区拼装）。
 
 为什么是「唯一」（2026-09-19）
 --------------------------------------------------------------------------------
@@ -81,7 +81,7 @@ ENGINE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ---------------------------------------------------------------------------
 # 正文（全仓唯一一份）。普通 Python 字符串：里面的 `$`、反引号、`>` 全是字面量。
-# 本机真实路径写成 PLACEHOLDER，渲染时烘进去 —— 本文件住在 ~/.eagle-agents/，本来就是每机一份。
+# 本机真实路径写成 PLACEHOLDER，渲染时烘进去 —— 本文件住在 ~/.agentguard/，本来就是每机一份。
 # ⚠ 改这里的措辞前先想一句话：**别的机器上的人怎么收到这次改动？** 答不上来就别写正文，
 #   改成指路（见 golden-patterns/templates/00_知识分层设计.md §一 的唯一判据）。
 # ---------------------------------------------------------------------------
@@ -95,7 +95,7 @@ BODY = """# 全局 AI Agent 统一守则（所有工具共用一份）
 > `__HARNESS__/golden-patterns/templates/00_知识分层设计.md`。
 > ⚠ 下面哨兵区由 harness 每次运行重渲染，手改会被覆盖；**哨兵区之外是你自己的，harness 永不触碰**。
 
-## Eagle RMC 客户仓库守则（最高优先级）
+## AgentGuard 客户仓库守则（最高优先级）
 在**已接入门禁的任何客户仓库**改码前（受管仓清单：python __HARNESS__/harness/run_gate.py --list）：
 1. 先读该仓库根的 AGENTS.md（仓库级指针：它指向端级模板与范式）
 2. 改完必须跑统一门禁（仓库根执行）：
@@ -131,8 +131,8 @@ _MIGRATE_NOTE = (
 
 
 def target():
-    """默认目标：`~/.eagle-agents/GLOBAL_AGENTS.md`（`~` 走 expanduser，随 HOME/USERPROFILE）。"""
-    return os.path.join(os.path.expanduser("~"), ".eagle-agents", "GLOBAL_AGENTS.md")
+    """默认目标：`~/.agentguard/GLOBAL_AGENTS.md`（`~` 走 expanduser，随 HOME/USERPROFILE）。"""
+    return os.path.join(os.path.expanduser("~"), ".agentguard", "GLOBAL_AGENTS.md")
 
 
 def looks_like_msys(root):
@@ -371,7 +371,7 @@ def brief(path=None, root=None):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="渲染 ~/.eagle-agents/GLOBAL_AGENTS.md（守则正文的唯一来源）")
+    ap = argparse.ArgumentParser(description="渲染 ~/.agentguard/GLOBAL_AGENTS.md（守则正文的唯一来源）")
     ap.add_argument("root", nargs="?",
                     help="HARNESS 工程根（Windows 形态正斜杠路径；渲染时烘进正文；缺省走统一解析链）")
     ap.add_argument("--check", action="store_true",
@@ -383,7 +383,7 @@ def main():
     if not root:
         # 尝试从统一解析链获取
         try:
-            sys.path.insert(0, os.path.join(ENGINE_ROOT, "eaglermc_gate"))
+            sys.path.insert(0, os.path.join(ENGINE_ROOT, "agentguard"))
             from _shell import find_root
             root = find_root()
         except Exception:
@@ -394,7 +394,7 @@ def main():
         # —— 例：`--check D:/别的克隆`，想知道手上这份守则指的是不是它。
         return 0 if check(root=root or ENGINE_ROOT) else 1
     if not root:
-        print("✗ 找不到 HARNESS 工程根：设 EAGLERMC_HARNESS_DIR 环境变量，"
+        print("✗ 找不到 HARNESS 工程根：设 AGENTGUARD_DIR 环境变量，"
               "或在 config/harness.local.yaml 里写 `harness:` 键，"
               "或 `python sandbox/global_agents.py <HARNESS>` 显式传", file=sys.stderr)
         return 2
@@ -402,7 +402,7 @@ def main():
         print("⚠ 这个路径看着是 git-bash 形态（%s）—— MSYS 会让你这条命令**跑成功**，"
               "但它是**原样**烘进守则正文的，Windows 上的 AI 工具按它找不到引擎仓。\n"
               "  请换成盘符形态重跑一次（哨兵区每次整段重渲染，直接覆盖，不用先清理）：\n"
-              "    sh sandbox/where.sh --win        # 打印本机形态，例如 D:/dev/eaglermc_harness"
+              "    sh sandbox/where.sh --win        # 打印本机形态，例如 D:/dev/agentguard"
               % root, file=sys.stderr)
     try:
         action, backup = write(root)

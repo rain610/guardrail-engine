@@ -8,7 +8,7 @@
 11 条 CRLF）。它是"这份代码应该是什么行尾"这个**从未被复量的假设**，而它的优先级高于事实：
 
     # 本仓检出的实际行尾（维护者自己的 Windows 机器上）
-    git -C .../eaglermc_mobile_net-gxgk ls-files --eol -- src | awk '{print $2}' | sort | uniq -c
+    git -C .../agentguard_mobile_net-gxgk ls-files --eol -- src | awk '{print $2}' | sort | uniq -c
     #   → 1732 w/crlf / 27 w/lf          ← 而 gate gxgk_h5 声明的是 line_ending: LF
     # 台账里那 1489 条 H5-CRLF 错误就是它的产物：**纯行尾误报，今天就在 Windows 上发生**。
 

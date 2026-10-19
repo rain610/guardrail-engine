@@ -5,10 +5,10 @@
 
 | 文件 | 作用 |
 |---|---|
-| `eaglermc-gate-plugin/` | 插件模板（占位符版本：`__PY__` / `__MCP__` / `__HARNESS__` / `__VERSION__`） |
+| `agentguard-plugin/` | 插件模板（占位符版本：`__PY__` / `__MCP__` / `__HARNESS__` / `__VERSION__`） |
 | `build_plugin.py` | 构建器：按机器打戳 + 从主仓同源复制技能，产出可直接加载的插件目录 |
 | `verify_plugin.py` | 端到端自证：读 `.mcp.json` 声明的命令 → MCP 握手 → 真门禁判定（rc=1/BLOCKED） |
-| `eaglermc-gate-marketplace/` | 市场模板（Claude 兼容：Claude Code 与 OpenClaw 双消费） |
+| `agentguard-marketplace/` | 市场模板（Claude 兼容：Claude Code 与 OpenClaw 双消费） |
 | `build_marketplace.py` | 市场构建器（打戳 + 组装 + 打印双宿主接入命令） |
 
 ## 快速用法
@@ -25,12 +25,12 @@ python integrations/plugins/verify_plugin.py --plugin <OUT_DIR>
 
 # 4) 市场形态（Claude Code 与 OpenClaw 双消费；市场含本插件）
 python integrations/plugins/build_marketplace.py --harness <HARNESS> --out <MP_DIR>
-claude plugin marketplace add <MP_DIR> && claude plugin install eaglermc-gate@eaglermc-tools
+claude plugin marketplace add <MP_DIR> && claude plugin install agentguard@agentguard-tools
 openclaw plugins marketplace list <MP_DIR>
 ```
 
 ## 原则
 
 - 插件只是**安装载体**：不含任何门禁逻辑；逻辑永远只有一份（`harness/` + `checks/` 引擎）。
-- 插件里的一切调用都走 MCP 薄服务（`eaglermc_gate/mcp.py`），与 CLI、git 钩子共用同一判定内核。
+- 插件里的一切调用都走 MCP 薄服务（`agentguard/mcp.py`），与 CLI、git 钩子共用同一判定内核。
 - 新增任何"壳"都要进 `sandbox/list_entries.py` 的 ENTRIES 与 `tests/test_packaging_contract.py` 的契约锁（ADR-0001 铁律 2）。

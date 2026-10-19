@@ -1,6 +1,6 @@
 #!/bin/sh
-# eaglermc_harness/sandbox/install_engine_hooks.sh
-# 给独立工程仓库 eaglermc_harness 自身安装 hooks（**拷贝模式**）。
+# agentguard/sandbox/install_engine_hooks.sh
+# 给独立工程仓库 agentguard 自身安装 hooks（**拷贝模式**）。
 # 保护循环（防 AI 为过门禁而改门禁）：
 #   pre-commit  → 语法门禁：所有 checks/*.py 必须能编译（防改坏门禁脚本）
 #   commit-msg  → 保护：改 checks/*.py / config/ 但提交消息无 [harness] 标记则拦截
@@ -19,7 +19,7 @@
 #   ② `cat "$CM_SOURCE" > "$TARGET_MSG"` 两边是**同一个文件** —— sh 先截断再读，
 #      共享 commit-msg 被清成 0 字节，[harness] 保护循环静默消失。
 # 实测（2026-09-16）：`cat x > x` 之后文件大小 = 0；`git rev-parse --git-path hooks` 在本仓
-# 返回 `D:/Rain/project/eaglermc_harness/harness/hooks-dir`。
+# 返回 `D:/Rain/project/agentguard/harness/hooks-dir`。
 # 同一条坑 install_hooks.sh 里记过（2026-09-12 批量迁移时把分发器当旧 hook 删掉，后续
 # 所有仓安装全挂），本脚本没跟上。现在：改用 `--absolute-git-dir` + `/hooks` 定位默认目录，
 # 并在 hooksPath 已接管时**拒绝写入**（写进 .git/hooks 是死安装，git 根本不执行那里）。
@@ -35,8 +35,8 @@ TARGET_MSG="$HOOKS_DIR/commit-msg"
 CM_SOURCE="$SHARED/commit-msg"
 
 # 指纹：只动"确实是我们装的"文件（覆盖与卸载都要认它，防误删别人的 hook）
-FP_PRE="eaglermc_harness 工程 pre-commit"
-FP_MSG="eaglermc-harness dispatcher"
+FP_PRE="agentguard 工程 pre-commit"
+FP_MSG="agentguard dispatcher"
 
 ACTION="install"
 case "${1:-}" in
@@ -71,7 +71,7 @@ if [ "$ACTION" = "uninstall" ]; then
     fi
     echo "✅ 卸载完成（删除 $n 个本脚本装的副本；未动 core.hooksPath，也未动共享分发器）"
     echo "   说明：本脚本装的是拷贝模式副本。若当前生效的是 core.hooksPath 共享分发器，"
-    echo "        撤回它请用：python \"$ENGROOT/eaglermc_gate/cli.py\" hooks uninstall --repo \"$ENGROOT\""
+    echo "        撤回它请用：python \"$ENGROOT/agentguard/cli.py\" hooks uninstall --repo \"$ENGROOT\""
     exit 0
 fi
 
@@ -84,7 +84,7 @@ if [ -n "$HP" ]; then
     else
         echo "  ⚠ 但它指向的不是本工程分发器：写进 $HOOKS_DIR 的副本是**死安装**（git 不执行那里）。"
         echo "  处置二选一：① 改用共享分发器（推荐）："
-        echo "                python \"$ENGROOT/eaglermc_gate/cli.py\" hooks install --repo \"$ENGROOT\""
+        echo "                python \"$ENGROOT/agentguard/cli.py\" hooks install --repo \"$ENGROOT\""
         echo "             ② 若那个目录是你自己的钩子，就把本脚本要装的两件事并进那边，别用拷贝模式。"
     fi
     exit 0
@@ -93,7 +93,7 @@ fi
 # ---------- pre-commit：语法门禁 ----------
 cat > "$TARGET_PRE" <<'EOF'
 #!/bin/sh
-# eaglermc_harness 工程 pre-commit：语法门禁（防改坏门禁脚本）
+# agentguard 工程 pre-commit：语法门禁（防改坏门禁脚本）
 set -e
 ENGROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ENGROOT"

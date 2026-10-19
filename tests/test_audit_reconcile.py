@@ -133,7 +133,7 @@ class AuditReconcileTest(unittest.TestCase):
 
     def test_hooks_annotation(self):
         _git(self.repo, "config", "core.hooksPath",
-             "D:/Rain/project/eaglermc_harness/harness/hooks-dir")
+             "D:/Rain/project/agentguard/harness/hooks-dir")
         self._commit("src/a.vue")
         self._write_log([])
         data = self._run()

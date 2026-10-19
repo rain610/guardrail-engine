@@ -4,7 +4,7 @@
 > 根因——给模型真实样板，而非规则文字。
 > 本目录是工作源（唯一维护点）。旧存档：`<VAULT>/concepts/黄金范式/`（只读快照，不再更新）。
 > ⚠ `<VAULT>` = 团队知识库根目录，**只有负责人本机上有**；它的解释写在用户级守则里
->   （`~/.eagle-agents/GLOBAL_AGENTS.md`，哨兵区之外），**不在本仓定义** —— 与
+>   （`~/.agentguard/GLOBAL_AGENTS.md`，哨兵区之外），**不在本仓定义** —— 与
 >   `templates/00_知识分层设计.md` 同一约定（那里讲了为什么）。同事机器上没这个目录，忽略即可。
 
 ## 两级范式
@@ -100,5 +100,5 @@
 
 ## 维护
 - 新格式/新组件范式：从已验收代码提取存进本目录（harness 为源）
-- 来源仓库：`D:/MyProject/aiauto/eaglermc_*_net-gxgk`（gxgk 为基准，其他客户差异大再各建）
+- 来源仓库：`D:/MyProject/aiauto/agentguard_*_net-gxgk`（gxgk 为基准，其他客户差异大再各建）
 - 修改后 commit 带 `[harness]` 标记；`<VAULT>` 里的旧档为只读快照，不再维护

@@ -2,7 +2,7 @@
   "_说明": "Trae CN 全局钩子文件（放到 ~/.trae-cn/hooks.json；项目级放 <repo>/.trae/hooks.json）。★ 本文件的形态以 README §5.6 的实测结论为准（2026-09-23 重生成）：Trae 在 PowerShell 里执行钩子命令，所以命令里【不能有任何引号】、【路径不能含空格】、且【末尾必须补 `; exit $LASTEXITCODE`】——否则表现为「钩子装了但什么都不做」。",
   "_取值方法": {
     "<PYTHON>": "跑 python -c \"import sys;print(sys.executable)\" 拿解释器；输出改成正斜杠（例 C:/Users/you/AppData/Roaming/uv/python/cpython-3.11-windows-x86_64-none/python.exe）",
-    "<HARNESS_SHIM>": "sh <HARNESS>/sandbox/where.sh --win 取工程根后，shim 固定在 ~/.eagle-agents/hooks/eaglermc-harness-gate.py（用 python <HARNESS>/sandbox/install_shim.py 生成，别手搓）；同样写正斜杠",
+    "<HARNESS_SHIM>": "sh <HARNESS>/sandbox/where.sh --win 取工程根后，shim 固定在 ~/.agentguard/hooks/agentguard-gate.py（用 python <HARNESS>/sandbox/install_shim.py 生成，别手搓）；同样写正斜杠",
     "_注": "两个路径都不许含空格，整条 command 里不许出现引号 —— README §5.6 那两个坑（引号被 PowerShell 拼崩 / PowerShell 把非 0 退出码吞成 1）就是这两条的直接产物。"
   },
   "hooks": {

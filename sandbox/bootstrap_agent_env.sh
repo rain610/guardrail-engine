@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# eaglermc_harness/sandbox/bootstrap_agent_env.sh
+# agentguard/sandbox/bootstrap_agent_env.sh
 # ==============================================================================
 # AI Agent 环境一键装配（新机器/新同事/新工具接入用）
 # 做四件事：
 #   1. 全局引导统一：~/.codex/AGENTS.md、~/.config/opencode/AGENTS.md、
-#      ~/.claude/CLAUDE.md、~/.codebuddy/rules/eaglermc-harness.md
-#      写薄壳指向 ~/.eagle-agents/GLOBAL_AGENTS.md（唯一权威源）
+#      ~/.claude/CLAUDE.md、~/.codebuddy/rules/agentguard.md
+#      写薄壳指向 ~/.agentguard/GLOBAL_AGENTS.md（唯一权威源）
 #      （原文件自动备份为 *.bak-<日期>，MCP 注入块会由工具自动重建）
 #      ⚠ 只写**已确认该工具会自动加载**的位置（判据见 make_shell 调用处）：
 #        往一个没人读的路径里写薄壳 = "装好了"的假象，比不写更糟。
@@ -16,13 +16,13 @@
 # ==============================================================================
 set -u
 
-HARNESS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # = eaglermc_harness/
+HARNESS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # = agentguard/
 # Windows 风格正斜杠路径（cygpath -m）：喂给 **Windows 上的 python / git** 时必须用它 ——
 # git-bash 的 `/d/...` 那边的程序打不开（实测踩到，见本文件末尾指针那段）。
 # cygpath 不存在时（WSL / Linux）原样返回 `/mnt/d/...` 或 `/home/...`，正是那边要的形态。
 HARNESS_WIN="$(sh "$HARNESS_ROOT/sandbox/where.sh" --win 2>/dev/null)"
 [ -n "$HARNESS_WIN" ] || HARNESS_WIN="$HARNESS_ROOT"
-GLOBAL_DIR="$HOME/.eagle-agents"
+GLOBAL_DIR="$HOME/.agentguard"
 GLOBAL_SRC="$GLOBAL_DIR/GLOBAL_AGENTS.md"
 DATE_TAG="$(date +%Y%m%d)"
 SKILLS_SRC="$HOME/.skills-manager/skills"
@@ -61,12 +61,12 @@ fi
 # 调用处一律写 $HARNESS_PY 且**不加引号**（"py -3" 需要按空格拆成两个词）。
 # ------------------------------------------------------------------------------
 
-echo "=== Eagle RMC AI Agent 环境装配 ==="
+echo "=== AgentGuard AI Agent 环境装配 ==="
 echo "harness: $HARNESS_ROOT"
 
 # ---------- 1. 全局引导统一（哨兵分区：本区每次重渲染，区外永不触碰）----------
 # 生成物里**不留维护者本机的目录布局**（2026-09-18 批次 4）：原先写的是
-# `在 D:/MyProject/aiauto/eaglermc_* 、eagle-rmc-* 任何客户仓库改码前：` —— 那是维护机上的
+# `在 D:/MyProject/aiauto/agentguard_* 、eagle-rmc-* 任何客户仓库改码前：` —— 那是维护机上的
 # 一个目录通配，同事的仓根本不长在那儿；更早一处还把 `$HARNESS_ROOT` 直接留成了字面量
 # （单引号 heredoc 不展开），读者照着敲等于敲了个未定义变量。
 # 现在：①「该管哪些仓」不再靠目录猜，改为指向 `run_gate.py --list`（唯一权威来源）；
@@ -76,7 +76,7 @@ echo "harness: $HARNESS_ROOT"
 # 原先的守卫是 `if [ ! -f "$GLOBAL_SRC" ]`，else 分支注释写着「已存在时**不动它**
 # （里面可能有你自己加的规矩）」。善意，但代价是**这个文件此后再也没有更新路径**：
 # 改好的正文永远进不到已经有这个文件的机器上。本机实况就是活证据 —— 文件停在
-# 2026-09-10 那版，里面还带着「D:/MyProject/aiauto/eaglermc_* 目录通配」和 `python`
+# 2026-09-10 那版，里面还带着「D:/MyProject/aiauto/agentguard_* 目录通配」和 `python`
 # （Ubuntu/WSL 上 command not found），**正是次日批次 4 要消灭的东西**；而每次运行
 # 还会打一个绿色的「✓ 权威源已存在」。看起来健康，其实是死的。
 # 改法：harness 只维护**哨兵之间**那一区，每次运行重渲染；哨兵区外一字不动，
@@ -96,7 +96,7 @@ echo "harness: $HARNESS_ROOT"
 # 本脚本只留**人类文案**（下面 case 那段）；机读的动作词由模块打在 stdout，警告走 stderr。
 GLOBAL_SRC="$GLOBAL_DIR/GLOBAL_AGENTS.md"
 # ---- 2026-09-19 修：薄壳里写出去的是 git-bash 形态，可读它的却是 Windows 工具 ----
-# 本机实测：三个薄壳正文写的是 `/c/Users/HP/.eagle-agents/GLOBAL_AGENTS.md` —— git-bash 的
+# 本机实测：三个薄壳正文写的是 `/c/Users/HP/.agentguard/GLOBAL_AGENTS.md` —— git-bash 的
 # 形态。可这三个文件正是 **Windows 上的 AI 工具**去读的入口路由，它们打不开 `/c/...`。
 # 同一件事本文件末尾指针那段已经治过一遍（连注释都写着「git-bash 的 `/d/...` 那边的程序
 # 打不开」），并为此专门算了 $HARNESS_WIN；这里漏了，属同一个病没治干净。
@@ -137,7 +137,7 @@ shell_body() { # $1=工具名
   cat <<EOF
 # $1 全局引导（薄壳，指向统一权威源）
 本文件内容已统一迁移至：\`$GLOBAL_SRC_WIN\`（所有 AI 工具共用一份，改一处全部生效）。
-**任何 AI 助手在此机器上工作前，请先完整阅读上述文件**（含 Eagle RMC 客户仓库守则与通用编码准则）。
+**任何 AI 助手在此机器上工作前，请先完整阅读上述文件**（含 AgentGuard 客户仓库守则与通用编码准则）。
 MCP/codebase-memory 等工具自动注入的内容不受影响，照常生效。
 EOF
 }
@@ -200,10 +200,10 @@ make_shell "$HOME/.claude/CLAUDE.md" "claude"
 # 照此，Trae CN / ZCode / Qoder CN / Hermes **暂不写用户级**：本机用户目录下没有确认会加载的
 # md 入口（.trae-cn 只有 memory/、.zcode 只有 cli/、.qoder-cn 是 memories/、.hermes 是 config.yaml），
 # 而它们**项目级**都吃 AGENTS.md —— 34 仓的指针已覆盖那条路。
-make_shell "$HOME/.codebuddy/rules/eaglermc-harness.md" "codebuddy"
+make_shell "$HOME/.codebuddy/rules/agentguard.md" "codebuddy"
 
 # ---------- 0. 受管仓库枚举（后两节 1b / 3 共用）----------
-# 原先这两节各自用 `/d/MyProject/aiauto/eaglermc_*` **通配本机目录**，问题有三层：
+# 原先这两节各自用 `/d/MyProject/aiauto/agentguard_*` **通配本机目录**，问题有三层：
 #   ① 同事机器上零匹配 → 「检查过了」与「什么都没检查」在屏幕上长得一模一样（静默失效）；
 #   ② 通配的是**目录**，不是**受管仓**（本机实测多扫出 android_new / tool 等没接门禁的目录）；
 #   ③ 与 config 里真正生效的 repos 段无关 —— 改了 local.yaml，这两节照样看老地方。
@@ -398,14 +398,14 @@ fi
 
 echo "--- 5. 门禁钩子定位指针 ---"
 # 第三轮 N-ε：钩子脚本（integrations/hooks/）定位工程根的顺序是
-# EAGLERMC_HARNESS_DIR（旧名 HARNESS_DIR 兼容）→ ~/.eagle-agents/harness.path → 常见位置 → 从 cwd 向上找。
+# AGENTGUARD_DIR（旧名 HARNESS_DIR 兼容）→ ~/.agentguard/harness.path → 常见位置 → 从 cwd 向上找。
 # 指针这一环原先没有任何脚本生成 = 文档里的选项②空转，这里补上（幂等）。
-mkdir -p "$HOME/.eagle-agents"
+mkdir -p "$HOME/.agentguard"
 # 指针是给 **Python 钩子**读的，必须写 Windows 风格正斜杠路径：git-bash 的 `pwd` 给的是
 # `/d/...`，Python 在 Windows 上打不开（实测踩到）。取值在文件顶部统一算好（HARNESS_WIN ←
 # where.sh --win，内部走 cygpath -m），此处直接复用 —— 一处求值，两处受用。
-printf '%s\n' "$HARNESS_WIN" > "$HOME/.eagle-agents/harness.path"
-echo "  ✓ 已写入 $HOME/.eagle-agents/harness.path → $HARNESS_WIN"
+printf '%s\n' "$HARNESS_WIN" > "$HOME/.agentguard/harness.path"
+echo "  ✓ 已写入 $HOME/.agentguard/harness.path → $HARNESS_WIN"
 echo "    （供 Claude/Codex 钩子在无环境变量时定位工程；换工程位置重跑本脚本即可）"
 
 echo "=== 装配完成。所有 AI 工具现在读取同一份守则 ==="

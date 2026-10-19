@@ -4,7 +4,7 @@
 
 2026-10-12 退役原因：
   指针写法落地后（P1#3），<HARNESS> 占位符 + 路径约定说明 就是**终态**——
-  AI 客户端从约定说明里自行解析（$EAGLERMC_HARNESS_DIR / 旧名 $HARNESS_DIR，或 ~/.eagle-agents/harness.path）。
+  AI 客户端从约定说明里自行解析（$AGENTGUARD_DIR / 旧名 $HARNESS_DIR，或 ~/.agentguard/harness.path）。
   渲染成绝对路径反而违反机器无关原则（check ⑦ 会拦）。
 
   --check 保留，语义改为：只查「路径过期」（已渲染成旧绝对路径的情况），
@@ -30,7 +30,7 @@ except Exception:
     pass
 
 # 引擎根定位（统一解析链）
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "eaglermc_gate"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agentguard"))
 try:
     from _shell import find_root
 except ImportError:
@@ -90,16 +90,16 @@ def check_file(path, harness_path):
 
     # 检查 2：路径是否过期（找常见的路径模式）
     # 业务仓 AGENTS.md 里 harness 路径通常出现在 `<HARNESS>/...` 渲染后的形态
-    # 例如：`D:/Rain/project/eaglermc_harness/golden-patterns/...`
-    # 用正则找所有类似 "盘符:/...eaglermc_harness" 或 "/.../eaglermc_harness" 的路径
+    # 例如：`D:/Rain/project/agentguard/golden-patterns/...`
+    # 用正则找所有类似 "盘符:/...agentguard" 或 "/.../agentguard" 的路径
     import re
-    # Windows 形态：D:/.../eaglermc_harness 或 D:\...\eaglermc_harness
+    # Windows 形态：D:/.../agentguard 或 D:\...\agentguard
     #   排除 URL：https:/ 里的 s:/ 会被误判为盘符，故 lookbehind 排除字母
-    # POSIX 形态：/.../eaglermc_harness
+    # POSIX 形态：/.../agentguard
     #   排除 URL：:// 中第二个 / 前面是第一个 /，故 lookbehind 加 / 排除
     patterns = [
-        r'(?<![A-Za-z])[A-Za-z]:[/\\][^\s`]*?eaglermc_harness(?=[/\s`"\']|$)',  # Windows（排除 URL）
-        r'(?<![:/.\w])/[^\s`]*?eaglermc_harness(?=[/\s`"\']|$)',                 # POSIX（排除 URL）
+        r'(?<![A-Za-z])[A-Za-z]:[/\\][^\s`]*?agentguard(?=[/\s`"\']|$)',  # Windows（排除 URL）
+        r'(?<![:/.\w])/[^\s`]*?agentguard(?=[/\s`"\']|$)',                 # POSIX（排除 URL）
     ]
 
     found_paths = set()

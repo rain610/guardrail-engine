@@ -68,7 +68,7 @@ def ledger_files():
 def _anchor_probe():
     """锚点文件尾行 → `(记录 or None, 状态)`，状态三态 `ok` / `absent` / `corrupt`。
 
-    ★ 2026-09-30 修：与壳侧 `eaglermc_gate/cli.py::_anchor_probe` 同一条判据（同一处
+    ★ 2026-09-30 修：与壳侧 `agentguard/cli.py::_anchor_probe` 同一条判据（同一处
     缺陷的两个副本）。原先「没有锚点文件」与「有文件但尾行解析不了」都返回 `None`，
     于是一个坏字节就能让读侧退回"尚无锚点"。这里虽然只是信息性报告（不拦人），
     但把损坏说成"没有"同样是假话 —— 本报告存在的意义正是把"没响"和"没跑"分开。

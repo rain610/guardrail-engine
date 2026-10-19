@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-eaglermc_harness/harness/agents/auto-gate.py —— 跨 Agent 通用门禁入口
+agentguard/harness/agents/auto-gate.py —— 跨 Agent 通用门禁入口
 ================================================================================
 设计目标：任何 AI agent（Claude Code / Codex / OpenCode / CodeBuddy / Hermes）
 在任意端仓库工作目录下跑一行命令即可触发门禁，无需知道 gate 名。
@@ -27,8 +27,8 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-HARNESS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = eaglermc_harness/
-ROOT = os.path.dirname(HARNESS)                                        # = eaglermc_harness 工程根
+HARNESS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = agentguard/
+ROOT = os.path.dirname(HARNESS)                                        # = agentguard 工程根
 
 # 台账「来源入口」：cli/mcp/hook 都设了自己的值，auto-gate 缺失 → 台账 entry 恒空。
 # 中 16（评审 v13）：原先 setdefault —— 由 MCP/CLI 拉起时（MCP 的 repo 分支正是这么做的）
@@ -148,7 +148,7 @@ def main():
 
     # 位置参数契约：`--only` 的值只许是文件路径（2026-09-23 评审报告 H1）。
     # 为什么这里需要（而 pre-commit 不需要）：`--only` 的值来自**编辑器宿主的 payload**
-    # （integrations/hooks/eaglermc-harness-gate.py 的 target_file()），是外部输入；
+    # （integrations/hooks/agentguard-gate.py 的 target_file()），是外部输入；
     # 而 pre-commit 的 files 一律是 `os.path.join(仓根, 暂存路径)` 的绝对路径，
     # 结构上不可能以 `-` 开头 —— 给它加一条永不触发的判据，只是又一条死判据。
     # 危害：run_gate 会把 `--mode loose` 这类项当自己的旗标消费（覆盖判定口径），

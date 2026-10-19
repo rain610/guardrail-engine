@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-eaglermc_harness/hooks/pre-commit.py —— 提交前门禁（Codex hooks 的 pre-commit 点）
+agentguard/hooks/pre-commit.py —— 提交前门禁（Codex hooks 的 pre-commit 点）
 ===================================================================================
 职责：① 先跑保护循环 guard（防 AI 为过门禁而改门禁）
       ② 再调 run_gate 跑对应端门禁（取 git diff --cached 文件）。被各端 .git/hooks/pre-commit 调。
@@ -37,7 +37,7 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 HARNESS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = harness/
-ROOT = os.path.dirname(HARNESS)  # 工程根 eaglermc_harness/
+ROOT = os.path.dirname(HARNESS)  # 工程根 agentguard/
 LIB = HARNESS  # _config.py 就在 harness/
 
 

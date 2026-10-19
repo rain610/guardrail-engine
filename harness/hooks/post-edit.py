@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-eaglermc_harness/hooks/post-edit.py —— 改码后门禁（Codex hooks 的 post-edit 点）
+agentguard/hooks/post-edit.py —— 改码后门禁（Codex hooks 的 post-edit 点）
 =================================================================================
 职责：调 run_gate 跑对应端门禁（自动取 git 改动文件，或显式传文件）。
 改动文件口径（2026-09-03 统一）：未暂存 diff + 已暂存 diff + 未跟踪新文件，

@@ -36,4 +36,4 @@ def resolve(gitdir, common, repo=None):
     base = common or gitdir
     if not base:
         return None, None
-    return os.path.join(base, "hooks"), os.path.join(base, "eaglermc-original-hooks")
+    return os.path.join(base, "hooks"), os.path.join(base, "agentguard-original-hooks")
