@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "eaglermc-gate": {
+      "command": "__PY__",
+      "args": [
+        "__MCP__"
+      ],
+      "env": {
+        "EAGLERMC_HARNESS_DIR": "__HARNESS__"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "agentguard": {
+      "command": "__PY__",
+      "args": [
+        "__MCP__"
+      ],
+      "env": {
+        "AGENTGUARD_DIR": "__HARNESS__"
+      }
+    }
+  }
+}

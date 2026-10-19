@@ -1,0 +1,6 @@
+{"ts": "2026-09-13T22:34:13", "client": "claude", "reason": "回填真实客户端版本（F4 修复后版本可测；指纹本身未变）", "from_version": "unknown", "to_version": "2.1.269 (Claude Code)"}
+{"ts": "2026-09-13T22:34:14", "client": "codex", "reason": "回填真实客户端版本（F4 修复后版本可测；指纹本身未变）", "from_version": "unknown", "to_version": "codex-cli 0.154.0"}
+{"ts": "2026-09-13T22:34:16", "client": "opencode", "reason": "回填真实客户端版本（F4 修复后版本可测；指纹本身未变）", "from_version": "unknown", "to_version": "1.18.30"}
+{"ts": "2026-09-13T22:34:16", "client": "codebuddy", "reason": "回填真实客户端版本（F4 修复后版本可测；指纹本身未变）", "from_version": "unknown", "to_version": "unknown"}
+{"ts": "2026-09-13T22:34:16", "client": "zcode", "reason": "回填真实客户端版本（F4 修复后版本可测；指纹本身未变）", "from_version": "unknown", "to_version": "unknown"}
+{"ts": "2026-09-13T22:34:16", "client": "trae", "reason": "回填真实客户端版本（F4 修复后版本可测；指纹本身未变）", "from_version": "unknown", "to_version": "unknown"}

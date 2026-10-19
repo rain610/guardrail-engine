@@ -1,0 +1,68 @@
+{
+  "client": "qoder",
+  "client_version": "1.1.51",
+  "PreToolUse": {
+    "rc": 0,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "json",
+      "json_keys": [
+        "hookSpecificOutput",
+        "hookSpecificOutput.hookEventName",
+        "hookSpecificOutput.permissionDecision",
+        "hookSpecificOutput.permissionDecisionReason"
+      ]
+    },
+    "stderr": {
+      "kind": "empty"
+    }
+  },
+  "PostToolUse": {
+    "rc": 0,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "json",
+      "json_keys": [
+        "hookSpecificOutput",
+        "hookSpecificOutput.additionalContext",
+        "hookSpecificOutput.hookEventName"
+      ]
+    },
+    "stderr": {
+      "kind": "text"
+    }
+  },
+  "Stop": {
+    "rc": 0,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "json",
+      "json_keys": [
+        "hookSpecificOutput",
+        "hookSpecificOutput.additionalContext",
+        "hookSpecificOutput.hookEventName"
+      ]
+    },
+    "stderr": {
+      "kind": "text"
+    }
+  }
+}

@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""agentguard 壳层公用件 —— 只做「环境定位 / 转发」，不含任何门禁判定逻辑。
+
+为什么会有这个文件（不是为好看，是因为真出过一次问题）
+=====================================================
+2026-09-16 剖析报告 N1 实测：`cli.py` 与 `mcp.py` 各自实现了一遍「取版本号」，
+而两遍**语义不同** —— mcp 那份在找不到 VERSION 文件时直接返回 `0.0.0-dev`，
+cli 那份会继续回退到包元数据 `importlib.metadata`。
+
+在本仓库里跑看不出差别（两者都能取到 VERSION 文件）；差别在**轮子安装形态**下才暴露：
+wheel 里只有 `agentguard/{__init__,cli,mcp}.py`（已用 zipfile 核对 v0.1.0/0.1.1/0.1.2
+三个产物，**没有 VERSION 文件**），此时同一个包会出现两种自我描述 ——
+`agentguard version` 说 `0.1.2`，而 MCP 的 `initialize` 说 `0.0.0-dev`。
+
+ADR-0001 铁律 3 写着「版本单一来源（四处一致，测试锁定）」，但**没有任何测试覆盖
+轮子形态**，所以这个分叉一直没被发现。重复本身不是问题，「两份实现悄悄语义不同」
+才是问题 —— 故把根定位 / 版本 / 解释器 / 版本前置检查 / 归属匹配收敛到这里一份。
+
+纪律
+====
+本模块仍属**壳层**：只做环境与转发，不做行号运算、不重定义引擎符号。它登记在
+`tests/test_packaging_contract.py` 的 `SHELL_FILES` 里，接受与其它壳完全相同的禁令检查。
+
+导入方式（三种运行形态都要成立，改这里前先读这三行）
+==================================================
+  · 脚本形态 `python agentguard/cli.py` → 脚本目录本就在 sys.path[0]，`import _shell` 可；
+  · 安装形态 `agentguard.cli:main`（entry_points）→ 包已装进 site-packages，**必须**
+    用相对导入 `from . import _shell`（裸 `import _shell` 会 ModuleNotFoundError）；
+  · exec_module 形态（tests/test_preflight.py 直接按路径 exec 壳文件）→ 没有包上下文，
+    相对导入抛 ImportError，回落到裸导入。
+故各壳里用 `try: from . import _shell / except ImportError: import _shell` 双形态导入，
+并在裸导入前保证本目录已在 sys.path（safe-path 解释器 -P 不会自动加）。
+"""
+from __future__ import annotations
+
+import os
+import re
+import sys
+
+# UTF-8 兜底：本模块的 `require_python` 会往 stderr 写中文 —— 宿主控制台可能是 GBK/ASCII
+# （同一坑在 auto-gate/shims 上踩过三次）。各壳也各自兜了一遍，这里是**独立**的一份：
+# `sandbox/list_entries.py` 的判据是「会输出 + 含非 ASCII 就必须要 reconfigure」，本模块
+# 两条都命中，且它自己也确实需要（不能假设调用方先兜过）。
+try:
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+__all__ = ["find_root", "read_version", "py_exe", "require_python", "find_bash",
+           "gate_owning", "GATE_RE", "flag_like"]
+
+
+# ---------- 工程根定位（统一解析链） ----------
+
+def _read_yaml_simple(path):
+    """极简 YAML 读取：只取顶层 `harness:` 键的值。
+
+    为什么不用 PyYAML：本仓零第三方依赖（pyproject.toml 无 dependencies 键，
+    tests/test_stdlib_only.py 用 AST 扫描锁定）。`harness.local.yaml` 的 `harness:`
+    值是简单字符串，不需要完整 YAML 解析。
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("harness:") and not line.startswith("#"):
+                    val = line[len("harness:"):].strip()
+                    # 去掉引号（单/双）
+                    if val and val[0] in ('"', "'") and val[-1] == val[0]:
+                        val = val[1:-1]
+                    return val
+    except OSError:
+        pass
+    return None
+
+
+def find_root():
+    """定位 agentguard 工程根（统一解析链，优先级从高到低）。
+
+    解析链：
+      ① 环境变量 `AGENTGUARD_DIR` / `HARNESS_DIR`（CI/测试覆盖）
+      ② `config/harness.local.yaml` → `harness:` 键（本机配置，gitignored）
+       `~/.agentguard/harness.path`（向后兼容，install_shim.py 写入）
+      ④ 从 cwd 向上找（最后的兜底，要求该目录下有 harness/run_gate.py）
+
+    判据是「该目录下有 harness/run_gate.py」——认文件、不认目录名，
+    这样 clone 到任何路径、改成任何目录名都能跑（分享给同事的前提）。
+    找不到返回 None（安装形态下确实没有引擎，由调用方决定怎么退化）。
+    """
+    cands = []
+
+    # ① 环境变量
+    env = (os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
+    if env:
+        cands.append(env)
+
+    # ② 本机配置文件（config/harness.local.yaml → harness: 键）
+    # 从本文件位置向上找引擎根，再拼 config 路径
+    d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(5):
+        cfg = os.path.join(d, "config", "harness.local.yaml")
+        if os.path.isfile(cfg):
+            val = _read_yaml_simple(cfg)
+            if val:
+                cands.append(val)
+            break
+        d = os.path.dirname(d)
+
+    #  指针文件（~/.agentguard/harness.path，向后兼容）
+    for ptr in (os.path.join(os.path.expanduser("~"), ".agentguard", "harness.path"),
+                os.path.join(os.path.expanduser("~"), ".agentguard.path")):
+        try:
+            with open(ptr, encoding="utf-8") as f:
+                val = f.read().strip()
+                if val:
+                    cands.append(val)
+        except OSError:
+            pass
+
+    # ④ 从 cwd 向上找
+    d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(5):
+        cands.append(d)
+        d = os.path.dirname(d)
+
+    for c in cands:
+        try:
+            if c and os.path.isfile(os.path.join(c, "harness", "run_gate.py")):
+                return os.path.abspath(c)
+        except OSError:
+            continue
+    return None
+
+
+def read_version(root=None, fallback="0.0.0-dev"):
+    """版本号的**单一来源**：VERSION 文件 → 包元数据 → `0.0.0-dev`。
+
+    N1 的修法所在：两条回退路径必须**每个入口都走同一遍**。
+    只读 VERSION 的实现（原 mcp）在轮子形态下会退化成写死的 `0.0.0-dev`，
+    而只回退元数据的实现（原 cli / __init__）在开发树里读不到 VERSION 时也能自愈 ——
+    两者在「VERSION 缺失」这一个场景下给出不同答案，这就是分叉。
+    """
+    r = root if root is not None else find_root()
+    if r:
+        try:
+            with open(os.path.join(r, "VERSION"), encoding="utf-8") as f:
+                v = f.read().strip()
+                if v:
+                    return v
+        except OSError:
+            pass
+    try:  # 轮子安装形态（无 VERSION 文件）：回退到包元数据
+        from importlib import metadata
+        return metadata.version("agentguard")
+    except Exception:
+        return fallback
+
+
+# ---------- 解释器 / 子进程环境 ----------
+
+def py_exe():
+    """跑子进程用的解释器：就用当前解释器（保证「同一份引擎、同一个 Python」）。"""
+    return sys.executable or "python"
+
+
+def require_python(vi=None):
+    """前置检查：本工程需要 **Python 3.11+**（与《安装说明》和包元数据一致）。
+
+    为什么：包元数据曾写 >=3.8，而引擎用到 3.9+ 的 API（`pathlib.is_relative_to`），
+    版本不够时的真实报错是 `AttributeError`/语法错，用户只会当成「包坏了」。
+    `vi` 仅供测试注入（默认取 `sys.version_info`）。
+    """
+    v = vi if vi is not None else sys.version_info
+    if tuple(v[:2]) < (3, 11):
+        sys.stderr.write(
+            "✗ 需要 Python 3.11 或更高版本（当前 %d.%d）。\n"
+            "  · 安装：https://www.python.org/downloads/（Windows 勾选 Add python.exe to PATH）\n"
+            "  · 装好后重跑本命令；3.8/3.9/3.10 不受支持（引擎用到 3.9+ 的 API，且 3.11 以下从未测试）\n"
+            % (v[0], v[1]))
+        raise SystemExit(2)
+
+
+def find_bash():
+    """Git Bash 路径（Windows 上 doctor 等要跑 .sh）；找不到返回 None。
+
+    Windows 上刻意排除 `system32` 下的 bash：那是 WSL 的转发壳，
+    在 MSYS 语义的脚本里会出现路径/换行行为不一致（宁可不跑，也不跑错的）。
+    """
+    import shutil
+    if os.name == "nt":
+        for c in (r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files\Git\usr\bin\bash.exe"):
+            if os.path.isfile(c):
+                return c
+        b = shutil.which("bash")
+        if b and "system32" not in b.lower():
+            return b
+        return None
+    return shutil.which("bash")
+
+
+# ---------- `run_gate.py --list` 的输出解析与「文件归属哪个 gate」 ----------
+# 这两件事原先在 cli.py 与 mcp.py 里各写了一遍（算法逐字相同），
+# 归属匹配的算法一旦分叉，同一个文件在 CLI 与 MCP 下会判给不同的 gate —— 结果不一致就是 bug。
+
+# 大小写不敏感是**必须的**，不是风格问题：`run_gate.py --list` 打的是 `[ON ]` / `[off]`，
+# 而这里原先只认大写 `ON|OFF` —— 于是**所有 enabled: false 的 gate 都解析不出来**，
+# 直接从 `harness_list_gates` 的结果里消失（不是标成 off，是整行不见），
+# 「有哪些 gate」这个问题拿到的是残缺答案。（评审 v13 中 15 落地时实测。）
+GATE_RE = re.compile(r"^\s*\[(ON|OFF)[^\]]*\]\s*(\S+):\s+\S+\s+@\s+(.+?)\s*$", re.I)
+
+
+def parse_gates(text):
+    """解析 `run_gate.py --list` 的表格行 → [{enabled, name, repo}]（解析不出就跳过该行）。"""
+    gates = []
+    for line in (text or "").splitlines():
+        m = GATE_RE.match(line)
+        if m:
+            gates.append({"enabled": m.group(1).upper() == "ON", "name": m.group(2),
+                          "repo": m.group(3).strip()})
+    return gates
+
+
+def gate_owning(path, gates):
+    """返回管理 `path` 的 gate（多个命中时取**仓库路径最长**的那个）。
+
+    取最长前缀是必须的：仓库路径可能互相嵌套（例：`.../agentguard_back_net-712` 与
+    `.../agentguard_back_net-712_v3`），取最短会把 v3 的文件判给 v1。
+    无归属返回 None —— 错误文案由各壳自己写（CLI 中文 / MCP 英文），本函数不掺和。
+    """
+    tgt = os.path.normcase(os.path.abspath(path))
+    best = None
+    for g in gates:
+        if not g.get("enabled") or not g.get("repo"):
+            continue
+        r = os.path.normcase(os.path.abspath(g["repo"]))
+        if tgt == r or tgt.startswith(r + os.sep):
+            if best is None or len(r) > len(best[0]):
+                best = (r, g)
+    return best[1] if best else None
+
+
+# ---------- 位置参数契约：`files` 列表里不许出现「看着像旗标」的项 ----------
+# 2026-09-23 评审报告 H1（实测）：两个壳把调用方给的 `files` 原样拼在 gate 名之后
+# （`[py, run_gate.py, gate] + files`），而 run_gate 把 `--mode <v>` 当**自己的**参数消费 ——
+# 于是一个内容为 `--mode` 的"文件名"能把一次判定从拦截（rc=1）翻成放行（rc=0），
+# 且台账里那一行与"真检查过且通过"逐字不可区分。
+# 这与 2026-09-16 修掉的 `--gate` 冒充**同类**（`run_gate.py` 里那段 fail-closed 注释写着
+# 「被检查方可以自己把门禁放宽，对门禁是硬伤」），当时只摘掉了 `--gate`。
+#
+# 判据只认前缀，不做 `os.path.isfile`：`files` 的契约本来就是「绝对路径或相对 gate 仓的路径」
+# （MCP 工具描述如此），做存在性校验会**误拒**合法相对路径；而真实路径无论相对还是绝对都
+# 不会以 `-` 开头。调用方一律 fail-closed 拒绝，不做"悄悄丢掉再照跑"——那会把一次调用
+# 变成另一次语义不同的调用。
+
+def flag_like(entries):
+    """挑出 `entries` 里以 `-` 开头的项（= 不是文件路径、是命令行旗标）→ 列表。
+
+    返回原始字符串，好让错误文案把它们逐字打出来（调用方要给的是"哪一项不合法"）。
+    """
+    out = []
+    for e in (entries or []):
+        s = str(e)
+        if s.startswith("-"):
+            out.append(s)
+    return out
+

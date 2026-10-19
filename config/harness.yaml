@@ -1,0 +1,71 @@
+# AgentGuard 全局门禁策略
+# 通用代码门禁框架 —— 管理多仓库、多端的门禁。
+# 各仓库通过固定路径引用本工程。
+version: 2
+
+# 仓库登记表 —— 键名是策略，值是每机事实
+# ---------------------------------------------------------------------------
+# 本段只声明「这个团队受管的仓有哪几个」，**值一律留空**（`""`）。真正的路径由各人在
+# **gitignored** 的 config/harness.local.yaml 里填（各人一份，不提交、不影响别人）。
+#
+# 为什么键名必须留在这里：
+# 键**不在本段** → 真配置错（拼错 / 新 gate 忘了登记），`--validate` 阻断；
+# 键在、值空或路径不存在 → 「本机没这个仓」，**常态，不阻断**。
+#
+# 怎么配（**首次接入必做**）：
+#   照 config/harness.local.example.yaml 抄一份，只写 repos 段。
+#   只写你机器上**确实存在**的那几个仓即可，写几条生效几条，其余留空不影响别人。
+repos:
+  # harness_self 也不在这里写：它的「仓」就是工程仓自身，由 harness/_config.py 无条件注入。
+  #
+  # 本机路径全留空时的表现（**可见**，不是静默放行）：
+  #   · 各门禁入口：一条 [config-warn] 汇总说清「N 个已启用 gate 没配路径」+ 怎么配；
+  #   · python harness/run_gate.py --list ：逐条显示 `@ (未配置)`；
+  #   · python harness/run_gate.py --validate ：这些 gate 显示 ⊘，**不阻断**。
+  
+  # 示例仓库（按需修改或删除）
+  example_repo: ""
+
+# 各门禁配置
+# ---------------------------------------------------------------------------
+# 每个 gate 对应一个受管仓库。`repo:` 字段引用上面 `repos:` 段中的键名。
+#
+# 通用字段说明：
+#   enabled:          是否启用（true/false）
+#   repo:             引用 repos 段中的键名
+#   script:           检查脚本路径（相对于工程根）
+#   mode:             strict（严格）或 loose（宽松，存量降级为 info）
+#   run_on:           触发点列表 [pre_commit, post_edit]
+#   line_ending:      行尾策略 auto（默认，按本机事实）/ CRLF / LF
+#   encoding:         编码约定（后端常用 utf-8-bom）
+#   legacy_baseline:  存量基线豁免（true=存量只 info，新代码仍拦）
+#   disabled_rules:   本 gate 关闭的规则 ID 列表
+gates:
+  # 工程仓自检（秒级、仓库级）：UTF-8 兜底 / 零依赖 / 配置结构。
+  harness_self:
+    enabled: true
+    repo: harness_self
+    script: checks/harness_self_check.py
+    run_on: [pre_commit, post_edit]
+  
+  # 示例 gate（展示配置结构，按需修改或删除）
+  example:
+    enabled: true
+    repo: example_repo
+    script: checks/example_code_check.py
+    mode: strict
+    run_on: [pre_commit, post_edit]
+    legacy_baseline: false
+
+# 通用规则
+rules:
+  forbid_new_parallel: true
+
+# 存量基线（审计，门禁不据此报错）
+baseline:
+  # 示例：记录初始扫描时的存量数，用于追踪清理进度
+  # example_repo_issues: 0
+
+# 通知推送（可选；未配置=完全关闭零影响）
+# notify:
+#   feishu_webhook: https://open.feishu.cn/open-apis/bot/v2/hook/xxxx

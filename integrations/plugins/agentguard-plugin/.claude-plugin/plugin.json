@@ -1,0 +1,8 @@
+{
+  "name": "agentguard",
+  "description": "agentguard 统一门禁：把代码门禁暴露为 MCP 工具（提交期另由 git 钩子硬兜底）。安装后 agent 可直接调用 harness_check_file / harness_run_gate。",
+  "version": "__VERSION__",
+  "author": {
+    "name": "agentguard"
+  }
+}

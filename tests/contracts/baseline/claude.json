@@ -1,0 +1,56 @@
+{
+  "client": "claude",
+  "client_version": "2.1.269 (Claude Code)",
+  "PreToolUse": {
+    "rc": 2,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "empty"
+    },
+    "stderr": {
+      "kind": "text"
+    }
+  },
+  "PostToolUse": {
+    "rc": 2,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "empty"
+    },
+    "stderr": {
+      "kind": "text"
+    }
+  },
+  "Stop": {
+    "rc": 2,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "empty"
+    },
+    "stderr": {
+      "kind": "text"
+    }
+  },
+  "accepted_at": "2026-09-13T22:34:13",
+  "accepted_reason": "回填真实客户端版本（F4 修复后版本可测；指纹本身未变）",
+  "from_version": "unknown",
+  "to_version": "2.1.269 (Claude Code)"
+}

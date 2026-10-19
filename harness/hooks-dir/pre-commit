@@ -1,0 +1,137 @@
+#!/bin/sh
+# eaglermc-harness dispatcher · pre-commit（指纹标记：链式调用前检测自身，防自递归）
+# eaglermc_harness 共享 hook 分发器（core.hooksPath 模式）
+# ============================================================
+# 各端仓库执行 `git config core.hooksPath <harness>/harness/hooks-dir` 后，
+# 所有 commit 的 pre-commit 都会执行本文件。gate 不写死——由 pre-commit.py
+# 按 cwd（当前提交仓）自动识别（worktree 纠偏同源）。
+# 好处：改 hook 逻辑只改 harness 工程这一处，31 个 gate 的仓全部即时生效，
+#       不再需要逐仓重装（旧 install_hooks.sh 拷贝模式的痛点）。
+# 未纳管仓库：pre-commit.py 会打印注册指引并 rc=2（fail-closed）。
+
+HARNESS="$(cd "$(dirname "$0")/../.." && pwd)"
+if command -v cygpath >/dev/null 2>&1; then
+    HARNESS=$(cygpath -m "$HARNESS")
+fi
+
+# ---- 解释器解析（2026-09-18 跨平台：Windows / WSL / Linux 共用这一份分发器）--------
+# 此前这里调的是裸 `python` —— Ubuntu 上只有 python3，于是**每一次提交都 fail-closed**，
+# 而报错是看不懂的 "python: not found"。反过来 Windows 上 `python3` 常不存在，而
+# Microsoft Store 的 python3.exe 别名 `command -v` 能命中、一跑就失败。所以判据不是
+# 「命令在不在」，而是「**真的能跑起来**」：--version 退出码 0 且输出 Python 3。
+# 这一条同时挡掉三种真实情形：Ubuntu 无 python / Windows 的 Store 别名 / 系统里是 Python 2。
+#
+# HARNESS-PY-CANDIDATES: python3 python py -3
+#   ↑ 机器可读的单一事实来源：tests/test_interpreter_convention.py 拿本行与其余 sh 入口的
+#     同名标记对拍 —— 候选顺序只允许在标记行改，改完各处必须同步。
+#
+# 为什么内联、不 source 一个同级 _python.sh：tests/test_review_v5.py 与
+# tests/test_review_v9_batch1.py 会搭一个「只拷本目录两个分发器」的最小布局真跑。
+# 任何同级新文件都不会被拷过去，钩子在那两条锁里会当场失效。本文件是全仓唯一的
+# fail-closed 起点，少一个外部依赖就少一种「门禁整体失效」的形态。
+HARNESS_PY=""
+for _c in "${HARNESS_PYTHON:-}" python3 python; do
+    [ -n "$_c" ] || continue
+    command -v "$_c" >/dev/null 2>&1 || continue
+    _v=$("$_c" --version 2>&1) || continue
+    case "$_v" in
+        Python\ 3*) HARNESS_PY="$_c"; break ;;
+    esac
+done
+if [ -z "$HARNESS_PY" ] && command -v py >/dev/null 2>&1; then
+    _v=$(py -3 --version 2>&1)
+    case "$_v" in
+        Python\ 3*) HARNESS_PY="py -3" ;;
+    esac
+fi
+if [ -z "$HARNESS_PY" ]; then
+    echo "✗ 找不到可用的 Python 3 解释器（已试：HARNESS_PYTHON / python3 / python / py -3）"
+    echo "  提交期门禁无法执行，已按 fail-closed 阻断本次提交（rc=2，不是业务代码问题）。"
+    echo "  修复：装 Python 3.11+；或显式指定解释器：export HARNESS_PYTHON=python3"
+    exit 2
+fi
+# 调用处一律写 $HARNESS_PY 且**不加引号**（"py -3" 需要按空格拆成两个词）。
+# ------------------------------------------------------------------------------
+
+# ---- 评审 v8（Codex P1）：链式调用端仓原有 hook ---------------------------------
+# 设置 core.hooksPath 会**整体接管** hook 目录，仓里原有的同名 hook 会静默失效。
+# sandbox/install_hooks.sh 安装时会把它们备份到 <gitdir>/eaglermc-original-hooks/，
+# 这里在执行门禁**之前**调用同名备份 —— 接管不等于吞掉别人的质量流程。
+# 备份位置判定必须与 sandbox/install_hooks.sh **同步**（2026-09-15 评审 v3 P1）：
+#   common-dir 优先（worktree 下真实共享 hooks 所在、备份也落这里），
+#   再退回 absolute-git-dir（本改动之前安装的仓，备份在原位）。两条都查=兼容旧安装。
+COMMON=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
+TOP=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+case "$COMMON" in
+    "" ) : ;;
+    /* | [A-Za-z]:* ) : ;;
+    * ) [ -n "$TOP" ] && COMMON="$TOP/$COMMON" ;;
+esac
+GITDIR=$(git rev-parse --absolute-git-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null || echo "")
+ORIG=""
+for _base in "$COMMON" "$GITDIR"; do
+    [ -n "$_base" ] || continue
+    if [ -f "$_base/eaglermc-original-hooks/pre-commit" ]; then
+        ORIG="$_base/eaglermc-original-hooks/pre-commit"
+        break
+    fi
+done
+if [ -n "$ORIG" ] && head -2 "$ORIG" | grep -q "eaglermc-harness dispatcher" 2>/dev/null; then
+    # 评审 v9（V9-7）：备份可能就是本分发器自己（重复安装/误备份）→ 链式调用会自递归。
+    echo "[chain] ⚠ 备份命中本分发器指纹 → 跳过链式调用（防自递归）"
+    ORIG=""
+fi
+if [ -n "$ORIG" ]; then
+    echo "[chain] 调用端仓原有 pre-commit：$ORIG"
+    if [ -x "$ORIG" ]; then "$ORIG" "$@"; else sh "$ORIG" "$@"; fi
+    chained_rc=$?
+    if [ "$chained_rc" -ne 0 ]; then
+        echo "✗ 端仓原有 pre-commit 未通过（由 eaglermc-harness 链式调用），本次提交已阻断。"
+        exit "$chained_rc"
+    fi
+fi
+# ------------------------------------------------------------------------------
+
+# ---- 评审 v3 P1（2026-09-15 用户拍板：dispatcher 层先跑 harness_self）------------
+# allowlist/配置类故障原先只在工程仓自检时可见；端仓提交走 pc/h5 gate，而 pc/h5 ruleset
+# 遇到 allowlist 加载失败只是**出声后继续**（组件规则用空集合跑）→ 某一端的组件收敛会静默降级。
+# 因此在提交链的**起点**（与 gate 归属无关）先跑工程仓自检：坏了就 fail-closed（rc=2），
+# 而不是让某个客户仓的规则悄悄变成"不再拦"。
+SELF="$HARNESS/checks/harness_self_check.py"
+if [ -f "$SELF" ]; then
+    $HARNESS_PY "$SELF" --repo "$HARNESS" >/dev/null 2>&1
+    self_rc=$?
+    if [ $self_rc -ne 0 ]; then
+        echo "✗ harness 自身体检未通过 → 提交期门禁不可信，已按 fail-closed 阻断（rc=2）。"
+        echo "  体检输出（allowlist / 配置结构 / 分发器完整性 / UTF-8 兜底 / 零依赖）："
+        $HARNESS_PY "$SELF" --repo "$HARNESS" 2>&1 | tail -20
+        echo "  修复后重试；确需跳过：git commit --no-verify（跳过=本次提交没有门禁）。"
+        exit 2
+    fi
+fi
+# ------------------------------------------------------------------------------
+
+HOOK="$HARNESS/harness/hooks/pre-commit.py"
+if [ -f "$HOOK" ]; then
+    $HARNESS_PY "$HOOK"
+    rc=$?
+    if [ $rc -ne 0 ]; then
+        # 评审 v9（Codex P2-1）：透传原退出码 —— 2=配置/环境错，1=业务拦截。
+        # 旧行为把任何非 0 压成 exit 1，脚本化排障与台账会把"配置错"误当"业务拦截"。
+        if [ "$rc" -eq 2 ]; then
+            echo "✗ pre-commit 未能执行门禁（CONFIG_ERROR rc=2）：配置/环境问题，不是业务代码问题。已阻断。"
+        else
+            echo "✗ pre-commit 门禁未通过（BLOCKED rc=$rc），commit 已阻断。修复后重试（或 --no-verify 跳过）。"
+        fi
+        exit "$rc"
+    fi
+else
+    # 2026-09-13 外部评审 v5 G2：实现文件缺失时**绝不能静默放行** ——
+    # 那等于把全部端仓的提交期门禁无声关闭；而 guard 哨兵正是被 pre-commit.py 调用的，
+    # 它够不着这个"循环起点"。按本仓 fail-closed 原则：出声 + exit 2。
+    echo "✗ harness 实现缺失：$HOOK"
+    echo "  提交期门禁无法执行，已按 fail-closed 阻断本次提交（不是业务代码问题）。"
+    echo "  修复：确认工程仓完整（git -C <HARNESS> status），或重跑 sandbox/install_hooks.sh <gate>"
+    exit 2
+fi
+exit 0

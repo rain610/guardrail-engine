@@ -1,0 +1,14 @@
+{
+  "name": "agentguard-tools",
+  "description": "Internal agentguard tooling: the agentguard plugin (MCP tools + usage skill) for local code-gate enforcement.",
+  "owner": {
+    "name": "agentguard"
+  },
+  "plugins": [
+    {
+      "name": "agentguard",
+      "source": "./plugins/agentguard",
+      "description": "agentguard gate as MCP tools + usage skill (internal use only)."
+    }
+  ]
+}

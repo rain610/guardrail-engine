@@ -1,0 +1,72 @@
+{
+  "client": "trae",
+  "client_version": "unknown",
+  "PreToolUse": {
+    "rc": 0,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "json",
+      "json_keys": [
+        "hookSpecificOutput",
+        "hookSpecificOutput.hookEventName",
+        "hookSpecificOutput.permissionDecision",
+        "hookSpecificOutput.permissionDecisionReason"
+      ]
+    },
+    "stderr": {
+      "kind": "empty"
+    }
+  },
+  "PostToolUse": {
+    "rc": 2,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "json",
+      "json_keys": [
+        "hookSpecificOutput",
+        "hookSpecificOutput.additionalContext",
+        "hookSpecificOutput.hookEventName"
+      ]
+    },
+    "stderr": {
+      "kind": "text"
+    }
+  },
+  "Stop": {
+    "rc": 2,
+    "payload_keys": [
+      "cwd",
+      "hook_event_name",
+      "tool_input",
+      "tool_name",
+      "tool_input.file_path"
+    ],
+    "stdout": {
+      "kind": "json",
+      "json_keys": [
+        "hookSpecificOutput",
+        "hookSpecificOutput.additionalContext",
+        "hookSpecificOutput.hookEventName"
+      ]
+    },
+    "stderr": {
+      "kind": "text"
+    }
+  },
+  "accepted_at": "2026-09-13T22:34:16",
+  "accepted_reason": "回填真实客户端版本（F4 修复后版本可测；指纹本身未变）",
+  "from_version": "unknown",
+  "to_version": "unknown"
+}

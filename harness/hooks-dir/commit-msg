@@ -1,0 +1,81 @@
+#!/bin/sh
+# eaglermc-harness dispatcher · commit-msg（指纹标记：链式调用前检测自身，防自递归）
+# eaglermc_harness 工程 commit-msg：保护循环 + 维护提交复核提示
+# 改受保护文件(checks/*.py, config/)但无 [harness] 标记 → 拦截；
+# 有标记 → 放行但打 ⚠ 复核提示（2026-09-12：防 agent 提交消息带标记就绕过人工确认）。
+set -e
+# ⚠ 自识守卫（N2 修复，第二轮评审）：本文件位于 harness/hooks-dir/，而该目录是**所有端仓**
+# 的 core.hooksPath 共享分发器——端仓提交时本脚本也会被执行。若不判断"当前提交的是不是
+# harness 工程仓本身"，它就会 cd 进工程仓去读**工程仓**的暂存区：轻则打出无关的复核提示，
+# 重则因工程仓恰好有暂存的 .py/.yaml 而 exit 1，**阻断别人端仓的提交**。
+# ⚠ 顺序很重要：必须在 `cd ENGROOT` **之前**取 TOP——git 以"被提交仓"的根为 cwd 运行 hook，
+#    cd 之后再取就恒等于工程仓，守卫等于没加（初版就写反了，实测才发现）。
+TOP=$(cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null && pwd) || exit 0
+ENGROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# ---- 评审 v8（Codex P1）：链式调用端仓原有 hook ---------------------------------
+# 设置 core.hooksPath 会**整体接管** hook 目录，仓里原有的同名 hook 会静默失效。
+# sandbox/install_hooks.sh 安装时会把它们备份到 <gitdir>/eaglermc-original-hooks/，
+# 这里在执行门禁**之前**调用同名备份 —— 接管不等于吞掉别人的质量流程。
+# 评审 v9（Codex P1-2）：查找顺序必须与 pre-commit 一致 —— worktree 里真实共享 hooks 在
+# **common-dir** 下，而 absolute-git-dir 指向 .git/worktrees/<名>（那里没有备份）→
+# 旧写法只查后者的结果是"接管了、但端仓原有 commit-msg 被静默跳过"。
+COMMON=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
+case "$COMMON" in
+    /*|[A-Za-z]:[\\/]*) ;;
+    * ) [ -n "$TOP" ] && COMMON="$TOP/$COMMON" ;;
+esac
+GITDIR=$(git rev-parse --absolute-git-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null || echo "")
+ORIG=""
+for _base in "$COMMON" "$GITDIR"; do
+    [ -n "$_base" ] || continue
+    if [ -f "$_base/eaglermc-original-hooks/commit-msg" ]; then
+        ORIG="$_base/eaglermc-original-hooks/commit-msg"
+        break
+    fi
+done
+if [ -n "$ORIG" ] && head -2 "$ORIG" | grep -q "eaglermc-harness dispatcher" 2>/dev/null; then
+    # 评审 v9（V9-7）：备份可能就是本分发器自己（重复安装/误备份）→ 链式调用会自递归。
+    echo "[chain] ⚠ 备份命中本分发器指纹 → 跳过链式调用（防自递归）"
+    ORIG=""
+fi
+if [ -n "$ORIG" ]; then
+    echo "[chain] 调用端仓原有 commit-msg：$ORIG"
+    if [ -x "$ORIG" ]; then "$ORIG" "$@"; else sh "$ORIG" "$@"; fi
+    chained_rc=$?
+    if [ "$chained_rc" -ne 0 ]; then
+        echo "✗ 端仓原有 commit-msg 未通过（由 eaglermc-harness 链式调用），本次提交已阻断。"
+        exit "$chained_rc"
+    fi
+fi
+# ------------------------------------------------------------------------------
+
+[ "$TOP" = "$ENGROOT" ] || exit 0
+cd "$ENGROOT"
+
+MSG_FILE="$1"
+if [ ! -f "$MSG_FILE" ]; then exit 0; fi
+MSG=$(cat "$MSG_FILE")
+# 暂存的改动里是否有受保护文件（排除 __pycache__/.pyc 构建产物）
+# 评审 v9（V9-6）：受保护面还要覆盖**没有扩展名的分发器本体**（hooks-dir/ 下两个），
+# 否则改它们不算"碰门禁文件"，[harness] 标记把关形同虚设。
+CHANGED=$(git diff --cached --name-only | grep -v '__pycache__' \
+  | grep -E '\.(py|yaml)$|(^|/)harness/hooks-dir/(pre-commit|commit-msg)$' || true)
+if [ -z "$CHANGED" ]; then
+    exit 0  # 没改受保护文件，放行
+fi
+case "$MSG" in
+    *"[harness]"*|*harness-maintenance*|*HARNESS:*)
+        echo "⚠ [harness 复核提示] 本提交改动了门禁文件，请人工确认改动符合预期："
+        echo "$CHANGED" | sed 's/^/    /'
+        echo "  （门禁文件 = 所有提交强制检查的规则来源；确认无误可忽略本提示）"
+        # 复杂度预算（2026-09-13 外部评审 v3 Q5 的可执行版本）：新增部件必须答上三问，
+        # 否则别加 —— harness 自身零件数在快速增长，靠这句把关比靠自觉可靠。
+        echo "  【新增部件三问】① 它消灭了哪个具体维护负担？② 它自己的锁/验收命令是什么？③ 它替代/简化了什么？"
+        # 第四问（2026-09-13 外部评审 v4 的主题，很准）：新加的安全机制最容易在**边界上报平安**
+        # （本轮 F1：判定器把 rc=2 当"拦下了"；F2：探针没写出来被当"模型偷懒"；F3：--accept 无约束）。
+        echo "  【第四问】这个新机制在最坏/边界情形下会不会倾向报平安？（报平安比报错更危险）"
+        exit 0;;  # 维护标记，放行 + 提示
+esac
+echo "✗ 本次改动触碰受保护的 harness 文件(checks/*.py / config) 但提交消息无 [harness] 标记。"
+echo "  确认是 harness 维护请重试：git commit -m \"[harness] <说明>\""
+exit 1

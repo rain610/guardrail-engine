@@ -1,0 +1,14 @@
+{
+  "name": "eaglermc-tools",
+  "description": "Internal eaglermc_harness tooling: the eaglermc-gate plugin (MCP tools + usage skill) for local code-gate enforcement.",
+  "owner": {
+    "name": "eaglermc_harness"
+  },
+  "plugins": [
+    {
+      "name": "eaglermc-gate",
+      "source": "./plugins/eaglermc-gate",
+      "description": "eaglermc_harness gate as MCP tools + usage skill (internal use only)."
+    }
+  ]
+}
