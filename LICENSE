@@ -1,17 +1,21 @@
-内部专有软件许可（Internal Proprietary License）
+MIT License
 
-版权所有 (c) 2026 eaglermc_harness 项目组。保留所有权利。
+Copyright (c) 2026 AgentGuard
 
-本软件及其全部源码、文档与打包产物（含 eaglermc_harness 门禁引擎、附属脚本、
-插件 bundle 与相关文档，以下统称「本软件」）仅限公司内部使用，用于内部研发
-与质量流程。
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-未经项目组书面许可，任何个人或组织不得：
-1. 将本软件或其任何部分对外发布、传播、转售、出借或以其他方式提供给第三方；
-2. 将本软件用于公司外部项目或对外商业交付；
-3. 移除或修改本文件及源码中的版权、许可声明。
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-本软件按「现状」提供，不附带任何明示或暗示的担保；使用本软件产生的风险由
-使用者自行承担。
-
-对外边界决策记录：《决策记录》（2026-09-14）：对外边界 = 完全内部。
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
