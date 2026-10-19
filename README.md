@@ -1,21 +1,15 @@
-# eaglermc_harness
+# AgentGuard
 
-> 多客户、多端共用的统一代码门禁工程。
-> 当前覆盖 12 家客户、PC / H5 / .NET 三端，共 35 个 gate（34 业务 + 1 自检，全部启用）。
+[![CI](https://github.com/rain610/agentguard/actions/workflows/ci.yml/badge.svg)](https://github.com/rain610/agentguard/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python: 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](https://github.com/rain610/agentguard)
 
-`eaglermc_harness` 把可机械判定的代码约束从各业务仓库收敛到一处：
+> 零依赖、可扩展的代码门禁引擎 —— 把"规范"从"靠人记"变成"靠机器判"。
 
-- **统一规则**：PC / H5 / 后端共享同一套规则模型与调度入口。
-- **统一接入**：AGENTS.md、技能、MCP、CLI、编辑器 hooks、git hooks 共用同一份判定内核。
-- **统一留痕**：每次判定写入台账，可查看运行摘要、规则覆盖度与接入状态。
-- **零第三方依赖**：引擎只依赖 Python 标准库，装好 Python 即可运行。
-
-**定位要说准：它不是 lint 工具。** ESLint / SonarQube 那类**代码分析器**只告诉你"这里
-可能有问题"；本工程是**策略强制平面**（policy / enforcement plane）——它决定**这次提交过不过**。
-对标物是 Claude Code 的 hooks / permissions、Codex 的 execpolicy，而不是 ESLint。
-
-它也不替代 `AGENTS.md`：`AGENTS.md` 管架构意图、业务语义这类**需要人 / 模型判断**的事，
-本工程管**能被机械判定**的事。两者是分工。
+AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交期自动检查代码是否符合团队约定。
+它不是 lint 工具（ESLint / SonarQube 那类代码分析器），而是**策略强制平面**（policy enforcement plane）
+—— 决定"这次提交过不过"。
 
 ### 硬前置条件
 

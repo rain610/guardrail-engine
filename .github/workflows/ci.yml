@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Verify zero dependencies
+        run: |
+          python -c "
+          import ast, sys, os
+          for root, dirs, files in os.walk('checks'):
+              for f in files:
+                  if f.endswith('.py'):
+                      path = os.path.join(root, f)
+                      with open(path) as fh:
+                          tree = ast.parse(fh.read())
+                      for node in ast.walk(tree):
+                          if isinstance(node, ast.Import):
+                              for alias in node.names:
+                                  if alias.name not in sys.stdlib_module_names:
+                                      print(f'FAIL: {path} imports {alias.name}')
+                                      sys.exit(1)
+                          elif isinstance(node, ast.ImportFrom):
+                              if node.module and node.module.split('.')[0] not in sys.stdlib_module_names:
+                                  print(f'FAIL: {path} imports {node.module}')
+                                  sys.exit(1)
+          print('OK: all imports are stdlib')
+          "
+
+      - name: Validate config structure
+        run: |
+          python harness/run_gate.py --validate --structure-only || true
+
+      - name: Run fast tests
+        run: |
+          python sandbox/run_tests.py --fast
+
+      - name: Run unit tests
+        run: |
+          python -m unittest discover -s tests -v
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Python syntax
+        run: |
+          python -m py_compile checks/*.py harness/*.py agentguard/*.py
+
+      - name: Verify UTF-8 encoding
+        run: |
+          python -c "
+          import os, sys
+          for root, dirs, files in os.walk('.'):
+              if '.git' in root or '__pycache__' in root:
+                  continue
+              for f in files:
+                  if f.endswith('.py') or f.endswith('.md') or f.endswith('.yaml'):
+                      path = os.path.join(root, f)
+                      try:
+                          with open(path, encoding='utf-8') as fh:
+                              fh.read()
+                      except UnicodeDecodeError as e:
+                          print(f'FAIL: {path} is not valid UTF-8: {e}')
+                          sys.exit(1)
+          print('OK: all text files are valid UTF-8')
+          "
