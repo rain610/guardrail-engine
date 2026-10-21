@@ -137,7 +137,7 @@ shell_body() { # $1=工具名
   cat <<EOF
 # $1 全局引导（薄壳，指向统一权威源）
 本文件内容已统一迁移至：\`$GLOBAL_SRC_WIN\`（所有 AI 工具共用一份，改一处全部生效）。
-**任何 AI 助手在此机器上工作前，请先完整阅读上述文件**（含 AgentGuard 客户仓库守则与通用编码准则）。
+**任何 AI 助手在此机器上工作前，请先完整阅读上述文件**（含 AgentGuard 受管仓库守则与通用编码准则）。
 MCP/codebase-memory 等工具自动注入的内容不受影响，照常生效。
 EOF
 }
@@ -206,9 +206,9 @@ make_shell "$HOME/.codebuddy/rules/agentguard.md" "codebuddy"
 # 原先这两节各自用 `/d/MyProject/aiauto/agentguard_*` **通配本机目录**，问题有三层：
 #   ① 同事机器上零匹配 → 「检查过了」与「什么都没检查」在屏幕上长得一模一样（静默失效）；
 #   ② 通配的是**目录**，不是**受管仓**（本机实测多扫出 android_new / tool 等没接门禁的目录）；
-#   ③ 与 config 里真正生效的 repos 段无关 —— 改了 local.yaml，这两节照样看老地方。
+#   ③ 与 config 里真正生效的 repos 段无关 —— 改了本地覆盖层（harness.local.toml），这两节照样看老地方。
 # 改为从**生效配置**枚举（每个 gate 都带 _repo_path），与 sandbox/setup_machine.sh 同一范式。
-# 引擎自身（harness_self）不在范围内：它不是客户仓；自己那份门禁由 core.hooksPath 指向
+# 引擎自身（harness_self）不在范围内：它不是受管仓；自己那份门禁由 core.hooksPath 指向
 # harness/hooks-dir 自管，另有 checks/harness_self_check.py 体检。
 MANAGED_REPOS=$($HARNESS_PY - "$HARNESS_WIN" <<'PYEOF'
 import sys, os
@@ -230,7 +230,7 @@ for name, g in sorted(all_gates().items()):
 for rp in order:
     print("%s\t%s\t%s" % (rp, "OK" if os.path.isdir(rp) else "MISSING", " ".join(names[rp])))
 PYEOF
-) || { echo "✗ 读取生效配置失败（多半是 config/harness.local.yaml 语法错）—— 修好后重跑本脚本"; exit 1; }
+) || { echo "✗ 读取生效配置失败（多半是 config/harness.local.toml 语法错）—— 修好后重跑本脚本"; exit 1; }
 
 TAB=$(printf '\t')
 # 计数在循环**外**重算：这两节的循环体在管道子壳里，`+=1` 改不到外面（setup_machine.sh 为同一件事
@@ -239,12 +239,12 @@ REPO_TOTAL=$(printf '%s\n' "$MANAGED_REPOS" | grep -c .)
 REPO_OK=$(printf '%s\n' "$MANAGED_REPOS" | awk -F'\t' '{sub(/\r$/, "", $2)} $2 == "OK"' | grep -c .)
 if [ "$REPO_TOTAL" -eq 0 ]; then
   echo "✗ 本机没有任何受管仓库（生效配置里 0 条）—— 后两节靠它才知道该检查谁："
-  echo "    · 还没写 config/harness.local.yaml？先跑：sh $HARNESS_WIN/sandbox/setup_machine.sh"
+  echo "    · 还没写 config/harness.local.toml？先跑：sh $HARNESS_WIN/sandbox/setup_machine.sh"
   echo "    · WSL 下 repos 段要填 **WSL 视角**的路径（如 /mnt/d/...），不是 D:/..."
   echo "    · 空 ≠ 都没问题，空 = 什么都没检查。"
 elif [ "$REPO_OK" -eq 0 ]; then
   echo "✗ 生效配置里有 $REPO_TOTAL 条受管仓库路径，但没有一条在本机存在（0/$REPO_TOTAL）——"
-  echo "    · 换机器 / 换盘符后要把 repos 段改成你机器的实际路径（见 config/harness.local.yaml）"
+  echo "    · 换机器 / 换盘符后要把 repos 段改成你机器的实际路径（见 config/harness.local.toml）"
 fi
 
 echo "--- 1b. IDE 项目级规则检查（AGENTS.md 单源 + CLAUDE.md @import 桥接，2026-09-10 收敛） ---"

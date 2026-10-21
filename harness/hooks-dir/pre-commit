@@ -96,7 +96,7 @@ fi
 # allowlist/配置类故障原先只在工程仓自检时可见；端仓提交走 pc/h5 gate，而 pc/h5 ruleset
 # 遇到 allowlist 加载失败只是**出声后继续**（组件规则用空集合跑）→ 某一端的组件收敛会静默降级。
 # 因此在提交链的**起点**（与 gate 归属无关）先跑工程仓自检：坏了就 fail-closed（rc=2），
-# 而不是让某个客户仓的规则悄悄变成"不再拦"。
+# 而不是让某个受管仓的规则悄悄变成"不再拦"。
 SELF="$HARNESS/checks/harness_self_check.py"
 if [ -f "$SELF" ]; then
     $HARNESS_PY "$SELF" --repo "$HARNESS" >/dev/null 2>&1

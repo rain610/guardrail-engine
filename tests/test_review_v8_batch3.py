@@ -276,8 +276,8 @@ class TestD4HeuristicBoundary(unittest.TestCase):
     def test_regex_rules_tagged(self):
         sys.path.insert(0, os.path.join(ROOT, "checks"))
         import example_ruleset as E
-        tagged = sorted(r.rule_id for r in E.EXAMPLE_RULES if getattr(r, "heuristic", False))
-        regex_ids = sorted(r.rule_id for r in E.EXAMPLE_RULES if r.pattern.pattern)
+        tagged = sorted(r.id for r in E.EXAMPLE_RULES if getattr(r, "heuristic", False))
+        regex_ids = sorted(r.id for r in E.EXAMPLE_RULES if isinstance(r, E.RegexRule))
         self.assertEqual(tagged, regex_ids,
                          "单行正则规则必须全部标为启发式：标记 %s / 正则规则 %s"
                          % (tagged, regex_ids))
@@ -287,6 +287,30 @@ class TestD4HeuristicBoundary(unittest.TestCase):
         r = subprocess.run([sys.executable, "checks/harness_self_check.py"], cwd=ROOT,
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
         self.assertIn("启发式", (r.stdout or ""), "自检输出必须列出启发式规则口径（能力边界要可见）")
+
+    def test_selfcheck_heuristic_follows_registry(self):
+        """扫描来源必须跟 registry.RULESETS 走，不许写死 example_ruleset。"""
+        sys.path.insert(0, os.path.join(ROOT, "checks"))
+        import importlib
+        import registry
+        sc = importlib.import_module("harness_self_check")
+        tmpdir = tempfile.mkdtemp(prefix="selfcheck-ruleset-")
+        self.addCleanup(_rmtree_force, tmpdir)
+        mod_name = "_tmp_heuristic_ruleset"
+        with open(os.path.join(tmpdir, mod_name + ".py"), "w", encoding="utf-8") as f:
+            f.write("class _H:\n"
+                    "    id = 'NEW-HEURISTIC'\n"
+                    "    heuristic = True\n"
+                    "HEUR_RULES = [_H()]\n")
+        sys.path.insert(0, tmpdir)
+        old = registry.RULESETS
+        registry.RULESETS = {"new_gate_check.py": mod_name}
+        try:
+            ids = sc.heuristic_rules()
+        finally:
+            registry.RULESETS = old
+            sys.path.remove(tmpdir)
+        self.assertIn("NEW-HEURISTIC", ids, "新登记的 ruleset 没被自检扫描到（能力边界会漏报）")
 
 
 class TestD5AuditEvidenceStrength(unittest.TestCase):

@@ -93,15 +93,15 @@ def _run(cmd, cwd=None, env=None):
 
 
 def _base_repo_keys():
-    """base(config/harness.yaml) 里各 gate 引用的 repo 键。
+    """base(config/harness.toml) 里各 gate 引用的 repo 键。
 
-    纯读文件（`_load_yaml`），**不经** `load()` —— 免得受本进程环境里的 HARNESS_CONFIG
+    纯读文件（`_load_file`），**不经** `load()` —— 免得受本进程环境里的 HARNESS_CONFIG
     影响。用途见 test_findings_survive_diagnostic_flood：要把"每个 gate 的仓都不存在"
     这个 CI 前提**在本机复刻**出来。
     """
     sys.path.insert(0, os.path.join(ROOT, "harness"))
     import _config
-    cfg = _config._load_yaml(os.path.join(ROOT, "config", "harness.yaml"))
+    cfg = _config._load_file(os.path.join(ROOT, "config", "harness.toml"))
     keys = {(g or {}).get("repo") for g in (cfg.get("gates") or {}).values()}
     return sorted(k for k in keys if k)
 
@@ -131,15 +131,15 @@ class _Fixture:
         self.repo = os.path.join(self.dir, "repo_gate")
         os.makedirs(os.path.join(self.repo, "src"), exist_ok=True)
         subprocess.run(["git", "init", "-q"], cwd=self.repo, capture_output=True)
-        self.cfg = os.path.join(self.dir, "cfg.yaml")
+        self.cfg = os.path.join(self.dir, "cfg.toml")
         with open(self.cfg, "w", encoding="utf-8", newline="") as f:
-            f.write("repos:\n"
-                    f"  t_gate: {self.repo.replace(chr(92), '/')}\n"
-                    "gates:\n"
-                    "  t_gate:\n"
-                    "    enabled: true\n"
-                    "    repo: t_gate\n"
-                    "    script: checks/example_code_check.py\n")
+            f.write("[repos]\n"
+                    "t_gate = \"%s\"\n"
+                    "[gates.t_gate]\n"
+                    "enabled = true\n"
+                    "repo = \"t_gate\"\n"
+                    "script = \"checks/example_code_check.py\"\n"
+                    % self.repo.replace(chr(92), "/"))
         self.env = dict(os.environ, HARNESS_CONFIG=self.cfg)
 
     def write(self, rel, text):
@@ -197,6 +197,34 @@ class TestExampleRuleReachesRealEntry(unittest.TestCase):
                          f"全量扫描应报出违规\n{r.stdout[-600:]}")
         self.assertIn("NO-CONSOLE", r.stdout)
 
+    def test_relative_repo_is_resolved_against_callers_cwd(self):
+        """`--repo` 相对路径必须按调用方 cwd 解析并绝对化后再传给子进程。
+
+        子进程以 cwd=<HARNESS> 启动，相对路径原样传下去会指到引擎仓：在受管仓里
+        `run_gate <gate> --repo . <file>` 会变成"查引擎仓里的同名路径" —— 文件找不到
+        （修复后 rc=2）或查错对象。"""
+        self.fx.write("src/bad.vue", BAD_FILE)
+        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_gate",
+                  "--repo", os.path.basename(self.fx.repo), "src/bad.vue"],
+                 cwd=self.fx.dir, env=self.fx.env)
+        self.assertEqual(r.returncode, 1,
+                         f"相对 --repo 没有按调用方 cwd 解析\n{r.stdout[-800:]}{r.stderr[-400:]}")
+        self.assertIn("NO-CONSOLE", r.stdout + r.stderr)
+
+
+@_slow("真跑 demo_gate.sh（起两次 run_gate）")
+class TestDemoGateScript(unittest.TestCase):
+    """首屏演示锁：demo 必须真的先拦后放，而不是打印一段看似成功的文案。"""
+
+    def test_demo_intercepts_then_passes(self):
+        if not _SH:
+            self.skipTest("无可用 sh")
+        r = _run([_SH, os.path.join(ROOT, "sandbox", "demo_gate.sh")])
+        out = (r.stdout or "") + (r.stderr or "")
+        self.assertEqual(r.returncode, 0, "demo 自身失败了：\n" + out[-1200:])
+        self.assertIn("拦截成功", out, "demo 没有证明违规被拦：\n" + out[-1200:])
+        self.assertIn("放行成功", out, "demo 没有证明修复后放行：\n" + out[-1200:])
+
 
 @_slow("run_gate 参数链路（起子进程）")
 class TestRunGateModeValue(unittest.TestCase):
@@ -235,16 +263,16 @@ class _TwoGateFixture(_Fixture):
     def __init__(self, script, pairs):
         super().__init__()
         repo = self.repo.replace(chr(92), "/")
-        lines = ["repos:"]
+        lines = ["[repos]"]
         for name, _extra in pairs:
-            lines.append(f"  {name}: {repo}")
-        lines.append("gates:")
+            lines.append('%s = "%s"' % (name, repo))
         for name, extra in pairs:
-            lines.append(f"  {name}:")
-            lines.append("    enabled: true")
-            lines.append(f"    repo: {name}")
-            lines.append(f"    script: {script}")
-            lines.extend("    " + e for e in extra)
+            lines.append("")
+            lines.append("[gates.%s]" % name)
+            lines.append("enabled = true")
+            lines.append('repo = "%s"' % name)
+            lines.append('script = "%s"' % script)
+            lines.extend(extra)
         with open(self.cfg, "w", encoding="utf-8", newline="") as f:
             f.write("\n".join(lines) + "\n")
         self.env = dict(os.environ, HARNESS_CONFIG=self.cfg)
@@ -1153,10 +1181,15 @@ class TestLedgerEntryFallback(unittest.TestCase):
         self.vue = os.path.join(self.repo, "src", "a.vue")
         with open(self.vue, "w", encoding="utf-8", newline="") as f:
             f.write("<template><div /></template>\n<script setup>\nconst a = 1;\n</script>\n")
-        self.cfg = os.path.join(self.dir, "cfg.yaml")
+        self.cfg = os.path.join(self.dir, "cfg.toml")
         with open(self.cfg, "w", encoding="utf-8", newline="\n") as f:
-            f.write("repos:\n  t_gate: %s\ngates:\n  t_gate:\n    enabled: true\n    repo: t_gate\n"
-                    "    script: checks/example_code_check.py\n" % self.repo.replace("\\", "/"))
+            f.write("[repos]\n"
+                    "t_gate = \"%s\"\n"
+                    "[gates.t_gate]\n"
+                    "enabled = true\n"
+                    "repo = \"t_gate\"\n"
+                    "script = \"checks/example_code_check.py\"\n"
+                    % self.repo.replace("\\", "/"))
         self.log = os.path.join(self.dir, "gate_log.jsonl")
 
     def tearDown(self):

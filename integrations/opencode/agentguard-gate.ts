@@ -246,7 +246,7 @@ function runHook(repoDir: string, filePath: string): { rc: number; msg: string }
   }
 }
 
-const EaglermcHarnessGate = async (_ctx: any, _options: Record<string, unknown> = {}) => {
+const AgentGuardGate = async (_ctx: any, _options: Record<string, unknown> = {}) => {
   return {
     // 编辑期闭环：AI 每次真正写文件后自动跑门禁，结论回灌进 tool output（模型可见）
     "tool.execute.after": async (input: any, output: any) => {
@@ -309,5 +309,5 @@ const EaglermcHarnessGate = async (_ctx: any, _options: Record<string, unknown> 
 
 export default {
   id: "agentguard-gate",
-  server: EaglermcHarnessGate,
+  server: AgentGuardGate,
 }

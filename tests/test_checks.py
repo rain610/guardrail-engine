@@ -302,24 +302,108 @@ class TestMiniYamlOutOfSubset(unittest.TestCase):
         self.assertIn("第 4 行", str(cm.exception))
 
     def test_real_config_emits_no_warning(self):
-        """反向锁：真配置（config/harness.yaml）必须零告警。
+        """反向锁：真配置（config/harness.toml）必须零告警且读得出 gate。
 
         否则这套探测一上线就是满屏噪音，人人学会忽略它 —— 比不报还糟。
+        TOML 由标准库解析，本不该产生 `[config-warn]`；这条同时守住"别把真配置写坏"。
         """
         _config._warned.clear()
         buf = io.StringIO()
         old = sys.stderr
         sys.stderr = buf
         try:
-            cfg = _config._load_yaml(os.path.join(ROOT, "config", "harness.yaml"))
+            cfg = _config._load_file(os.path.join(ROOT, "config", "harness.toml"))
         finally:
             sys.stderr = old
         warns = [l for l in buf.getvalue().splitlines() if "[config-warn]" in l]
         self.assertGreaterEqual(len(cfg.get("gates") or {}), 2, "没读到 gate，判据坏了")
-        self.assertEqual(warns, [], "真配置触发了超纲告警（要么配置越界，要么探测误报）")
+        self.assertEqual(warns, [], "真配置触发了告警：%r" % warns)
 
 
-# ------------------------------------------------- 本地覆盖层（harness.local.yaml）
+class TestTomlConfig(unittest.TestCase):
+    """TOML 主格式（2026-10-21）：标准库 tomllib 解析，不再走自研子集。
+
+    这组锁的是「主格式真的被支持」：注释 / 数组 / Windows 路径 / 坏文件转 ConfigError /
+    扩展名分派。旧版 YAML 的兼容性由上面的 TestConfigParse / TestMiniYamlOutOfSubset 继续锁。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="htoml_")
+
+    def tearDown(self):
+        _rmtree_force(self.tmp)
+
+    def _load(self, text):
+        p = os.path.join(self.tmp, "cfg.toml")
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        return _config._load_toml(p)
+
+    def test_scalars_arrays_and_comments(self):
+        got = self._load(
+            "# 顶层注释\n"
+            "version = 2\n"
+            "flag_on = true\n"
+            "flag_off = false\n"
+            "quoted = \"hello world\"\n"
+            "lst = [\"pre_commit\", \"post_edit\"]\n"
+            "empty_lst = []\n"
+            "\n"
+            "[repos]\n"
+            "t_pc = \"D:/tmp/repo_pc\"   # 行尾注释\n"
+            "\n"
+            "[gates.t_pc]\n"
+            "enabled = true\n"
+            "repo = \"t_pc\"\n"
+            "run_on = [\"pre_commit\"]\n")
+        self.assertEqual(got["version"], 2)
+        self.assertIs(got["flag_on"], True)
+        self.assertIs(got["flag_off"], False)
+        self.assertEqual(got["quoted"], "hello world")
+        self.assertEqual(got["lst"], ["pre_commit", "post_edit"])
+        self.assertEqual(got["empty_lst"], [])
+        self.assertEqual(got["repos"]["t_pc"], "D:/tmp/repo_pc")
+        self.assertEqual(got["gates"]["t_pc"]["run_on"], ["pre_commit"])
+        self.assertIs(got["gates"]["t_pc"]["enabled"], True)
+
+    def test_windows_path_forms(self):
+        """反斜杠在 TOML 基本字符串里是转义符：要么用正斜杠，要么用字面量字符串。"""
+        got = self._load(
+            "[repos]\n"
+            "a = \"D:/Rain/repo\"\n"
+            "b = 'D:\\Rain\\repo'\n")
+        self.assertEqual(got["repos"]["a"], "D:/Rain/repo")
+        self.assertEqual(got["repos"]["b"], "D:\\Rain\\repo")
+
+    def test_backslash_in_basic_string_is_rejected(self):
+        with self.assertRaises(_config.ConfigError) as cm:
+            self._load("[repos]\na = \"D:\\Rain\\repo\"\n")
+        self.assertIn("TOML", str(cm.exception))
+
+    def test_malformed_toml_is_config_error(self):
+        """坏配置必须转 ConfigError（run_gate 报 rc=2），不能裸崩成 rc=1。"""
+        for text in ("[repos\n", "a = [1, 2\n", "a = 1\na = 2\n"):
+            with self.assertRaises(_config.ConfigError, msg="未转 ConfigError：%r" % text):
+                self._load(text)
+
+    def test_extension_dispatch(self):
+        """.toml 走 tomllib；.yaml/.yml 走兼容层；别的扩展名明确报错（不猜内容）。"""
+        toml = os.path.join(self.tmp, "a.toml")
+        yaml = os.path.join(self.tmp, "a.yaml")
+        other = os.path.join(self.tmp, "a.json")
+        with open(toml, "w", encoding="utf-8") as f:
+            f.write("a = 1\n")
+        with open(yaml, "w", encoding="utf-8") as f:
+            f.write("a: 1\n")
+        with open(other, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+        self.assertEqual(_config._load_file(toml), {"a": 1})
+        self.assertEqual(_config._load_file(yaml), {"a": "1"})   # 旧版解析器不做类型推断
+        with self.assertRaises(_config.ConfigError):
+            _config._load_file(other)
+
+
+# ------------------------------------------------- 本地覆盖层（TOML / 旧版 YAML）
 class TestLocalOverride(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="hloc_")
@@ -363,6 +447,79 @@ class TestLocalOverride(unittest.TestCase):
         g = _config.gate("t_pc")
         self.assertEqual(os.path.normcase(g["_repo_path"]), os.path.normcase("E:/machB/repo_pc"))
         self.assertEqual(g["mode"], "strict")  # 继承 base 策略
+
+    def test_local_toml_overrides_repo_path(self):
+        """TOML 主路径：base TOML + local TOML，路径覆盖、策略继承。"""
+        _config._HARNESS_ROOT = self.tmp
+        cfg_dir = os.path.join(self.tmp, "config")
+        os.makedirs(cfg_dir)
+        self._write(os.path.join("config", "harness.toml"),
+                    "[repos]\n"
+                    "t_pc = \"D:/machA/repo_pc\"\n"
+                    "\n"
+                    "[gates.t_pc]\n"
+                    "enabled = true\n"
+                    "repo = \"t_pc\"\n"
+                    "mode = \"strict\"\n")
+        self._write(os.path.join("config", "harness.local.toml"),
+                    "[repos]\n"
+                    "t_pc = \"E:/machB/repo_pc\"\n")
+        g = _config.gate("t_pc")
+        self.assertEqual(os.path.normcase(g["_repo_path"]), os.path.normcase("E:/machB/repo_pc"))
+        self.assertEqual(g["mode"], "strict")
+
+    def test_toml_base_wins_over_legacy_yaml(self):
+        """两种 base 同时存在时 TOML 为准（旧 YAML 留着不生效，但不能悄悄反超）。
+
+        与 local 层同一纪律：**必须出声**说清被忽略的是哪一份 —— 改了 YAML 却
+        不生效、屏幕上一切正常，正是本仓反复栽过的「看起来配好了」。
+        """
+        _config._HARNESS_ROOT = self.tmp
+        cfg_dir = os.path.join(self.tmp, "config")
+        os.makedirs(cfg_dir)
+        self._write(os.path.join("config", "harness.toml"),
+                    "[repos]\nt_pc = \"D:/from-toml\"\n"
+                    "[gates.t_pc]\nenabled = true\nrepo = \"t_pc\"\n")
+        self._write(os.path.join("config", "harness.yaml"),
+                    "repos:\n  t_pc: D:/from-yaml\n"
+                    "gates:\n  t_pc:\n    enabled: true\n    repo: t_pc\n")
+        _config._warned.clear()
+        buf = io.StringIO()
+        old = sys.stderr
+        sys.stderr = buf
+        try:
+            cfg = _config.load()
+        finally:
+            sys.stderr = old
+        self.assertEqual(os.path.normcase(cfg["repos"]["t_pc"]),
+                         os.path.normcase("D:/from-toml"))
+        self.assertIn("harness.yaml", buf.getvalue(),
+                      "两种 base 格式并存却没说出被忽略的那份：%r" % buf.getvalue())
+
+    def test_both_local_formats_toml_wins_and_warns(self):
+        """两种 local 同时存在：TOML 生效，且**出声**说清 YAML 那份被忽略。"""
+        _config._HARNESS_ROOT = self.tmp
+        cfg_dir = os.path.join(self.tmp, "config")
+        os.makedirs(cfg_dir)
+        self._write(os.path.join("config", "harness.toml"),
+                    "[repos]\nt_pc = \"\"\n"
+                    "[gates.t_pc]\nenabled = true\nrepo = \"t_pc\"\n")
+        self._write(os.path.join("config", "harness.local.toml"),
+                    "[repos]\nt_pc = \"D:/from-toml\"\n")
+        self._write(os.path.join("config", "harness.local.yaml"),
+                    "repos:\n  t_pc: D:/from-yaml\n")
+        _config._warned.clear()
+        buf = io.StringIO()
+        old = sys.stderr
+        sys.stderr = buf
+        try:
+            cfg = _config.load()
+        finally:
+            sys.stderr = old
+        self.assertEqual(os.path.normcase(cfg["repos"]["t_pc"]),
+                         os.path.normcase("D:/from-toml"))
+        self.assertIn("harness.local.yaml", buf.getvalue(),
+                      "两种格式并存却没说出被忽略的那份：%r" % buf.getvalue())
 
     def test_deep_merge_preserves_base_keys(self):
         base = {"repos": {"a": "1", "b": "2"}, "gates": {"g": {"mode": "strict"}}}
@@ -443,6 +600,18 @@ class TestRuleBase(unittest.TestCase):
         plain = format_finding(Finding("PC-Y", "纯消息"))
         self.assertNotIn("See:", plain)
         self.assertIn("[PC-Y]", plain)
+
+    def test_run_keeps_explicit_finding_severity(self):
+        """统一协议：Finding 显式级别优先，未指定才用规则级 severity。"""
+        class PerHit(Rule):
+            id = "PER-HIT"
+            severity_default = Severity.ERROR
+
+            def check(self, ctx):
+                return [Finding(self.id, "显式", severity=Severity.WARN),
+                        Finding(self.id, "默认")]
+        out = PerHit().run(CheckContext(path=Path("/x")))
+        self.assertEqual([f.severity for f in out], [Severity.WARN, Severity.ERROR])
 
 
 class TestRegistry(unittest.TestCase):
@@ -607,6 +776,7 @@ class TestGuard(unittest.TestCase):
             "checks/new_check.py": True,                # checks/ 下新增 py 也算
             "checks/components_allowlist.yaml": True,
             "checks/components_allowlist_h5.yaml": True,
+            "config/harness.toml": True,
             "config/harness.yaml": True,
             "config/other.yaml": False,
             # 2026-09-12 P0-2：调度层纳入保护（评审指出改弱 run_gate/hook 不提交时 guard 零反应）
@@ -618,10 +788,142 @@ class TestGuard(unittest.TestCase):
             "harness/hooks/pre-commit.py": True,
             "harness/hooks-dir/pre-commit": True,
             "harness/agents/auto-gate.py": True,
+            # 2026-10-21 外部评审 5.7-C：审计器 / 锁清单也是「让证据好看」的入口
+            "harness/coverage.py": True,
+            "harness/_eol_policy.py": True,
+            "sandbox/mutation_smoke.py": True,
+            "tests/test_lock_inventory.py": True,
+            "tests/lock-inventory.json": True,
+            "sandbox/run_tests.py": False,
+            "tests/test_checks.py": False,
             "harness/README.md": False,
             "checks/README.md": False,
         }
         for rel, want in cases.items():
             self.assertEqual(guard._in_protected(rel), want, rel)
+
+
+# ---------------------------------------------------------------- example gate fail-closed
+class TestExampleGateFailsClosed(unittest.TestCase):
+    """点名了文件就必须查：缺失 / 读不到一律 rc=2。
+
+    修复前：缺失文件被列表推导静默过滤 →「无目标文件」→ rc=0；读取异常被 `continue`
+    吞掉 → 同样 rc=0。提交期 run_gate 把改动文件作为位置参数传进来，路径口径一旦
+    对不上（相对/绝对、临时文件被删），整次提交就会**没查却判通过**。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="egfail_")
+        self.repo = os.path.join(self.tmp, "repo")
+        os.makedirs(os.path.join(self.repo, "src"))
+
+    def tearDown(self):
+        _rmtree_force(self.tmp)
+
+    def _run(self, *files):
+        return subprocess.run(
+            [sys.executable, os.path.join(ROOT, "checks", "example_code_check.py"),
+             "--repo", self.repo] + list(files),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL, timeout=120)
+
+    def test_missing_requested_file_is_rc2(self):
+        r = self._run("src/does-not-exist.js")
+        out = (r.stdout or "") + (r.stderr or "")
+        self.assertEqual(r.returncode, 2, "点名文件缺失却判了通过（fail-open）：\n" + out[-600:])
+        self.assertIn("不存在", out, "没有说清是哪个文件缺失：\n" + out[-600:])
+        self.assertNotIn("全部通过", out, "缺失文件被当成了通过：\n" + out[-600:])
+
+    def test_one_missing_file_does_not_hide_behind_existing_one(self):
+        p = os.path.join(self.repo, "src", "ok.js")
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            f.write("const x = 1;\n")
+        r = self._run(p, "src/missing.js")
+        out = (r.stdout or "") + (r.stderr or "")
+        self.assertEqual(r.returncode, 2, "部分文件缺失时仍在只查存在的那部分：\n" + out[-600:])
+
+    def test_unreadable_file_is_rc2(self):
+        """读取失败必须与「没违规」分得开：异常不许被 `continue` 吞掉。"""
+        import example_code_check as ec
+        p = os.path.join(self.repo, "src", "bad.js")
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            f.write("const x = 1;\n")
+
+        def boom(_p):
+            raise PermissionError("denied by test")
+
+        saved_argv, saved_read = sys.argv, ec.rule_base.read_bytes
+        sys.argv = ["example_code_check.py", "--repo", self.repo, p]
+        ec.rule_base.read_bytes = boom
+        buf_out, buf_err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+                rc = ec.main()
+        finally:
+            ec.rule_base.read_bytes = saved_read
+            sys.argv = saved_argv
+        out = buf_out.getvalue() + buf_err.getvalue()
+        self.assertEqual(rc, 2, "读取异常被吞掉，门禁当作通过：\n" + out[-600:])
+        self.assertIn("无法读取", out, "没有报出读取失败：\n" + out[-600:])
+
+
+# ---------------------------------------------------------------- 示例规则误报边界
+class TestExampleRuleFalsePositives(unittest.TestCase):
+    """首屏体验锁：注释不算命中，字符串里的 console.log 只提示，版本号不算 IP。
+
+    这些误报的代价不对称：第一次用就被拦，人会先学会加 `harness-ok`，而不是读规则。
+    """
+
+    def test_example_rules_use_the_shared_protocol(self):
+        """示例规则必须就是 rule_base.Rule：首屏示例不能教第二套 API。"""
+        import example_ruleset as E
+        for r in E.EXAMPLE_RULES:
+            self.assertIsInstance(r, Rule, "示例规则没有接入统一 Rule 协议：%r" % (r,))
+            self.assertFalse(hasattr(r, "rule_id"), "示例规则仍在暴露第二套 id 字段：%r" % (r,))
+
+    def _hits(self, rule_id, path, text):
+        import example_ruleset as E
+        rule = next(r for r in E.EXAMPLE_RULES if r.id == rule_id)
+        return rule.run(CheckContext(path=Path(path), content=text))
+
+    def test_comment_hits_are_not_reported(self):
+        cases = [
+            ("src/a.js", '// console.log("doc")\n'),
+            ("src/a.js", '/* console.log("doc") */\n'),
+            ("src/a.vue", '<!-- console.log("doc") -->\n'),
+            ("src/a.py", '# console.log("doc")\n'),
+            ("src/a.cs", 'var x = 1; // http://10.0.0.1\n'),
+        ]
+        for path, text in cases:
+            self.assertEqual(self._hits("NO-CONSOLE", path, text), [], text)
+            self.assertEqual(self._hits("NO-HARDIP", path, text), [], text)
+
+    def test_console_in_string_is_warning_not_block(self):
+        hits = self._hits("NO-CONSOLE", "src/a.js", 'const s = "console.log(1)";\n')
+        self.assertEqual(len(hits), 1, "字符串里的 console.log 应保留为一条提示")
+        self.assertEqual(hits[0].severity, Severity.WARN,
+                         "字符串里的 console.log 不该阻断：%r" % (hits[0],))
+
+    def test_code_console_stays_block(self):
+        hits = self._hits("NO-CONSOLE", "src/a.js", 'console.log("debug");\n')
+        self.assertEqual([h.severity for h in hits], [Severity.ERROR])
+
+    def test_version_like_ip_is_not_an_ip(self):
+        for text in ('const v = "1.2.3.4";\n',
+                     'const version = "1.2.3.4";\n',
+                     'appVersion = "1.2.3.4"\n',
+                     '"version": "1.2.3.4",\n'):
+            self.assertEqual(self._hits("NO-HARDIP", "src/a.js", text), [],
+                             "版本号被当成了硬编码 IP：%s" % text)
+
+    def test_invalid_octets_are_ignored(self):
+        for text in ('const x = "999.999.999.999";\n',
+                     'const x = "1.2.3.4.5";\n'):
+            self.assertEqual(self._hits("NO-HARDIP", "src/a.js", text), [],
+                             "非法 IPv4 被当成了命中：%s" % text)
+
+    def test_real_ip_still_blocks(self):
+        hits = self._hits("NO-HARDIP", "src/a.js", 'const u = "http://10.0.0.1/api";\n')
+        self.assertEqual([(h.line, h.severity) for h in hits], [(1, Severity.ERROR)])
 
 

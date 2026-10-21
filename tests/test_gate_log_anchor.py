@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""台账防篡改三件套测试（2026-09-29）：月度分片 / 行内链哈希 / 锚定与校验。
+"""台账篡改可发现三件套测试（2026-09-29）：月度分片 / 行内链哈希 / 锚定与校验。
 
 对应实现（**三份读侧判据必须逐字同源**，本文件就是那个对拍锁）：
 - harness/run_gate.py   _log_file / _ledger_files / _chain_h / _log_run（写侧 + --summary）
@@ -72,7 +72,7 @@ class _Sealed(unittest.TestCase):
             return [json.loads(l) for l in f.read().splitlines() if l.strip()]
 
     def _rewrite(self, path, lines):
-        """夹具重写（防篡改测试的「动手脚」步骤）；只写不删，与全文件约定一致。"""
+        """夹具重写（篡改可发现测试的「动手脚」步骤）；只写不删，与全文件约定一致。"""
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
@@ -449,6 +449,38 @@ class TestAnchorCorruptTail(_Sealed):
         self.assertEqual(p.returncode, 0, p.stderr)          # 信息性报告，不拦人
         self.assertNotIn("尚无锚点", p.stdout, "坏锚点被显示成「还没锚」")
         self.assertIn("解析不了", p.stdout)
+
+
+class TestEngineSha(_Sealed):
+    """5.7-A：台账必须记下「这次判定实际用的引擎内容」。
+
+    `ver` 只说明哪一版；瞬时改弱规则再改回来，版本不变而 engine_sha 必须变。
+    """
+
+    def test_logged_as_16_hex(self):
+        log = self._sealed()
+        m = _load(RUN_GATE, "rg_eng_sha")
+        m._log_run("t_pc", "test", 1, 0, 5)
+        rec = self._recs(log)[0]
+        self.assertRegex(rec.get("engine_sha", ""), r"^[0-9a-f]{16}$",
+                         "台账没记 engine_sha（或格式不对）：%r" % rec.get("engine_sha"))
+
+    def test_hash_tracks_content(self):
+        m = _load(RUN_GATE, "rg_eng_sha2")
+        td = tempfile.mkdtemp()
+        f = os.path.join(td, "rule.py")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("RULE = 1\n")
+        a = m._engine_sha([f])
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("RULE = 2\n")
+        b = m._engine_sha([f])
+        self.assertNotEqual(a, b, "内容变了哈希不变 —— 抓不住瞬时改弱")
+
+    def test_stable_without_change(self):
+        m = _load(RUN_GATE, "rg_eng_sha3")
+        self.assertEqual(m._engine_sha(), m._engine_sha(),
+                         "同一份引擎两次哈希不一致（台账无法对账）")
 
 
 if __name__ == "__main__":

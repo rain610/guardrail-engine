@@ -83,7 +83,7 @@ def _write(p, text):
 def _step(src, name):
     """取 YAML 里 `- name: <name>` 那个步骤的 (行号, 正文行列表)。
 
-    为什么不直接 `src.find("构建 wheel")`：文件头那段注释里也写着「构建 wheel + 内部安装包 →
+    为什么不直接 `src.find("构建 wheel")`：文件头那段注释里也写着「构建 wheel + 离线安装包 →
     创建 GitHub Release」，`find` 会命中注释 —— 首版就是这么写的，于是"校验排在构建之前"
     这条断言比的是注释位置（1296 vs 65），**测的根本不是步骤顺序**。
     按 `- name:` 锚定才落在真步骤上。
@@ -110,14 +110,25 @@ def _code_lines(body):
     return [ln for ln in (body or []) if ln.strip() and not ln.strip().startswith("#")]
 
 
+#: 轮子自带的引擎探针（与 sandbox/verify_release.py 的 engine_required 同一组）
+ENGINE_PROBE = ("agentguard/_engine/harness/run_gate.py",
+                "agentguard/_engine/checks/example_code_check.py",
+                "agentguard/_engine/config/harness.toml")
+
+
 def _make_wheel(path, modules, requires_python, name, version,
                 entry_points="[console_scripts]\nagentguard = agentguard.cli:main\n",
-                metadata=True):
+                metadata=True, bundled_engine=True, extra=None):
     """现场造一个"形状对、内容可控"的 wheel —— 用来当喂给校验器的病变样本。"""
     dist = "agentguard-%s.dist-info" % version
     with zipfile.ZipFile(path, "w") as z:
         for m in modules:
             z.writestr("agentguard/" + m, "# %s\n" % m)
+        if bundled_engine:
+            for n in ENGINE_PROBE:
+                z.writestr(n, "# engine\n")
+        for n, body in (extra or {}).items():
+            z.writestr(n, body)
         if metadata:
             z.writestr(dist + "/METADATA",
                        "Metadata-Version: 2.1\nName: %s\nVersion: %s\nRequires-Python: %s\n"
@@ -232,6 +243,32 @@ class TestVerifierHasTeeth(_Base):
     def test_no_metadata_is_reported(self):
         items = self.check(self.wheel(metadata=False))
         self.assertTrue(any("METADATA" in x for x in items), items)
+
+    def test_missing_bundled_engine_is_reported(self):
+        """§5.2：wheel 只有壳、没有引擎 → `pip install` 之后仍要 clone，装完就能跑是断的。"""
+        items = self.check(self.wheel(bundled_engine=False))
+        self.assertTrue(any("没有自带引擎" in x and "_engine" in x for x in items),
+                        "shell-only 的轮子被放行了：%s" % items)
+
+    def test_machine_config_in_wheel_is_reported(self):
+        """打包机的本机配置进包 = 把别人的目录结构发出去。
+
+        第三种形态是**实测**：迁移 TOML 时把旧 local.yaml 改名归档成
+        `local.yaml.disabled-20261021`，精确匹配的两个旧文件名都没命中，
+        归档件于是被原样打进 wheel。判据改成前缀，这条锁住它不许退回去。
+        """
+        for name in ("config/harness.local.toml",
+                     "config/harness.local.yaml",
+                     "config/harness.local.yaml.disabled-20261021"):
+            items = self.check(self.wheel(
+                extra={"agentguard/_engine/" + name: "harness: D:/someone\n"}))
+            self.assertTrue(any(name.split("/")[-1] in x for x in items),
+                            "%s 混进轮子却没报：%s" % (name, items))
+        # 阴性对照：example 模板是给所有人抄的，必须放行（否则新机器没法生成 local 配置）。
+        items = self.check(self.wheel(
+            extra={"agentguard/_engine/config/harness.local.example.toml": ""}))
+        self.assertEqual([x for x in items if "本机配置" in x], [],
+                         "example 模板被误判成本机配置：%s" % items)
 
     def test_unreadable_wheel_is_reported(self):
         bogus = os.path.join(self.tmp, "half-downloaded.whl")
@@ -364,7 +401,7 @@ class TestVerifierWiring(unittest.TestCase):
         """
         src = _read(RELEASE_YML)
         i_tag, _ = _step(src, "校验 tag ↔ VERSION 一致")
-        i_build, _ = _step(src, "构建 wheel + 内部安装包")
+        i_build, _ = _step(src, "构建 wheel + 离线安装包")
         self.assertIsNotNone(i_tag, "release.yml 里找不到 tag↔VERSION 校验步骤")
         self.assertIsNotNone(i_build, "release.yml 里找不到构建步骤")
         self.assertLess(i_tag, i_build, "tag↔VERSION 校验排在构建之后 —— 白跑一次构建才拒绝")
@@ -379,7 +416,7 @@ class TestVerifierWiring(unittest.TestCase):
         只扫构建步骤的**代码行** —— 注释里会引用这条被禁的旧写法（说明为什么改），
         整文件 assertNotIn 会把说明文字判成违规（首版即如此），那是锁写错了，不是代码错了。
         """
-        _, body = _step(_read(RELEASE_YML), "构建 wheel + 内部安装包")
+        _, body = _step(_read(RELEASE_YML), "构建 wheel + 离线安装包")
         self.assertIsNotNone(body, "release.yml 里找不到构建步骤")
         code = "\n".join(_code_lines(body))
         self.assertNotIn("head -1", code,
@@ -472,7 +509,7 @@ class _Pack(_Base):
         _make_wheel(cls.seed, modules, str(proj.get("requires-python")),
                     proj.get("name"), version)
         cls.out = os.path.join(cls._tmp, "out")
-        cls.pkg_name = "agentguard-内部安装包-v%s" % version
+        cls.pkg_name = "agentguard-package-v%s" % version
         r = subprocess.run([sys.executable, PACKER, "--out", cls.out, "--wheel", cls.seed],
                            cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=600)

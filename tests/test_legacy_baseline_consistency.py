@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-回归锁（2026-09-21）：legacy_baseline 在 harness.yaml 中的一致性。
+回归锁（2026-09-21，2026-10-21 随配置主格式迁到 TOML）：legacy_baseline 在
+`config/harness.toml` 中的一致性。
 
 设计源头
 ================================================================================
-· 历史内部约定 "新客户一律 legacy_baseline: true（存量豁免，新代码照拦）"
-· AGENTS.md 第 33 行同条纪律
-· harness.yaml 第 78-86 行评审 v13 注释：「声明了但没消费方读」= 空承诺
+· 历史内部约定 "新受管仓一律 legacy_baseline: true（存量豁免，新代码照拦）"
+· AGENTS.md 同条纪律
+· 配置注释：「声明了但没消费方读」= 空承诺
 
 本批做的事（2026-09-21）
 ================================================================================
@@ -20,22 +21,22 @@
 ================================================================================
   ① **每个非 harness_self 的 gate 必须有显式 `legacy_baseline` 字段**
      —— 防「老仓一键清掉 12 行」/「新 gate 漏写」。机械护栏。
-  ② **`legacy_baseline` 值只能是 yaml bool 字面量（true / false）**
+  ② **`legacy_baseline` 值只能是 TOML 布尔（true / false）**
      —— `rule_base.legacy_baseline()` 拿它走 `bool(...)`，字符串 `"false"`
      在 bool() 里为 True（非空即真），与声明方向相反 → 事故级。
-  ③ **harness_self 不强制此字段**——它是工程仓自检，没有「客户仓存量」概念；
+  ③ **harness_self 不强制此字段**——它是工程仓自检，没有「受管仓存量」概念；
      仓内 `CONFIG_KEYS = frozenset()`（空集）也印证它不消费任何策略键。
 """
 from __future__ import unicode_literals
 
 import os
-import re
 import sys
+import tomllib
 import unittest
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TESTS)
-CONFIG_YAML = os.path.join(ROOT, "config", "harness.yaml")
+CONFIG_TOML = os.path.join(ROOT, "config", "harness.toml")
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -45,44 +46,10 @@ for _s in (sys.stdout, sys.stderr):
 
 
 def _load_gates():
-    """手写极简 yaml 读——只取 gates 段下每个 gate 的顶层 key/value，不依赖 PyYAML。
-
-    为什么不调用 `_config.all_gates()`：那需要把 harness.lib 加载进 sys.path，
-    还会触发 ConfigError / policy notice 等副作用。配置锁**只读 yaml 本身**。
-    """
-    with open(CONFIG_YAML, "r", encoding="utf-8") as f:
-        text = f.read()
-
-    m = re.search(r"^gates:\s*\n", text, re.MULTILINE)
-    if not m:
-        return {}
-    after = text[m.end():]
-    # 下一个顶层段（version/repos/rules/baseline…）即终止
-    end_m = re.search(r"^(?:\w[\w_]*):\s*$", after, re.MULTILINE)
-    body = after[:end_m.start()] if end_m else after
-
-    gates = {}
-    cur = None
-    for line in body.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        # 门键："  name:"  顶 2 空格
-        gm = re.match(r"^  (\w+):\s*$", line)
-        if gm:
-            cur = gm.group(1)
-            gates[cur] = {}
-            continue
-        if cur is None:
-            continue
-        # 字段："    key: value" 顶 4 空格
-        fm = re.match(r"^    (\w+):\s*(.*?)\s*(?:#.*)?$", line)
-        if fm:
-            key = fm.group(1)
-            value = fm.group(2)
-            if not key.startswith("_"):
-                gates[cur][key] = value
-    return gates
+    """只读 TOML 文件本身，不依赖 `_config` —— 配置锁不该触发策略告警等副作用。"""
+    with open(CONFIG_TOML, "rb") as f:
+        cfg = tomllib.load(f)
+    return cfg.get("gates") or {}
 
 
 class TestLegacyBaselineConsistency(unittest.TestCase):
@@ -102,12 +69,12 @@ class TestLegacyBaselineConsistency(unittest.TestCase):
             missing, [],
             "以下 gate 未声明 legacy_baseline（必须是显式 true/false；"
             "未写 = 默认 false = 与全仓门禁锁不一致，历史内部约定 "
-            "「新客户一律 legacy_baseline: true」纪律）：\n  - "
+            "「新受管仓一律 legacy_baseline: true」纪律）：\n  - "
             + "\n  - ".join(missing),
         )
 
-    def test_legacy_baseline_value_is_yaml_bool_literal(self):
-        """值必须是 yaml 布尔字面量（true/false），不能是字符串。
+    def test_legacy_baseline_value_is_boolean(self):
+        """值必须是 TOML 布尔（true/false），不能是字符串。
 
         字符串 "false" 走 `bool()` 转 True（非空即真），与声明方向相反。
         """
@@ -116,17 +83,17 @@ class TestLegacyBaselineConsistency(unittest.TestCase):
             v = cfg.get("legacy_baseline")
             if v is None:
                 continue   # 上条已告警
-            if v not in ("true", "false"):
+            if not isinstance(v, bool):
                 bad.append("{0}={1!r}".format(name, v))
         self.assertEqual(
             bad, [],
-            "legacy_baseline 应是 yaml 布尔字面量(true/false)；"
+            "legacy_baseline 应是 TOML 布尔(true/false)；"
             "rule_base.legacy_baseline() 直接 bool() 转，字符串 \"false\" "
             "会被判为 True（事故级）：\n  - " + "\n  - ".join(bad),
         )
 
     def test_harness_self_may_omit_legacy_baseline(self):
-        """harness_self 是工程仓自检，无「客户仓存量」概念，不强制此字段。
+        """harness_self 是工程仓自检，无「受管仓存量」概念，不强制此字段。
 
         仓内 CONFIG_KEYS = frozenset()（空集）也印证它不消费任何 gate 级键。
         若有人加这条到 harness_self，要看一眼是不是误以为它和别的 gate 同性质。
@@ -134,7 +101,7 @@ class TestLegacyBaselineConsistency(unittest.TestCase):
         cfg = self.gates.get("harness_self", {})
         self.assertNotIn(
             "legacy_baseline", cfg,
-            "harness_self 不应声明 legacy_baseline（它不是客户仓，"
+            "harness_self 不应声明 legacy_baseline（它不是受管仓，"
             "rule_base.legacy_baseline() 对它的反查是 undefined；"
             "如确需统一键集，先在 README 评估再开）",
         )

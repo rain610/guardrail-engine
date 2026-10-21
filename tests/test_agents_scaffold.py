@@ -6,7 +6,7 @@
 `agents_audit.py` 的安全来自「它没有任何写入路径」。生成器打破了那个性质（它要落盘），
 所以它的安全**不能靠"审下来没问题"，只能靠这三条断言**：
 
-  甲、**绝不写客户仓** —— `--emit` 指到受管仓（含其子目录）里必须当场拒绝。
+  甲、**绝不写受管仓** —— `--emit` 指到受管仓（含其子目录）里必须当场拒绝。
                         这条是 §六 ① 的机械保证，不是提示语。
   乙、**不许丢知识** —— 落盘前逐行自检；差一行整仓不写。这里连"自检自己有没有失效"
                         一起钉：故意喂一个会丢行的产物，必须报出来。
@@ -173,8 +173,8 @@ class TestRefusesToLoseKnowledge(_Fixture):
             # 搬迁行：摘掉 `知识库：` 标签
             ("知识库：`D:/x/`（工单必读 `00.md`）", "`D:/x/`（工单必读 `00.md`）"),
             # 留守行：只换知识库根，其余逐字不动
-            ("工单必读在 `D:/KnowledgeVault/customers/ntrx/`",
-             "工单必读在 `<VAULT>/customers/ntrx/`"),
+            ("工单必读在 `D:/team-vault/customers/acme/`",
+             "工单必读在 `<VAULT>/customers/acme/`"),
         ]
         for src, want in cases:
             self.assertEqual(want, AA.product_line(src), "换算式子变了：%s" % src)
@@ -330,7 +330,7 @@ def _machine_paths(text):
     """文本里出现的全部本机路径（盘符形态 + git-bash 形态），按出现顺序。"""
     return _MACHINE_PATH.findall(text)
 
-REAL_VAULT_LINE = ("知识库：`D:/KnowledgeVault/concepts/customers/ntrx/`"
+REAL_VAULT_LINE = ("知识库：`D:/team-vault/concepts/customers/acme/`"
                    "（工单必读 `00_工单必读.md`）")
 VAULT_SRC = "\n".join([
     "# 测试仓 AGENTS.md",
@@ -351,8 +351,8 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
     """知识库根**只许**以 `<VAULT>` 占位出货 —— 不许出现维护机的绝对路径。
 
     起因（**真出过**，2026-09-22 实测）：`target_form` 早先只把**引擎仓**路径换成
-    `<HARNESS>`，知识库根这一类漏了 —— **22 份产物全部**带着 `D:/KnowledgeVault/…`。
-    那是维护机上的目录：同事 clone 客户仓后这一行指向一个不存在的地方，而屏幕上一切正常
+    `<HARNESS>`，知识库根这一类漏了 —— **22 份产物全部**带着 `D:/team-vault/…`。
+    那是维护机上的目录：同事 clone 受管仓后这一行指向一个不存在的地方，而屏幕上一切正常
     （与本仓反复在治的「看起来装好了其实没有」同形，与 `auto-gate.py` 那条本机路径同源）。
 
     ⚠ 本类锁的是**出货形态**，不是"有没有人记得填"。填法写在用户级守则哨兵区之外
@@ -372,9 +372,9 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
         r = self.judged(VAULT_SRC)
         self.run_emit(SC.candidates({"judged": [r]}))
         out = self.produced()
-        self.assertNotIn("D:/KnowledgeVault", out,
+        self.assertNotIn("D:/team-vault", out,
                          "产物里还有维护机的知识库根路径 —— 同事那份 clone 里这行是死的")
-        self.assertIn("<VAULT>/concepts/customers/ntrx/", out,
+        self.assertIn("<VAULT>/concepts/customers/acme/", out,
                       "知识库根没换成占位（`portable()` 没生效？）")
 
     def test_the_parenthetical_survives_alongside_the_placeholder(self):
@@ -391,13 +391,13 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
     def test_product_line_handles_a_real_vault_root(self):
         """`product_line` 是"源行 → 产物行"的**唯一出处**（`target_form` 与自检共用它）。"""
         self.assertEqual(
-            "`<VAULT>/concepts/customers/ntrx/`（工单必读 `00_工单必读.md`）",
+            "`<VAULT>/concepts/customers/acme/`（工单必读 `00_工单必读.md`）",
             AA.product_line(REAL_VAULT_LINE))
 
     def test_portable_touches_only_the_vault_root(self):
         """`portable` 只认知识库根，别的路径逐字不动。
 
-        不是洁癖：它作用在**搬迁行**上，而搬迁行是客户知识（§六 ①「逐字保留」）。
+        不是洁癖：它作用在**搬迁行**上，而搬迁行是业务知识（§六 ①「逐字保留」）。
         判据放宽一寸，改掉的就是别人仓里那句话的意思。
         """
         self.assertEqual(VAULT_LINE, AA.portable(VAULT_LINE),
@@ -410,7 +410,7 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
         ⚠ 为什么不是"必须空"（这条是实测撞出来的）：`SRC` 里那个 `D:/Vault/712/` 是
           **合成**的知识库根，不在 `VAULT_ROOTS` 里 —— 工具**不认识它**，于是逐字留着。
           那是**对的**：`portable()` 是"认识才换"，不认识就留（安全侧，§六 ①「留而不删」）；
-          而且按形态整段替换会连 `/concepts/customers/ntrx/` 这段**有意义的后缀**一起丢掉，
+          而且按形态整段替换会连 `/concepts/customers/acme/` 这段**有意义的后缀**一起丢掉，
           比不换更糟。所以这里断言的是「产物里的每个本机路径，源文件里本来就有」，
           另对**真的知识库根**那种写法（`VAULT_SRC`）加一条更强的：一个都不许剩。
 
@@ -420,7 +420,7 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
         而没人看见。名单式判据**天然会再漏下一个名字**；这条按形态判，还捎带管住另一路：
         将来谁往 `target_form` 里新加一段、顺手烘了本机路径（没走占位），它也会响。
 
-        ⚠ 边界（说清它管不到什么）：本锁只跑**夹具**，**不扫真的 29 个客户仓** ——
+        ⚠ 边界（说清它管不到什么）：本锁只跑**夹具**，**不扫真的 29 个受管仓** ——
           那会让套件依赖"本机 clone 了哪些仓"，正是 `c2b6e1b`「夹具写死了开发机状态」
           那一类（三次都是本机绿、CI 红）。真仓那一路由 `agents_audit.py` 出报告给人看。
         """
@@ -454,7 +454,7 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
         self.assertTrue(_DRIVE_PATH.search("见 `D:/Rain/project/x/AGENTS.md`"))
         self.assertTrue(_MSYS_PATH.search("见 `/d/Rain/project/x.md`"))
         for ok in ("见 `<HARNESS>/golden-patterns/templates/AGENTS_pc_slim.md`",
-                   "`<VAULT>/concepts/customers/ntrx/`",
+                   "`<VAULT>/concepts/customers/acme/`",
                    "1. Think Before Coding：先梳理约束/边界",
                    "见 `<HARNESS>/x/y.md`（占位符后面接二级目录）"):
             self.assertFalse(_DRIVE_PATH.search(ok) or _MSYS_PATH.search(ok),
@@ -465,7 +465,7 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
     def test_the_lock_is_not_vacuous(self):
         """★ 注入证伪：掏空 `VAULT_ROOTS` → 产物必须重新带上本机路径。
 
-        不做这一步，"产物里没有 `D:/KnowledgeVault`" 可能是**任何**原因造成的
+        不做这一步，"产物里没有 `D:/team-vault`" 可能是**任何**原因造成的
         （夹具没写进去、那一行被丢掉、断言写错），而不是这次修复造成的。
         掏空后两边（`target_form` 与自检用的 `product_line`）同时失效，故自检仍会放行、
         文件照落 —— 于是这条注入**确实**能把上面第一条打红。
@@ -475,7 +475,7 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
         self.addCleanup(setattr, AA, "VAULT_ROOTS", real)
         r = self.judged(VAULT_SRC)
         self.run_emit(SC.candidates({"judged": [r]}))
-        self.assertIn("D:/KnowledgeVault", self.produced(),
+        self.assertIn("D:/team-vault", self.produced(),
                       "掏空 VAULT_ROOTS 后产物仍无本机路径 —— 上面那条不是因修复才绿的")
 
 
@@ -483,8 +483,8 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
 # 它的夹具 `REAL_VAULT_LINE` 是 `知识库：` 开头的**搬迁**行 —— 走的正是 `_target_lines`
 # 里唯一一处调过 `portable()` 的分支。于是出现过一个「锁是绿的、缺陷照常出货」的现场：
 # 首行标题 / `## 项目` 块 / 留守行三处都只做 `rstrip()`，里面带知识库根就**逐字进产物**。
-# 7 个客户仓（多个客户端的三端系列）是头一回踩到。
-VAULT_STAY_LINE = ("工单必读在 `D:/KnowledgeVault/concepts/customers/ntrx/00_工单必读.md`，"
+# 7 个受管仓（多个客户端的三端系列）是头一回踩到。
+VAULT_STAY_LINE = ("工单必读在 `D:/team-vault/concepts/customers/acme/00_工单必读.md`，"
                    "先看它再动手")
 # ⚠ 这里**不能**再带一个 `## 项目` 块：那两个夹具都得留在"本仓独有 ≤1 行"的候选区里
 #   （`candidates()` 的判据），否则 `emit` 会以「本仓独有 2 行」直接拒收，锁就空转了。
@@ -499,10 +499,10 @@ VAULT_STAY_SRC = "\n".join([
 # `## 文档` 那条走搬迁行（且用的是**不认识**的 `D:/Vault/712/`），
 # 这样 stay 只数到 1 行、仍是个合格候选，夹具不会因为"本仓独有 >1 行"被拒。
 VAULT_TITLE_AND_PROJ_SRC = "\n".join([
-    "# 测试仓 AGENTS.md（知识库 `D:/KnowledgeVault/concepts/customers/ntrx/`）",
+    "# 测试仓 AGENTS.md（知识库 `D:/team-vault/concepts/customers/acme/`）",
     "",
     "## 项目",
-    "知识库根 `D:/KnowledgeVault/concepts/customers/ntrx/` —— " + PROJ_SENTENCE,
+    "知识库根 `D:/team-vault/concepts/customers/acme/` —— " + PROJ_SENTENCE,
     "",
     "## 文档",
     VAULT_LINE,
@@ -551,9 +551,9 @@ class TestVaultRootNeverShipsInAStayLine(_Fixture):
 
     def test_a_vault_root_in_a_stay_line_ships_as_a_placeholder(self):
         out = self._emit(VAULT_STAY_SRC)
-        self.assertNotIn("D:/KnowledgeVault", out,
+        self.assertNotIn("D:/team-vault", out,
                          "留守行里的知识库根原样进了产物 —— 同事 clone 后这行是死的")
-        self.assertIn("<VAULT>/concepts/customers/ntrx/00_工单必读.md", out,
+        self.assertIn("<VAULT>/concepts/customers/acme/00_工单必读.md", out,
                       "留守行里的知识库根没换成占位")
 
     def test_the_stay_line_survives_around_the_placeholder(self):
@@ -562,22 +562,22 @@ class TestVaultRootNeverShipsInAStayLine(_Fixture):
         与上一条是**两个方向**：换掉路径容易，**换完还记得原句长什么样**才是这条在守的。
         """
         out = self._emit(VAULT_STAY_SRC)
-        self.assertIn("工单必读在 `<VAULT>/concepts/customers/ntrx/00_工单必读.md`，"
+        self.assertIn("工单必读在 `<VAULT>/concepts/customers/acme/00_工单必读.md`，"
                       "先看它再动手", out)
 
     def test_the_title_and_the_project_sentence_are_covered_too(self):
         """首行标题与 `## 项目` 那句是**另外两条**老路径，一起钉住。"""
         out = self._emit(VAULT_TITLE_AND_PROJ_SRC)
-        self.assertNotIn("D:/KnowledgeVault", out,
+        self.assertNotIn("D:/team-vault", out,
                          "标题 / `## 项目` 里的知识库根也漏了 —— 它们同样是"
                          "「只做 rstrip」的老路径")
-        self.assertEqual(2, out.count("<VAULT>/concepts/customers/ntrx/"),
+        self.assertEqual(2, out.count("<VAULT>/concepts/customers/acme/"),
                          "标题与 `## 项目` 那两条路径没都换：\n%s" % out)
 
     def test_the_lock_is_not_vacuous(self):
         """★ 注入证伪：掏空 `VAULT_ROOTS` → 留守行里的本机路径必须重新出现。
 
-        不做这一步，「产物里没有 `D:/KnowledgeVault`」可能是**任何**原因造成的
+        不做这一步，「产物里没有 `D:/team-vault`」可能是**任何**原因造成的
         （夹具没写进去、那一行被丢掉、断言写错），而不是这次修复造成的。
         掏空后 `product_line` 两侧同时失效，自检仍会放行、文件照落 ——
         于是这条注入**确实**能把上面第一条打红。
@@ -586,7 +586,7 @@ class TestVaultRootNeverShipsInAStayLine(_Fixture):
         AA.VAULT_ROOTS = ()
         self.addCleanup(setattr, AA, "VAULT_ROOTS", real)
         out = self._emit(VAULT_STAY_SRC)
-        self.assertIn("D:/KnowledgeVault", out,
+        self.assertIn("D:/team-vault", out,
                       "掏空 VAULT_ROOTS 后留守行仍无本机路径 —— 上面那条不是因修复才绿的")
 
     def test_the_generator_self_check_agrees_on_a_stay_line(self):
@@ -594,12 +594,12 @@ class TestVaultRootNeverShipsInAStayLine(_Fixture):
 
         走**真** `target_form` 产出、再喂给**真** `lost_lines`：两边必须对同一条留守行
         得到同一个形态。2026-10-05 之前 `lost_lines` 只换算搬迁行，这里会把
-        `` 工单必读在 `D:/KnowledgeVault/…` `` 判成"丢了"（**假警**）⇒ 整仓不写 ——
+        `` 工单必读在 `D:/team-vault/…` `` 判成"丢了"（**假警**）⇒ 整仓不写 ——
         产物本来是对的，工具却拒绝出货（假警比漏报更贵：它教人不再相信这个自检）。
         """
         r = self.judged(VAULT_STAY_SRC)
         new = AA.target_form(VAULT_STAY_SRC.split("\n"), r["end"], r["keep_lines"], r["move"])
-        self.assertIn("工单必读在 `<VAULT>/concepts/customers/ntrx/00_工单必读.md`，"
+        self.assertIn("工单必读在 `<VAULT>/concepts/customers/acme/00_工单必读.md`，"
                       "先看它再动手", new, "真 `target_form` 没把留守行换成占位")
         self.assertEqual([], SC.lost_lines(new, r["keep_lines"], r["move"]),
                          "自检把**正确**的产物判成丢了东西 —— 这一仓会被整仓拒写")

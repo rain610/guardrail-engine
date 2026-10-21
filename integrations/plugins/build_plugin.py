@@ -16,7 +16,7 @@
   ① 默认（就地打戳）：把模板里的 `__PY__` / `__MCP__` / `__HARNESS__` 换成**本机**的
      python 与工程路径。适合"我就在这台机器上用" —— `claude --plugin-dir` 直接加载。
   ② `--keep-placeholders`（出货）：原样保留三个占位符，只填 `__VERSION__`。
-     **内部安装包必须走这条**（`sandbox/pack_release.py` 已固定这么调）。
+     **离线安装包必须走这条**（`sandbox/pack_release.py` 已固定这么调）。
 
 为什么出货件不能就地打戳：打包机把**自己的**绝对路径烧进了 `.mcp.json`。同事照着
 安装说明装、却漏跑 `fix_paths.py` 时（尤其是"原地升级、机器没变"这句话最容易让人跳过），

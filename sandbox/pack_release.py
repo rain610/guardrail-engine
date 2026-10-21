@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""内部安装包一键重建：wheel + marketplace + 文档 + SHA1SUMS + zip。
+"""离线安装包一键重建：wheel + marketplace + 文档 + SHA1SUMS + zip。
 
 用法（一条命令，可从任意目录执行）：
 
@@ -8,7 +8,7 @@
 
 产物（默认 DIR = <仓库根>/dist/install-package）：
 
-    agentguard-内部安装包-v<版本>/        ← 文件包（stage）
+    agentguard-package-v<版本>/        ← 文件包（stage）
         agentguard-*.whl                  ← 由本仓库现场构建（或用 --wheel 复用已有轮子）
         marketplace/                         ← Claude 兼容插件市场（build_marketplace.py 现场构建）
         OPENCLAW.md / LICENSE / 安装说明.md   ← 文档（单一来源：仓库 docs/ 与 LICENSE）
@@ -16,7 +16,7 @@
                                              ← 换机器路径适配 + 一键卸载 + 一键升级（随包分发）
         PACK-INFO.json                       ← 出货件身份：版本 / 构建时刻 / **整包指纹**（+ 市场子树指纹）
         SHA1SUMS.txt                         ← 文件包内全部文件的 SHA1
-    agentguard-内部安装包-v<版本>.zip     ← 上述文件包的 zip（zip 内根目录同名）
+    agentguard-package-v<版本>.zip     ← 上述文件包的 zip（zip 内根目录同名）
 
 出货件与机器无关（2026-09-17 起）
 ================================================================================
@@ -334,7 +334,7 @@ def read_pack_info(zip_path):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="内部安装包一键重建（wheel + marketplace + 文档 + SHA1SUMS + zip）")
+    ap = argparse.ArgumentParser(description="离线安装包一键重建（wheel + marketplace + 文档 + SHA1SUMS + zip）")
     ap.add_argument("--out", default=os.path.join(ROOT, "dist", "install-package"),
                     help="输出目录（默认 <仓库根>/dist/install-package）")
     ap.add_argument("--python", default=sys.executable or "python",
@@ -346,7 +346,7 @@ def main(argv=None):
     if not version:
         log("✗ VERSION 文件为空")
         return 1
-    pkg_name = "agentguard-内部安装包-v%s" % version
+    pkg_name = "agentguard-package-v%s" % version
     out = os.path.abspath(a.out)
     stage = os.path.join(out, pkg_name)
     zip_path = os.path.join(out, pkg_name + ".zip")
@@ -366,7 +366,7 @@ def main(argv=None):
     # 为什么不在各复制点各查一次：那既慢，又会让"同一份包里的文件按不同口径产出"成为可能。
     eol_map = eol_text.index_eol_map(ROOT)
 
-    log("== agentguard 内部安装包 · 一键重建 ==")
+    log("== agentguard 离线安装包 · 一键重建 ==")
     log("   仓库: %s" % ROOT)
     log("   版本: %s" % version)
     log("   输出: %s" % out)

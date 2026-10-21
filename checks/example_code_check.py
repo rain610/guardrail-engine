@@ -10,6 +10,7 @@
 """
 import sys
 import os
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -20,7 +21,7 @@ try:
 except Exception:
     pass
 
-from example_ruleset import EXAMPLE_RULES, check_eol
+from example_ruleset import EXAMPLE_RULES
 import rule_base
 
 # 本脚本只按文件内容判定；mode 由 run_gate 透传进来，脚本按引擎契约接收（示例不区分口径）。
@@ -67,7 +68,16 @@ def main():
                 if f.endswith((".js", ".ts", ".vue", ".jsx", ".tsx", ".py", ".cs")):
                     targets.append(os.path.join(dirpath, f))
     else:
-        targets = [os.path.join(repo, f) for f in a.files if os.path.isfile(os.path.join(repo, f))]
+        # 点名了文件就必须查：路径写错/文件已删时**不能**悄悄退化成"无目标文件 → 通过"。
+        # run_gate 把提交范围解析成位置参数传进来，这里一漏就是整次提交没查。
+        pairs = [(f, f if os.path.isabs(f) else os.path.join(repo, f)) for f in a.files]
+        missing = [f for f, p in pairs if not os.path.isfile(p)]
+        if missing:
+            for f in missing:
+                print(f"❌ 目标文件不存在: {f}", file=sys.stderr)
+            print("门禁未执行：调用方点名的文件必须存在且可读（拒绝静默放行）", file=sys.stderr)
+            return 2
+        targets = [p for _, p in pairs]
 
     if not targets:
         print("无目标文件")
@@ -78,45 +88,44 @@ def main():
     scope = "all" if (a.all or not a.files) else "targeted"
 
     for filepath in targets:
+        rel = os.path.relpath(filepath, repo)
         try:
             content = _read_content(filepath)
-        except Exception:
-            continue
+        except Exception as exc:
+            # 读不到 ≠ 没问题：吞掉异常会让"权限不足 / 文件被占 / 编码炸了"一律变成通过。
+            print(f"❌ 无法读取 {rel}: {exc}", file=sys.stderr)
+            print("门禁未执行：文件读取失败不能当作通过（拒绝静默放行）", file=sys.stderr)
+            return 2
 
-        rel = os.path.relpath(filepath, repo)
         lines = content.splitlines()
+        ctx = rule_base.CheckContext(path=Path(filepath), rel=rel, content=content,
+                                     repo=repo, mode=a.mode or "strict")
 
-        # 正则规则
+        # 全部规则走统一入口：applicable + check + 规则级 severity 盖章。
         for rule in EXAMPLE_RULES:
-            if not rule.pattern.pattern:  # EOL 规则跳过
-                continue
-            for lineno, line, msg, fix in rule.check(filepath, content):
-                reason = rule_base.inline_waiver(rule.rule_id, lineno, lines)
+            for f in rule.run(ctx):
+                reason = (rule_base.inline_waiver(f.rule_id, f.line, lines)
+                          if f.line is not None else None)
                 if reason:
-                    rule_base.WAIVED_DETAILS.append((rule.rule_id, lineno, reason))
-                    rule_base.bump(rule.rule_id, "waived_inline")
+                    rule_base.WAIVED_DETAILS.append((f.rule_id, f.line, reason))
+                    rule_base.bump(f.rule_id, "waived_inline")
                     continue
-                if rule.severity == "block":
-                    print(f"  ❌ {rel}:{lineno} [{rule.rule_id}] {msg}")
-                    if fix:
-                        print(f"     FIX: {fix}")
-                    if rule.see:
-                        print(f"     📖 See: {rule.see}")
+                loc = f"{rel}:{f.line}" if f.line is not None else rel
+                if f.severity == rule_base.Severity.ERROR:
+                    print(f"  ❌ {loc} [{f.rule_id}] {f.message}")
+                    if f.fix:
+                        print(f"     FIX: {f.fix}")
+                    if f.see:
+                        print(f"     📖 See: {f.see}")
                     total_problems += 1
                 else:
-                    print(f"  ⚠️  {rel}:{lineno} [{rule.rule_id}] {msg}")
-                    if rule.see:
-                        print(f"     📖 See: {rule.see}")
+                    print(f"  ⚠️  {loc} [{f.rule_id}] {f.message}")
+                    if f.see:
+                        print(f"     📖 See: {f.see}")
                     total_warns += 1
-                rule_base.bump(rule.rule_id, "error" if rule.severity == "block" else "warn")
-
-        # EOL 检查
-        for lineno, line, msg, fix in check_eol(filepath, content):
-            print(f"  ❌ {rel} [EOL-UNIFIED] {msg}")
-            if fix:
-                print(f"     FIX: {fix}")
-            total_problems += 1
-            rule_base.bump("EOL-UNIFIED", "error")
+                rule_base.bump(f.rule_id, {rule_base.Severity.ERROR: "error",
+                                           rule_base.Severity.WARN: "warn"}.get(
+                                               f.severity, "info"))
 
     waived = rule_base.waiver_summary()
     if waived:

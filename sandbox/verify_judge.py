@@ -121,7 +121,7 @@ def judge(client, hard, wrote_probe, log_slice, client_output):
         return {"verdict": GATE_SIDE_ERROR, "fail": True,
                 "summary": "%s: ❌ 门禁自身返回 rc=%s（配置/定位错误或非受管仓库）—— 这是 harness 侧问题，别当业务错"
                            % (client, ",".join(str(x) for x in gate_err)),
-                "hint": "❌ 门禁调用出错：查 config/harness.yaml 的 gate 登记与该仓路径；"
+                "hint": "❌ 门禁调用出错：查 config/harness.toml 的 gate 登记与该仓路径；"
                         "用 `python sandbox/check_client_configs.py` / `install_shim.py --check` 自查"}
     if triggered and KEYWORD_RE.search(text):
         return {"verdict": PASS_REPLAY, "fail": False,

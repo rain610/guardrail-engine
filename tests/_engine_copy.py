@@ -62,14 +62,15 @@ class EngineCopy:
             if os.path.isdir(src):
                 shutil.copytree(src, os.path.join(self.path, name), ignore=_IGNORE)
         # 2026-09-17（评审 v13 复查遗留项② 施工中发现）：`config/` 是整棵复制的，于是
-        # **开发者本机那份 gitignore 掉的 harness.local.yaml 被一起带进副本** —— 而它正是
+        # **开发者本机那份 gitignore 掉的 harness.local.* 被一起带进副本** —— 而它正是
         # 「本机把某个 gate 关了 / 把 mode 降了」的载体（`_guard_policy` 明确允许本地关 gate）。
         # 副本存在的全部理由是"脏/净由用例自己决定"，继承一份机器相关的覆盖层直接推翻这个前提：
         # 维护者本机一旦关过某个 gate，同一个用例在别人机器上就是另一种行为。
-        # 剔除它；用例要覆盖层就自己写（batch8 就是这么做的）。
-        inherited = os.path.join(self.path, "config", "harness.local.yaml")
-        if os.path.exists(inherited):
-            os.remove(inherited)
+        # 剔除两种格式（TOML 主格式 + 旧版 YAML）；用例要覆盖层就自己写（batch8 就是这么做的）。
+        for name in ("harness.local.toml", "harness.local.yaml"):
+            inherited = os.path.join(self.path, "config", name)
+            if os.path.exists(inherited):
+                os.remove(inherited)
         self._git("init", "-q")
         self._git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A")
         self._git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "baseline")

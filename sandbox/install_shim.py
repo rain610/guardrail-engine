@@ -254,27 +254,33 @@ def install_global_agents():
     return True
 
 
-def _update_harness_local(root):
-    """更新 config/harness.local.yaml 的 `harness:` 键（统一解析链第 ② 环）。
-
-    幂等：键已存在且值对就不改；值不对或没键就补/修。
-    本函数只写文件，不判红（写失败由调用方决定怎么处理）。
-    """
-    # 找引擎仓根（从本文件位置向上找，直到找到有 config/ 目录的）
+def _local_config_path():
+    """本机覆盖层路径：优先 TOML，其次旧版 YAML；都没有返回 None。"""
     d = os.path.dirname(os.path.abspath(__file__))
     for _ in range(5):
         cfg_dir = os.path.join(d, "config")
         if os.path.isdir(cfg_dir):
-            cfg = os.path.join(cfg_dir, "harness.local.yaml")
-            break
+            for name in ("harness.local.toml", "harness.local.yaml"):
+                cfg = os.path.join(cfg_dir, name)
+                if os.path.isfile(cfg):
+                    return cfg
+            return None
         d = os.path.dirname(d)
-    else:
-        return  # 找不到 config 目录，跳过
+    return None
+
+
+def _update_harness_local(root):
+    """更新 config/harness.local.toml（旧版 .yaml 兼容）的 `harness` 键（统一解析链第 ② 环）。
+
+    幂等：键已存在且值对就不改；值不对或没键就补/修。
+    本函数只写文件，不判红（写失败由调用方决定怎么处理）。
+    """
+    cfg = _local_config_path()
+    if not cfg:
+        return  # 没有本机覆盖层，跳过（setup_machine.sh 会创建）
 
     root_norm = root.replace("\\", "/").rstrip("/")
-
-    if not os.path.isfile(cfg):
-        return  # 配置文件不存在，跳过（setup_machine.sh 会创建）
+    is_toml = cfg.lower().endswith(".toml")
 
     try:
         with open(cfg, "r", encoding="utf-8") as f:
@@ -282,41 +288,65 @@ def _update_harness_local(root):
     except OSError:
         return
 
-    # 找 harness: 键
-    harness_line_idx = None
-    for i, line in enumerate(lines):
-        if line.strip().startswith("harness:") and not line.strip().startswith("#"):
-            harness_line_idx = i
-            break
-
-    if harness_line_idx is not None:
-        # 键已存在：检查值
-        old_val = lines[harness_line_idx].split(":", 1)[1].strip().strip("'\"")
-        if old_val == root_norm:
-            return  # 值已对，不用改
-        # 值不对：更新
-        lines[harness_line_idx] = "harness: %s\n" % root_norm
-        action = "已更新"
-    else:
-        # 键不存在：在 repos: 之前插入
-        repos_idx = None
+    if is_toml:
+        import re
+        pat = re.compile(r"^\s*harness\s*=")
+        harness_line_idx = None
         for i, line in enumerate(lines):
-            if line.strip().startswith("repos:"):
-                repos_idx = i
+            if pat.match(line):
+                harness_line_idx = i
                 break
-        if repos_idx is not None:
-            lines.insert(repos_idx, "harness: %s\n" % root_norm)
+
+        if harness_line_idx is not None:
+            old_val = lines[harness_line_idx].split("=", 1)[1].strip().strip("'\"")
+            if old_val == root_norm:
+                return  # 值已对，不用改
+            lines[harness_line_idx] = 'harness = "%s"\n' % root_norm
+            action = "已更新"
         else:
-            # 连 repos: 都没有：追加到末尾
-            lines.append("\nharness: %s\n" % root_norm)
-        action = "已添加"
+            # 顶层键必须写在任何 [table] 之前；插到 [repos] 前，没有就插到文件最前
+            repos_idx = None
+            for i, line in enumerate(lines):
+                if line.strip().startswith("[repos]"):
+                    repos_idx = i
+                    break
+            new_line = 'harness = "%s"\n' % root_norm
+            if repos_idx is not None:
+                lines.insert(repos_idx, new_line)
+            else:
+                lines.insert(0, new_line + "\n")
+            action = "已添加"
+    else:
+        harness_line_idx = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("harness:") and not line.strip().startswith("#"):
+                harness_line_idx = i
+                break
+
+        if harness_line_idx is not None:
+            old_val = lines[harness_line_idx].split(":", 1)[1].strip().strip("'\"")
+            if old_val == root_norm:
+                return  # 值已对，不用改
+            lines[harness_line_idx] = "harness: %s\n" % root_norm
+            action = "已更新"
+        else:
+            repos_idx = None
+            for i, line in enumerate(lines):
+                if line.strip().startswith("repos:"):
+                    repos_idx = i
+                    break
+            if repos_idx is not None:
+                lines.insert(repos_idx, "harness: %s\n" % root_norm)
+            else:
+                lines.append("\nharness: %s\n" % root_norm)
+            action = "已添加"
 
     try:
         with open(cfg, "w", encoding="utf-8", newline="") as f:
             f.writelines(lines)
-        print("✅ %s harness.local.yaml 的 harness: 键 → %s" % (action, root_norm))
+        print("✅ %s %s 的 harness 键 → %s" % (action, os.path.basename(cfg), root_norm))
     except OSError as e:
-        print("  harness.local.yaml 写入失败：%r" % (e,))
+        print("  %s 写入失败：%r" % (os.path.basename(cfg), e))
 
 
 def install():

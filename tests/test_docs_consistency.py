@@ -8,7 +8,7 @@
   1. README「接入模式」表里点名的客户端，必须在 integrations/<客户端>/ 下有 README
      （新接一款工具只改表不写文档 → 红）。
   2. 数字断言（TestDocNumericClaims）：gate 数 / 仓数 / Python 版本要求
-     —— 一律从 `config/harness.yaml`、`pyproject.toml` **动态取事实**，不抄数字。
+     —— 一律从 `config/harness.toml`、`pyproject.toml` **动态取事实**，不抄数字。
   3. 历史记录豁免（test_historical_docs_stay_out_of_numeric_locks）：CHANGELOG
      的数字是**当时的真实值**，纳入数字锁 = 逼人篡改历史。
   4. 缺口语义（TestAbsenceClaimsAreHonest）：文档说「某某尚未入库」而该路径**存在**
@@ -52,7 +52,7 @@ def _read(path):
 PERSONAL_DEPS = ["worktree-manager", "huayu-manager", "codebase-memory", "farmerCore"]
 ENGINE_DIRS = ["checks", "harness", "config", "sandbox"]
 CONDITIONAL = ("不依赖", "不受影响", "照常", "可跳过", "若你", "可选", "有则", "没有也")
-_ENGINE_SUFFIX = (".py", ".sh", ".yaml", ".yml", ".json", ".md")
+_ENGINE_SUFFIX = (".py", ".sh", ".toml", ".yaml", ".yml", ".json", ".md")
 
 
 class TestNoPersonalDependencies(unittest.TestCase):
@@ -120,15 +120,12 @@ class TestClientDocsExist(unittest.TestCase):
 # ── 数字断言锁（2026-09-16 剖析报告 A1） ──────────────────────────────────────
 # 为什么补：本次修了 6 处「文档与实现漂移」。逃逸原因不是人懒，是**锁的覆盖面** ——
 # test_entry_level.py 的计数锁只扫 README.md / AGENTS.md，其余文档里同一条事实可以
-# 自由地写成另一个数（README_推广接入 与 ADR 同时写着「33 个 gate」时无人发现）。
+# 自由地写成另一个数（同一句话在两份文档里各写一个数时无人发现）。
 # 这里把**数字事实**扩到全部会写它的文档。
 #
 # 两条纪律（缺一个这锁就会变成噪音，而噪音的害处是「下次真漂移没人看」）：
-#  ① 只锁**能机械取到事实**的数（gate 数 / Python 版本）。取不到来源的
-#     宁可不锁 —— 例：`README_推广接入.md` 的「5 款客户」没有单一事实源，故不锁。
-#  ② `N 仓` 在本仓有**三种含义**（实测）：RUNBOOK「34 仓钩子体检」= 全量；推广文档
-#     「已全量清除（29 仓）」= 当时扫过的仓数、「✅ 6 仓已有」= 已有某文档的仓数
-#     （后者 2026-09-19 已从推广文档删掉 —— 实测早就是 29 个，改成了「不写数、指命令」）。
+#  ① 只锁**能机械取到事实**的数（gate 数 / Python 版本）。取不到来源的宁可不锁。
+#  ② `N 仓` 在不同文档里可能有不同含义（全量 / 曾扫过的仓数 / 已有某文档的仓数），
 #     所以仓数锁只认**唯一无歧义的那个短语**，不做泛化匹配。
 #  ③ CHANGELOG 是**带日期的历史记录**，里面的数字是当时的真实值；
 #     拿今天的数去比等于要求人篡改历史 —— 明确排除。
@@ -136,17 +133,16 @@ class TestClientDocsExist(unittest.TestCase):
 # 把它复制进安装包的 OPENCLAW.md），读者是拿到包的同事。它写着「harness_list_gates 返回
 # 33/33」，config 早已是 34（2026-09-14 本仓注册 harness_self 自检 gate 时从 33 变 34）——
 # 数字锁管不到，于是漂移一直躺在出货件里。补进来，并补上它用的那种写法（见下）。
-NUMERIC_DOCS = ("README.md", "AGENTS.md", "README_推广接入.md",
+NUMERIC_DOCS = ("README.md", "AGENTS.md",
                 "docs/adr/0001-packaging-principles.md",
                 "docs/packaging/OPENCLAW.md",
                 "docs/packaging/RUNBOOK.md", "docs/packaging/COMPAT.md",
                 "docs/packaging/INSTALL.md")
 HISTORICAL_DOCS = ("CHANGELOG.md",)
 # 只认「**要求**」形态，不认「某个 API 从哪个版本起有」这类说明：
-#   README:17「3.10 及以下缺少 write_text(newline=) 等 API」、
-#   推广:33「引擎用到 write_text(newline=) 等 3.10+ API」
-# 这两句都是**真话**且与「要求 3.11+」不矛盾 —— 泛化匹配会把它误判成漂移（本锁首跑就
-# 真踩了这个坑：报了「推广文档要求 3.10+」）。所以要锚定在「Python」/加粗/「≥」上。
+#   README:17「3.10 及以下缺少 write_text(newline=) 等 API」这类句子是**真话**，
+#   与「要求 3.11+」不矛盾 —— 泛化匹配会把它误判成漂移（本锁首跑就真踩过这个坑：
+#   报了「文档要求 3.10+」）。所以要锚定在「Python」/加粗/「≥」上。
 _PY_REQ_PATTERNS = (
     r"Python\s*3\.(\d+)\+",      # 「Python 3.11+」
     r"Python\s*≥\s*3\.(\d+)",    # 「Python ≥ 3.11」
@@ -160,8 +156,8 @@ _PATH_TOKEN = r"`?([\w][\w./-]*\.(?:py|md|json|toml|yaml|yml|sh|html|js|vue|cs))
 def _config_facts():
     """动态取「事实」：gate 数。与引擎**同一份 config**（不抄数字）。
 
-    **不再回仓数**（2026-09-18 跨平台批次 2）：`config/harness.yaml` 的 `repos:` 段已刻意
-    留空，路径下沉到 gitignored 的 `config/harness.local.yaml`（各人不同）。换句话说
+    **不再回仓数**（2026-09-18 跨平台批次 2）：`config/harness.toml` 的 `[repos]` 段已刻意
+    留空，路径下沉到 gitignored 的 `config/harness.local.toml`（各人不同）。换句话说
     `len(cfg["repos"])` **已经不是团队事实、而是本机事实** —— 拿它去比文档数字，等于要求
     文档写死「我这台机器几个仓」，同事一 clone 就变假。要数本机仓用 `_machine_repos()`。
 
@@ -253,7 +249,7 @@ class TestDocNumericClaims(unittest.TestCase):
         m = re.search(r"\d+\s*仓", txt)
         if m is not None:
             self.fail("RUNBOOK 里又出现了写死的仓数「%s」—— 那是本机事实（repos 段在 gitignored 的 "
-                      "config/harness.local.yaml 里），别人 clone 后这个数字就是错的；"
+                      "config/harness.local.toml 里），别人 clone 后这个数字就是错的；"
                       "要写就写「全部受管仓」并指到 run_gate.py --list。" % m.group(0))
         self.assertIn("run_gate.py --list", txt,
                       "RUNBOOK 不再写死仓数，那就必须告诉读者**去哪看本机清单**："
@@ -282,7 +278,7 @@ class TestDocNumericClaims(unittest.TestCase):
         """文档里的 Python **版本要求**必须等于 pyproject 的 requires-python。
 
         只认要求形态（见 `_PY_REQ_PATTERNS` 的注释）：本锁首跑时报了
-        「推广文档要求 3.10+」，实际那句是「引擎用到 3.10+ API」—— 说明/要求不分家
+        「文档要求 3.10+」，实际那句是「引擎用到 3.10+ API」—— 说明/要求不分家
         就会产出**假漂流报告**，而假报告的代价是下一次真漂移没人信。
         """
         pyproj = _read("pyproject.toml")

@@ -1,7 +1,7 @@
 # 客户端接入兼容矩阵（agentguard · 推荐版）
 
 > 验证等级：**✅ 已验证（本轮实测）** ｜ **◐ 部分验证（见备注）** ｜ **✗ 未验证（不默认可用的默认项）**。
-> 验证环境：Windows 11 · Git-for-Windows(MSYS bash) · Python 3.13（AutoClaw 内置解释器）· 2026-09-14。
+> 验证环境：Windows 11 · Git-for-Windows(MSYS bash) · Python 3.13 · 2026-09-14。
 > 原始证据：`证据/client_registrations.txt`、`证据/verify_entries.txt`（本轮交付包）。
 
 ## 1. MCP 入口（`agentguard/mcp.py` · 单文件 · 零第三方依赖）

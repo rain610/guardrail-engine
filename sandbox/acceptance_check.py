@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""接入验收门（评审 v8 / Codex P2）—— 一个客户 gate 算不算"上线"，看四项证据，不看配置文件。
+"""接入验收门（评审 v8 / Codex P2）—— 一个受管 gate 算不算"上线"，看四项证据，不看配置文件。
 
 背景：「全部 gate 都是 `enabled`」是**配置事实**；本机台账里只有少数几个真的跑过。
 （这里原先硬写着「33 个 gate」：本仓 2026-09-14 注册 harness_self 自检 gate 后总数变成 34，
@@ -54,15 +54,20 @@ VIOLATION = {                      # 各端的"已知违规"探针内容（新�
     "pc": ("a.vue", '<template>\n  <div>h</div>\n</template>\n<script setup>\nconsole.log(1);\n</script>\n'),
     "h5": ("a.vue", '<template>\n  <div>h</div>\n</template>\n<script setup>\nconsole.log(1);\n</script>\n'),
     "backend": ("a.cs", None),     # backend 用编码探针（见下）
+    "example": ("a.js", 'console.log(1);\n'),
 }
 CLEAN = {
     "pc": ("b.vue", '<template>\n  <div>h</div>\n</template>\n<script setup>\nconst a = 1;\n</script>\n'),
     "h5": ("b.vue", '<template>\n  <div>h</div>\n</template>\n<script setup>\nconst a = 1;\n</script>\n'),
     "backend": ("b.cs", None),
+    "example": ("b.js", 'const a = 1;\n'),
 }
 
 
 def _kind(gate_name):
+    # 开源版唯一开箱即用的 gate，按脚本名显式认（file_types 只认 *_pc / *_h5 / *_backend）
+    if gate_name == "example":
+        return "example"
     try:
         import file_types
         return file_types.kind_of(gate_name) or "pc"
@@ -75,15 +80,18 @@ def _fixture(gate_name, kind, violation):
     d = tempfile.mkdtemp(prefix="acc-")
     repo = os.path.join(d, "repo")
     script = {"pc": "checks/pc_code_check.py", "h5": "checks/h5_code_check.py",
-              "backend": "checks/backend_layer_check.py"}[kind]
+              "backend": "checks/backend_layer_check.py",
+              "example": "checks/example_code_check.py"}[kind]
     # 后端规则按目录判定，探针文件要落在规则作用域内
-    sub = "RMC/Eagle.RMC.Repository" if kind == "backend" else "src"
+    sub = "src" if kind != "backend" else "src/backend"
     os.makedirs(os.path.join(repo, sub))
     subprocess.run(["git", "init", "-q", "."], cwd=repo, capture_output=True)
     cfg = os.path.join(d, "cfg.yaml")
+    # endpoint 只对端 gate 有意义（--validate 只认 pc/h5/backend）；示例 gate 不写。
+    endpoint_line = ("    endpoint: %s\n" % kind) if kind in ("pc", "h5", "backend") else ""
     gate_block = ("repos:\n  probe: %s\ngates:\n  probe:\n    enabled: true\n    repo: probe\n"
-                  "    endpoint: %s\n    script: %s\n    mode: strict\n    run_on: [pre_commit]\n"
-                  % (repo.replace("\\", "/"), kind, script))
+                  "%s    script: %s\n    mode: strict\n    run_on: [pre_commit]\n"
+                  % (repo.replace("\\", "/"), endpoint_line, script))
     if violation or kind == "backend":
         gate_block += "    encoding: utf-8-bom\n"
     with io.open(cfg, "w", encoding="utf-8", newline="") as f:
@@ -168,18 +176,18 @@ def check_gate(gate_name, cfg_all, log_path):
             # （不是副本），所以证据强度不降反升：它证的是"你这套安装里的自检真的会拦"。
             #
             # 2026-09-18（跨平台批次 2）：覆盖层里**必须自带一份 repos 表**，不能再只写 gates。
-            # 因为 `HARNESS_CONFIG` 是**替换**本机 local.yaml 而不是叠在它上面（_config.load:198），
+            # 因为 `HARNESS_CONFIG` 是**替换**本机 local 覆盖层而不是叠在它上面（_config.load:198），
             # 于是只写 gates 的覆盖层会让 repos 段整个为空 —— 而「repos 段为空」自本批起
             # **不再是缺陷**（新 clone / CI 干净容器就是这个形态，逐条报错会把人指去改错文件）。
             # 后果实测：探针造出来的"违规"在新语义下合法 → 自检 rc=0 → ②假红、连带 ③ 的密闭性
             # 断言也红。修法不是把判据改回去，而是让探针造出**真正**的缺陷：本机**有**路径表，
             # 而新加的这个 gate 引用了表里没有的键 —— 那才是「⑤ gate 引用未定义的 repo」。
-            # 表里的键**从 gates 段反查**（不是从 cfg["repos"] 抄）：后者在有 local.yaml 的机器上
+            # 表里的键**从 gates 段反查**（不是从 cfg["repos"] 抄）：后者在有 local 覆盖层的机器上
             # 是 33 条、在干净容器里是 0 条，抄它会让这条锁随环境漂移。路径一律用工程根
             # （本项只判 `os.path.isdir`，而工程根必然存在）。
             #
             # 2026-09-18（跨平台批次 7）：键名表**搬回共享配置**了（批次 2 把它一起删掉了，
-            # 于是「键没声明」与「本机没配」塌成一件事 —— 只填了 1 条 local.yaml 的同事机上
+            # 于是「键没声明」与「本机没配」塌成一件事 —— 只填了 1 条 local 覆盖层的同事机上
             # 32 个 gate 判 ❌、提交链 fail-closed，详见 tests/test_repo_key_registry.py）。
             # 本探针**逐字未动**，但要记下它在新语义下的两支各靠什么红/绿：
             #   · 违规支：`zzz_accept_probe` 引用表里没有的键 → ⑤ ❌ → rc=1（与批次 2 同源）
@@ -191,7 +199,7 @@ def check_gate(gate_name, cfg_all, log_path):
             d = tempfile.mkdtemp(prefix="acc-self-")
             try:
                 cfg = os.path.join(d, "overlay.yaml")
-                # 合规那支的 repo 键**从配置里取**，不写死：写死某个客户的键，等那个键被改名
+                # 合规那支的 repo 键**从配置里取**，不写死：写死某个仓的键，等那个键被改名
                 # 或挪走，这里就会变成"合规也红"的假失败，而现象看起来像门禁坏了。
                 _ok_repo = (((cfg_all.get("gates") or {}).get("harness_self") or {}).get("repo")
                             or "harness_self")
@@ -252,16 +260,19 @@ def check_gate(gate_name, cfg_all, log_path):
     else:
         res["notes"].append("syntax 传感器不适用（本 gate 非 pc/h5）")
 
-    # ④ 台账
-    if os.path.isfile(log_path):
+    # ④ 台账（月度分片 + 旧单文件，读侧与 run_gate._ledger_files 同源）
+    paths = log_path if isinstance(log_path, (list, tuple)) else [log_path]
+    for p in paths:
+        if res["ledger"] or not os.path.isfile(p):
+            continue
         try:
-            with io.open(log_path, encoding="utf-8", errors="replace") as f:
+            with io.open(p, encoding="utf-8", errors="replace") as f:
                 res["ledger"] = any('"%s"' % gate_name in line for line in f)
         except Exception as e:
             res["notes"].append("读台账失败：%r" % (e,))
     if not res["ledger"]:
-        res["notes"].append("台账 %s 里没有该 gate 的记录（链路可能从未真正触发）"
-                            % os.path.basename(log_path))
+        shown = ", ".join(os.path.basename(p) for p in paths) or "(无台账文件)"
+        res["notes"].append("台账 %s 里没有该 gate 的记录（链路可能从未真正触发）" % shown)
     _keys = ["hook", "probe", "clean", "ledger"]
     if res.get("syntax") is not None:
         _keys.append("syntax")          # 不适用（非 pc/h5）不参与判定；适用时**必检**
@@ -279,7 +290,17 @@ def main():
     gates = sorted((cfg.get("gates") or {}).keys())
     if a.gate:
         gates = [g for g in gates if g == a.gate] or [a.gate]
-    log_path = os.environ.get("HARNESS_LOG_FILE") or os.path.join(ROOT, "reports", "gate_log.jsonl")
+    env_log = os.environ.get("HARNESS_LOG_FILE")
+    if env_log:
+        log_path = [env_log]
+    else:
+        # 与 run_gate 写入侧同源：旧单文件（若有）+ 月度分片。硬编码 gate_log.jsonl
+        # 会永远读不到 2026-09-29 之后的运行记录（本文件此前就是因此误报 ④ ❌）。
+        try:
+            import run_gate
+            log_path = run_gate._ledger_files()
+        except Exception:
+            log_path = [os.path.join(ROOT, "reports", "gate_log.jsonl")]
     rows = [check_gate(g, cfg, log_path) for g in gates]
     if a.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2))

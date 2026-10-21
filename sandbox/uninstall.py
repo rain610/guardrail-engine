@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""一键卸载（整机退出）：把「内部安装包」在这台机器上装过的东西逐项撤回。
+"""一键卸载（整机退出）：把「离线安装包」在这台机器上装过的东西逐项撤回。
 
 对照包内「安装说明.md」的安装面，处理六项：
   [1/6] 技能副本（skill install 装入宿主目录）→ 改名归档（可逆，可随时改回）
@@ -428,7 +428,7 @@ def _require_python(vi=None):
 
 def main(argv=None):
     _require_python()   # 前置检查（Python 3.11+）
-    ap = argparse.ArgumentParser(description="一键卸载：把「内部安装包」装过的东西逐项撤回（默认预演）")
+    ap = argparse.ArgumentParser(description="一键卸载：把「离线安装包」装过的东西逐项撤回（默认预演）")
     ap.add_argument("--harness", default=None,
                     help="你的 agentguard 仓库路径（用于转发 cli.py / 写台账；缺省读 AGENTGUARD_DIR、HARNESS_DIR）")
     ap.add_argument("--python", default=None, help="pip 卸载用的解释器（默认：当前解释器）")

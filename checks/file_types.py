@@ -25,7 +25,7 @@ ALL_EXTS = tuple(sorted(set(PC_EXTS) | set(H5_EXTS) | set(BACKEND_EXTS)))
 
 
 def kind_of(gate_name):
-    """从 gate 名推端点：约定 <客户>_pc / <客户>_h5 / <客户>_backend。"""
+    """从 gate 名推端点：约定 <仓>_pc / <仓>_h5 / <仓>_backend。"""
     n = (gate_name or "").lower()
     for k in ("backend", "pc", "h5"):
         if n.endswith("_" + k):

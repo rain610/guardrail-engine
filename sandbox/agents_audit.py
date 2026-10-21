@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""客户仓 `AGENTS.md` 瘦身体检 —— **只读**。给 `00_知识分层设计.md` §五 第 4 项出判据。
+"""受管仓 `AGENTS.md` 瘦身体检 —— **只读**。给"知识分层"的落地出判据。
 
 为什么是这个形状（2026-09-19）
 --------------------------------------------------------------------------------
-「33 个客户仓瘦身」最初被当成一道**按端分类**的判断题（"PC 端模板缺归宿所以先别动，
+「33 个受管仓瘦身」最初被当成一道**按端分类**的判断题（"PC 端模板缺归宿所以先别动，
 后端/H5 全有归宿所以能删"）。那个判断**会过期**：PC 模板补上归宿的那天它就不成立，
 后端/H5 冒出无归宿新行的那天它也不成立 —— 而过期的判据没人知道该重跑什么。
 
@@ -24,13 +24,13 @@
   ① 归一化后**精确相等**，不是子串 —— 差一个标点就落到「待迁」= 留而不删。
   ② 锚点要能在归宿文件里**逐字求证到**，否则报「指针指空」并按「待迁」处理。
 
-本文件**没有任何写入路径**：不开 write 模式、不建目录、不碰客户仓。
+本文件**没有任何写入路径**：不开 write 模式、不建目录、不碰受管仓。
 落盘由人过目 diff 之后自己做（§六 ①：这类知识删了不可恢复）。
 
 用法
 --------------------------------------------------------------------------------
     python sandbox/agents_audit.py                    # 汇总 + 待迁清单
-    python sandbox/agents_audit.py --diff ntrx_backend # 出某个仓的拟改 diff（只打印）
+    python sandbox/agents_audit.py --diff demo_backend # 出某个仓的拟改 diff（只打印）
     python sandbox/agents_audit.py --json             # 机读
     python sandbox/agents_audit.py --sink <路径>       # 换一张归宿表（测试用）
 
@@ -73,12 +73,12 @@ SCAFFOLD = frozenset([
 MOVE_PREFIXES = ("知识库：",)
 
 # 知识库根：维护机上的绝对路径 → `<VAULT>` 占位（目标形态见
-# `golden-patterns/templates/00_知识分层设计.md` §三）。
-# 为什么必须换：它是**维护机**的路径，同事 clone 客户仓后这行在他机器上是死的 ——
+# `golden-patterns/index.md` 的仓库结构约定）。
+# 为什么必须换：它是**维护机**的路径，同事 clone 受管仓后这行在他机器上是死的 ——
 # 与 `auto-gate.py` 那条本机路径同源，只是换了目录。2026-09-22 实测：
 # 22 份产物**全部**还带着它（`<HARNESS>` 已换、这一类漏了）。
-# 实测 29/29 个客户仓的 AGENTS.md 里只有这一种写法，所以单前缀替换是安全的。
-VAULT_ROOTS = ("D:/KnowledgeVault",)
+# 实测 29/29 个受管仓的 AGENTS.md 里只有这一种写法，所以单前缀替换是安全的。
+VAULT_ROOTS = ("D:/team-vault",)
 
 
 def norm(text):
@@ -89,8 +89,8 @@ def norm(text):
     「本机能跑、换机器就废」。
     """
     # 两种写法都要试：ROOT 由 os.path.abspath 得来，在 Windows 上是**反斜杠**形态；
-    # 而客户仓 AGENTS.md 里写的是正斜杠。只替换其中一种 = 这条判据只在这台机器上成立，
-    # 客户那 11 行会整片落进「待迁」（2026-09-19 首跑实测，就是这么发现的）。
+    # 而受管仓 AGENTS.md 里写的是正斜杠。只替换其中一种 = 这条判据只在这台机器上成立，
+    # 受管仓那 11 行会整片落进「待迁」（2026-09-19 首跑实测，就是这么发现的）。
     for form in (ROOT, ROOT.replace("\\", "/")):
         text = text.replace(form, "<H>")
     return " ".join(text.split())
@@ -119,7 +119,7 @@ def product_line(line):
     --------------------------------------------------------------------------
     在此之前，`portable()` 只挂在 `_target_lines` 处理**搬迁行**的那一个分支上，
     首行标题 / `## 项目` 块 / 留守行三处都只做 `rstrip()` —— 同一条知识库路径，
-    写在搬迁行里变成 `<VAULT>`，写在留守行里**逐字进产物**。7 个客户仓
+    写在搬迁行里变成 `<VAULT>`，写在留守行里**逐字进产物**。7 个受管仓
     （多个客户端的端仓）是头一回踩到，而当时那把锁
     （夹具是 `知识库：` 开头的**搬迁**行）照旧全绿 —— 判据看着覆盖了"知识库路径"，
     实际放过了另一半。
@@ -299,13 +299,13 @@ def target_form(lines, end, keep_lines, move_lines):
 def _target_lines(lines, end, proj, rest, move_lines):
     """拼装本体（`proj` = 已摘出的 `## 项目` 块，`rest` = 其余留守行）。
 
-    `keep_lines` / `move_lines` **逐字保留**（§六 ①：551 行客户独有必须逐字保住）——
+    `keep_lines` / `move_lines` **逐字保留**（逐字保留：551 行业务独有必须原样保住）——
     只做 rstrip 与"去掉已被新标题取代的 `知识库：` 标签"，不重排、不加前缀、
     不从行里再抠任何片段：`1. …` / `| a | b |` / `## …` 混在一起，任何"统一成 - 列表"
     都是提案自己对原文的改写。
 
     （初版在这里从 `知识库：` 行里按反引号抠出路径填进去，于是
-     `` 知识库：`…/ntrx/`（工单必读 `00_工单必读.md`） `` 的**括号那句被静默丢了** ——
+     `` 知识库：`…/acme/`（工单必读 `00_工单必读.md`） `` 的**括号那句被静默丢了** ——
     正是 §六 ① 说的那类损失。现在整行留，只摘标签。）
 
     ★ 2026-10-05：出自源文件的行**一律在末尾过 `product_line()` 收口一次**，不再逐处调用。
@@ -322,7 +322,7 @@ def _target_lines(lines, end, proj, rest, move_lines):
             "## 本仓独有（同事的机器上不会有的知识）", ""]
     out += list(rest) or ["（待补 —— 目前没有）"]
     out += ["", "## 项目知识库", ""]
-    out += list(move_lines) or ["`<VAULT>/concepts/customers/<客户>/`"]
+    out += list(move_lines) or ["`<VAULT>/concepts/projects/<项目>/`"]
     while out and not out[-1].strip():
         out.pop()
     # 唯一收口处：出自源文件的行在这里统一变成产物形态（摘标签 + `<VAULT>` 占位）。
@@ -394,11 +394,11 @@ def print_report(a, reps):
     shared = {k: v for k, v in owner.items() if len(v) >= 2}
     print()
     print("=" * 78)
-    print("③ 待迁清单 —— 没有归宿的行（按影响客户数降序；这就是**端级模板的待办**）")
+    print("③ 待迁清单 —— 没有归宿的行（按影响仓数降序；这就是**端级模板的待办**）")
     print("=" * 78)
     for s, ks in sorted(shared.items(), key=lambda x: (-len(x[1]), x[0])):
-        print("   [%2d 客户] %s" % (len(ks), s[:100]))
-    print("   （另有 %d 条只出现在一个客户仓里 = 真·本仓独有，本来就该留下）"
+        print("   [%2d 仓] %s" % (len(ks), s[:100]))
+    print("   （另有 %d 条只出现在一个受管仓里 = 真·本仓独有，本来就该留下）"
           % (len(owner) - len(shared)))
     print()
     print("   补归宿的方法：往 sandbox/sink_table.txt 加一组")
@@ -477,12 +477,12 @@ def scan_unresolved_harness(reps):
 
     print()
     print("   修复：重跑渲染（`python sandbox/agents_scaffold.py --emit <目录>`）")
-    print("   或手动把 `<HARNESS>` 替换成实际路径（从 config/harness.local.yaml 的 harness: 键取）")
+    print("   或手动把 `<HARNESS>` 替换成实际路径（从 config/harness.local.toml 的 harness: 键取）")
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="客户仓 AGENTS.md 瘦身体检（只读；按「这一行有没有归宿」判定，不按端）")
+        description="受管仓 AGENTS.md 瘦身体检（只读；按「这一行有没有归宿」判定，不按端）")
     ap.add_argument("--diff", metavar="仓键名", help="出某个仓的拟改 diff（只打印，不落盘）")
     ap.add_argument("--sink", metavar="路径", help="归宿表路径（默认 sandbox/sink_table.txt）")
     ap.add_argument("--json", action="store_true", help="机读输出")

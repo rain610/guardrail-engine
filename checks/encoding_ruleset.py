@@ -2,12 +2,12 @@
 """
 agentguard 编码卫生规则集（2026-09-07，CodeBuddy 实战暴露后补）
 ====================================================================
-背景：CodeBuddy 往 hzy 仓 Program.cs 追加代码时，跟随文件既有编码(GBK)写入，
-而该仓主流编码是 UTF-8 BOM（908/917 个 .cs）——结果 diff 乱码、VS 按 UTF-8 探测
+背景：AI 助手往某个 .NET 仓的 Program.cs 追加代码时，跟随文件既有编码(GBK)写入，
+而该仓主流编码是 UTF-8 BOM（绝大多数 .cs 文件）——结果 diff 乱码、VS 按 UTF-8 探测
 打开就乱码。教训：AI 的编码决策是「跟随打开的文件」而非「跟随仓主流」，
 遇到异类文件就翻车，必须有机械化规则兜底。
 
-规则：文件编码必须符合仓约定。约定来自 config/harness.yaml 的 gates.<gate>.encoding
+规则：文件编码必须符合仓约定。约定来自 config/harness.toml 的 gates.<gate>.encoding
 （缺省 utf-8-bom）。判定级别：
   - error：文件既不是约定编码，也不是合法的约定编码（真损坏/错编码，必须修）
   - info ：文件是「仓主流的异类」（存量历史文件，报告观察，不拦改动）
@@ -111,7 +111,7 @@ class EncodingRule(Rule):
         msg = f"编码为 {actual}，仓约定 {self.expect}（VS/编辑器会乱码，请统一转码）"
         return [Finding(self.id, msg, line=1,
                         fix=f"编辑器另存为 {self.expect}，或用工具批量转码后提交",
-                        see="2026-09-07 CodeBuddy 往 hzy Program.cs(GBK 异类)追加内容产生乱码，实测后立此规则")]
+                        see="2026-09-07 AI 助手往 GBK 异类 Program.cs 追加内容产生乱码，实测后立此规则")]
 
 
 def rules_for(encoding: str) -> list:

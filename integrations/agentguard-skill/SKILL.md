@@ -81,11 +81,11 @@ const DEVICE_PROBE = "192.168.100.1"
 - 规则 ID 必须写对（写成别的规则名不生效——设计上不允许一句话静默所有规则）
 - 理由写在标记后面：标记会留在 diff 里，人工复核看得见
 - 只在"确实是合规写法"时用；能改代码改合规就别加标记
-- **先看这条规则对当前仓库是否适用**（仓/客户专属规则会用 `disabled_rules` 关掉）
+- **先看这条规则对当前仓库是否适用**（仓/业务专属规则会用 `disabled_rules` 关掉）
 - 被一条明显不适用的规则拦住 → 报给 harness 负责人改配置，别硬加标记
 
 ## 门禁什么时候会自动跑（run_on）
-`config/harness.yaml` 里每个 gate 有 `run_on: [pre_commit, post_edit]`，是**真开关**：
+`config/harness.toml` 里每个 gate 有 `run_on = ["pre_commit", "post_edit"]`，是**真开关**：
 - `post_edit`＝AI 改完文件的编辑期检查（auto-gate 走这个）。没声明它时编辑期不跑，**不是你写错了，是策略如此**
 - `pre_commit`＝提交时强制拦（端仓 `core.hooksPath` 共享钩子）
 - 别指望"编辑期没报＝能提交"：**提交时永远会检查**
@@ -119,11 +119,11 @@ python <HARNESS>/agentguard/cli.py done --repo <端仓库根>
 
 ## 引擎自检（改 harness 自身后必跑）
 - 套件：`python -m unittest discover -s tests`（改动 checks/harness 后必跑）
-- 配置体检：`python harness/run_gate.py --validate`（改完 harness.yaml 跑；CI 用 `--structure-only`）
+- 配置体检：`python harness/run_gate.py --validate`（改完 harness.toml 跑；CI 用 `--structure-only`）
 - 零依赖守卫：`tests/test_stdlib_only.py`——引擎层只许标准库
 
 ## 规则与范式从哪看
-- gate 策略：`<HARNESS>/config/harness.yaml`
+- gate 策略：`<HARNESS>/config/harness.toml`
 - 规则实现：`<HARNESS>/checks/`（规则集与对应入口脚本）
 - 黄金范式：`<HARNESS>/golden-patterns/index.md`
 - 工程地图：`<HARNESS>/AGENTS.md`

@@ -4,12 +4,13 @@
 # 四项检查，逐项 ✅/⚠/❌：
 #   1. 环境：python 可用 + 全部门禁入口脚本带 UTF-8 输出兜底
 #      （GBK 控制台防崩溃兜底漏一个入口就在那个入口崩——逐文件 grep 核验）。
-#   2. 门禁端到端探针（核心）：写一个 R9 违规 .cs（utf-8-bom）→ run_gate 应
-#      rc=1 且输出含 R9 真实违规标记；修复成 SysConst 写法 → 应 rc=0。
+#   2. 门禁端到端探针（核心）：在临时仓里写一个 console.log 违规文件 →
+#      run_gate 应 rc=1 且点名 NO-CONSOLE；改成合规写法 → 应 rc=0。
 #      「拦下来」≠「拦对了」：GBK 崩溃 / worktree ValueError 也会 rc≠0，
 #      必须核对拦截理由是真实规则违规。双向验证，只测单向两头都测不出。
+#      探针不依赖任何受管仓。
 #   3. hook 活性：主仓 .git/hooks 里装的 gate 必须在 config 中 enabled——
-#      防「装了 hook + gate 关着」双重失效静默放行（2026-09-08 Seeyon 教训）。
+#      防「装了 hook + gate 关着」双重失效静默放行（2026-09-08 实测教训）。
 #   4. skill 软链：codebuddy / claude / opencode 的 agentguard 软链可达
 #      （仅加速项，缺失不拦接入）。
 #   另含 1.5/1.6 解析链自检（harness: 键 / 指针文件新鲜度）——后补项，编号沿用。
@@ -89,26 +90,35 @@ else
 fi
 echo ""
 
-# ---------- 1.5/4 统一解析链（harness: 键）----------
-echo "--- 1.5/4 统一解析链（config/harness.local.yaml → harness: 键）---"
-LOCAL_CFG="$HARNESS/config/harness.local.yaml"
+# ---------- 1.5/4 统一解析链（local 覆盖层的 harness 键）----------
+echo "--- 1.5/4 统一解析链（config/harness.local.toml → harness 键）---"
+LOCAL_CFG="$HARNESS/config/harness.local.toml"
+if [ ! -f "$LOCAL_CFG" ] && [ -f "$HARNESS/config/harness.local.yaml" ]; then
+    LOCAL_CFG="$HARNESS/config/harness.local.yaml"   # 旧版兼容：没迁到 TOML 的机器接着说
+fi
 if [ ! -f "$LOCAL_CFG" ]; then
-    warn "缺 $LOCAL_CFG（跑 setup_machine.sh 生成）"
+    warn "缺 config/harness.local.toml（跑 setup_machine.sh 生成）"
 else
-    # 检查 harness: 键是否存在
-    HARNESS_KEY=$(grep "^harness:" "$LOCAL_CFG" 2>/dev/null | head -1 | sed 's/^harness:[[:space:]]*//')
+    LOCAL_REL="${LOCAL_CFG#$HARNESS/}"
+    case "$LOCAL_CFG" in
+        *.toml)
+            HARNESS_KEY=$(grep '^harness[[:space:]]*=' "$LOCAL_CFG" 2>/dev/null | head -1 \
+                          | sed 's/^harness[[:space:]]*=[[:space:]]*//' | sed 's/^"//; s/"$//')
+            FIX_HINT="$LOCAL_REL 顶部加一行：harness = \"$HARNESS_WIN\""
+            ;;
+        *)
+            HARNESS_KEY=$(grep '^harness:' "$LOCAL_CFG" 2>/dev/null | head -1 | sed 's/^harness:[[:space:]]*//')
+            FIX_HINT="$LOCAL_REL 的 repos: 之前加一行：harness: $HARNESS_WIN"
+            ;;
+    esac
     if [ -z "$HARNESS_KEY" ]; then
-        warn "harness.local.yaml 缺 harness: 键（各 AI 客户端渲染 GLOBAL_AGENTS.md/仓级 AGENTS.md 要靠它取路径）"
-        echo "  修复：在 $LOCAL_CFG 的 repos: 之前加一行：harness: $HARNESS_WIN"
+        warn "$LOCAL_REL 缺 harness 键（各 AI 客户端渲染 GLOBAL_AGENTS.md/仓级 AGENTS.md 要靠它取路径）"
+        echo "  修复：在 $FIX_HINT"
+    elif [ "$HARNESS_KEY" = "$HARNESS_WIN" ]; then
+        ok "$LOCAL_REL → harness = $HARNESS_KEY"
     else
-        # 键存在：检查值对不对
-        if [ "$HARNESS_KEY" = "$HARNESS_WIN" ]; then
-            ok "harness.local.yaml → harness: $HARNESS_KEY"
-        else
-            warn "harness.local.yaml 的 harness: 键值不对（$HARNESS_KEY ≠ $HARNESS_WIN）"
-            echo "  修复：把 $LOCAL_CFG 的 harness: 行改成：harness: $HARNESS_WIN"
-            echo "  或重跑：sh $HARNESS_WIN/sandbox/install_shim.py"
-        fi
+        warn "$LOCAL_REL 的 harness 键值不对（$HARNESS_KEY ≠ $HARNESS_WIN）"
+        echo "  修复：重跑 sh $HARNESS_WIN/sandbox/setup_machine.sh（会就地校正该键）"
     fi
 fi
 echo ""
@@ -138,101 +148,71 @@ fi
 echo ""
 
 # ---------- 2/4 门禁端到端探针 ----------
-echo "--- 2/4 门禁端到端探针（R9 违规→拦 / 修复→放行）---"
-# 选 gate：优先成熟、无 legacy_baseline 的后端 gate（legacy 仓会把 R9 降 info
-# 让探针假失败），回退任一「启用 + 非 legacy + 有 RMC/Eagle.RMC.Entities 目录」的后端 gate。
+echo "--- 2/4 门禁端到端探针（违规→拦 / 修复→放行）---"
+# 探针用内置 example gate：它的规则随引擎出货，与用户配置的业务仓无关，
+# 因此可以在临时仓里做双向验证（违规→rc=1 / 合规→rc=0）。
+# example 未启用时不做猜测式选 gate —— 自定义规则里没有"必然违规"的通用样本。
 PROBE_INFO=$($HARNESS_PY - "$HARNESS_WIN" <<'PYEOF'
 import sys, os
 harness = sys.argv[1]
 sys.path.insert(0, os.path.join(harness, "harness"))
 from _config import all_gates
 gates = all_gates()
-cands = [n for n, g in sorted(gates.items())
-         if g.get("enabled") and n.endswith("_backend")
-         and os.path.isdir(g.get("_repo_path") or "")
-         and os.path.isdir(os.path.join(g["_repo_path"], "RMC", "Eagle.RMC.Entities"))]
-pick = next((n for n in cands if not gates[n].get("legacy_baseline")), "")
-if not pick and cands:
-    pick = cands[0]
-print(f"{pick}\t{gates[pick].get('_repo_path') if pick else ''}")
+print("example" if (gates.get("example") or {}).get("enabled") else "")
 PYEOF
 )
 GATE=$(printf '%s' "$PROBE_INFO" | cut -f1)
-REPO=$(printf '%s' "$PROBE_INFO" | cut -f2)
 if [ -z "$GATE" ]; then
-    warn "无可用后端仓（各 backend gate 未 clone 或路径未配）——端到端探针跳过；配好 local.yaml 后必须补跑"
-else
-    PROBE="$REPO/RMC/Eagle.RMC.Entities/Demo_DoctorProbe.cs"
-    cleanup_probe() { rm -f "$PROBE"; }
-    trap cleanup_probe EXIT
-    echo "  探针 gate=$GATE repo=$REPO"
-    # 违规版：Status == 10（R9 拦；utf-8-bom 过 ENC；纯数据类过 R3；方法名过 R5/R6）
-    $HARNESS_PY - "$PROBE" <<'PYEOF'
-import sys
-path = sys.argv[1]
-content = '''using System;
-
-namespace Eagle.RMC.Entities
-{
-    /// <summary>doctor 探针：本文件故意违规，跑完即删</summary>
-    public class Demo_DoctorProbe
-    {
-        public bool IsNormal(int Status)
-        {
-            return Status == 10;
-        }
+    warn "无可用探针：example gate 未启用 —— 端到端探针跳过；如需验证自定义规则，请在目标仓跑 run_gate.py <gate> --all"
+elif [ "$GATE" = "example" ]; then
+    # 用临时仓验证引擎本身（--repo 覆盖，不需要 local.yaml 配过任何仓）
+    PROBE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/agentguard-doctor.XXXXXX") || {
+        fail "无法创建临时目录（mktemp -d 失败）——端到端探针无法执行"
+        PROBE_DIR=""
     }
-}
-'''
-with open(path, "w", encoding="utf-8-sig") as f:
-    f.write(content)
-PYEOF
-    rc=0
-    # 批次 3（2026-10-15）：直调来源归因（无标直调会落 run_gate 兜底，探针这里显式命名）。
-    OUT=$(HARNESS_ENTRY=doctor $HARNESS_PY "$HARNESS_WIN/harness/run_gate.py" "$GATE" "$PROBE" 2>&1) || rc=$?
-    if [ "$rc" = "0" ]; then
-        fail "违规探针未被拦截（rc=0）——门禁链路失效：查 gate 注册 / hook 是否真装上"
-    elif [ "$rc" != "1" ]; then
-        fail "探针 rc=$rc（期望 1）——疑似环境/配置崩溃而非真实拦截，输出尾部："
-        printf '%s\n' "$OUT" | tail -5 | sed 's/^/      /'
-    elif ! printf '%s' "$OUT" | grep -q "R9"; then
-        fail "发生了拦截但输出无 R9 违规标记——拦的可能是崩溃不是违规（拦下来≠拦对了），输出尾部："
-        printf '%s\n' "$OUT" | tail -5 | sed 's/^/      /'
-    else
-        ok "违规探针被 R9 真实拦截（rc=1，违规标记确认）"
-        # 合规版：SysConst 写法 → 应放行（双向验证）
-        $HARNESS_PY - "$PROBE" <<'PYEOF'
-import sys
-path = sys.argv[1]
-content = '''using System;
-using Eagle.Common;
-
-namespace Eagle.RMC.Entities
-{
-    /// <summary>doctor 探针：合规版，跑完即删</summary>
-    public class Demo_DoctorProbe
-    {
-        public bool IsNormal(int Status)
-        {
-            return Status == SysConst.NormalStatus;
-        }
-    }
-}
-'''
-with open(path, "w", encoding="utf-8-sig") as f:
-    f.write(content)
-PYEOF
-        rc2=0
-        OUT2=$(HARNESS_ENTRY=doctor $HARNESS_PY "$HARNESS_WIN/harness/run_gate.py" "$GATE" "$PROBE" 2>&1) || rc2=$?
-        if [ "$rc2" = "0" ]; then
-            ok "合规版放行（rc=0）——双向验证通过：拦的是真违规，不是崩溃"
+    if [ -n "$PROBE_DIR" ]; then
+        if command -v cygpath >/dev/null 2>&1; then
+            PROBE_DIR_WIN=$(cygpath -m "$PROBE_DIR")
         else
-            fail "合规版仍被拦（rc=$rc2）——门禁过严或探针形态不对，输出尾部："
-            printf '%s\n' "$OUT2" | tail -5 | sed 's/^/      /'
+            PROBE_DIR_WIN="$PROBE_DIR"
         fi
+        PROBE="$PROBE_DIR/demo.js"
+        PROBE_WIN="$PROBE_DIR_WIN/demo.js"
+        cleanup_example_probe() { rm -rf "$PROBE_DIR"; }
+        trap cleanup_example_probe EXIT
+        echo "  探针 gate=example（临时仓 $PROBE_DIR_WIN，不依赖业务仓）"
+        cat > "$PROBE" <<'EOF'
+console.log("doctor probe");
+EOF
+        rc=0
+        OUT=$(HARNESS_ENTRY=doctor $HARNESS_PY "$HARNESS_WIN/harness/run_gate.py" \
+              example --repo "$PROBE_DIR_WIN" "$PROBE_WIN" 2>&1) || rc=$?
+        if [ "$rc" = "0" ]; then
+            fail "违规探针未被拦截（rc=0）——门禁链路失效：查 gate 注册 / 示例规则是否被禁用"
+        elif [ "$rc" != "1" ]; then
+            fail "探针 rc=$rc（期望 1）——疑似环境/配置崩溃而非真实拦截，输出尾部："
+            printf '%s\n' "$OUT" | tail -5 | sed 's/^/      /'
+        elif ! printf '%s' "$OUT" | grep -q "NO-CONSOLE"; then
+            fail "发生了拦截但输出无 NO-CONSOLE 标记——拦的可能是崩溃不是违规，输出尾部："
+            printf '%s\n' "$OUT" | tail -5 | sed 's/^/      /'
+        else
+            ok "违规探针被 NO-CONSOLE 真实拦截（rc=1，违规标记确认）"
+            cat > "$PROBE" <<'EOF'
+const answer = 42;
+EOF
+            rc2=0
+            OUT2=$(HARNESS_ENTRY=doctor $HARNESS_PY "$HARNESS_WIN/harness/run_gate.py" \
+                   example --repo "$PROBE_DIR_WIN" "$PROBE_WIN" 2>&1) || rc2=$?
+            if [ "$rc2" = "0" ]; then
+                ok "合规版放行（rc=0）——双向验证通过：拦的是真违规，不是崩溃"
+            else
+                fail "合规版仍被拦（rc=$rc2）——门禁过严或探针形态不对，输出尾部："
+                printf '%s\n' "$OUT2" | tail -5 | sed 's/^/      /'
+            fi
+        fi
+        cleanup_example_probe
+        trap - EXIT
     fi
-    cleanup_probe
-    trap - EXIT
 fi
 echo ""
 
@@ -279,7 +259,7 @@ for name, g in sorted(gates.items()):
     if hp_norm != SHARED:
         print(f"WARN\t{rp}\tcore.hooksPath 指向 {hp}（非本 harness 共享分发器）——可能是旧安装/他工具 hook，人工确认")
     elif not g.get("enabled"):
-        print(f"FAIL\t{rp}\thooksPath 已接入但 gate {name} 在 config 中 disabled——提交静默放行（Seeyon 式双重失效），启用该 gate 或移除 hooksPath")
+        print(f"FAIL\t{rp}\thooksPath 已接入但 gate {name} 在 config 中 disabled——提交静默放行（双重失效），启用该 gate 或移除 hooksPath")
     else:
         disp = os.path.join(hp, "pre-commit")
         if not os.path.isfile(disp):

@@ -17,13 +17,13 @@ AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交�
 
 | 痛点 | AgentGuard 怎么解 |
 |---|---|
-| 规范写在文档里，AI / 开发者记不住 | 常驻只留 ~1K 的「地图」，细节按需加载 |
+| 规范写在文档里，AI / 开发者记不住 | 常驻只注入不到 1K 的指针，细节按需加载 |
 | 约定只对"愿意遵守的人"有效 | 编辑期 + 提交期双重拦截，忘了也会被拦 |
 | 一上规则就被存量旧账淹没 | 双态 severity：新代码 `error` 拦截，存量 `info` 观察 |
 | "门禁跑没跑"说不清 | 每次判定写台账，可查看运行摘要与规则覆盖度 |
 | 引入工具链的依赖成本 | **零第三方依赖**，只用 Python 标准库 |
 
-引擎层**不依赖任何个人** skill / 工具：同事 clone 下来即可运行。
+引擎层**不依赖任何个人** skill / 工具：同事 clone 或 `pip install` 完即可运行。
 
 ## 前置条件
 
@@ -31,77 +31,104 @@ AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交�
 |---|---|---|
 | Python | **3.11+** | 引擎运行时 |
 | Git | 2.x | diff / worktree 识别 |
-| Node.js（可选） | 22+ | 语法检查规则（`node --check`） |
+| Node.js（可选） | — | 仅当自定义规则调用 `node` 时需要；示例规则不依赖 |
 
 ## 快速开始
 
-### 1. 安装
+### 0. pip 安装（wheel 自带引擎，不需要 clone）
+
+```bash
+pip install agentguard      # 从源码装：pip install .
+agentguard init             # 把随包引擎落到 ~/.agentguard/engine，并写 ~/.agentguard/harness.path
+agentguard quickstart       # 自检 + 打印 MCP 接入配置
+```
+
+`init` 只复制、不删除：目标已存在且内容不同时要求 `--force`，旧目录会改名归档为
+`<dir>.disabled-<时间戳>`；可用 `--dir` 指定引擎安装位置。装完后：
+`agentguard list` 看 gate，`agentguard run <gate> <文件>` 定向检查，
+`agentguard mcp` 启动 MCP 服务。源码树里也可以直接跑 `python agentguard/cli.py init`。
+
+### 1. clone 源码看效果（不需要配置）
 
 ```bash
 git clone https://github.com/rain610/agentguard.git
 cd agentguard
+
+sh sandbox/demo_gate.sh    # 在临时目录造一个 console.log → 拦住 → 改对 → 放行
+sh sandbox/doctor.sh       # 端到端自检：门禁探针 / hook 活性 / skill 软链
 ```
 
-### 2. 配置
+`demo_gate.sh` 只写系统临时目录，不碰任何业务仓，也不需要先改配置。它自带两向断言：
+该拦的必须 `rc=1` 且点名 `NO-CONSOLE`，改对必须 `rc=0`，否则脚本自己以非零退出 ——
+所以「跑完没报错」是真的验过，而不是演示脚本演了一遍。
 
-编辑 `config/harness.local.yaml`，声明你的仓库路径：
+### 2. 接入你自己的仓
 
-```yaml
-repos:
-  my_project: /path/to/your/project
+先让本机有一份本地配置（它被 git 忽略，只影响你这台机器）：
+
+```bash
+sh sandbox/setup_machine.sh
 ```
 
-### 3. 定义规则
+首次运行会从 `config/harness.local.example.toml` 生成 `config/harness.local.toml`，
+提示你填路径后退出。把内置 `example` gate 指向你的仓 —— **键名 `example_repo` 已在共享
+配置里声明，本机只填值**：
 
-在 `checks/` 目录创建规则集，或直接参考自带的 3 条示例规则（`checks/example_ruleset.py`）：
+```toml
+# config/harness.local.toml
+[repos]
+example_repo = "/path/to/your/project"
+```
+
+然后：
+
+```bash
+# 全量扫一遍
+python harness/run_gate.py example --all
+
+# 以后在业务仓里只查本次改动（自动识别 gate）
+cd /path/to/your/project
+python /path/to/agentguard/harness/agents/auto-gate.py
+
+# 配置体检：必须 rc=0
+python /path/to/agentguard/harness/run_gate.py --validate
+```
+
+> 不要在本机配置里新增或改写 `[repos]` 的键名。键名是共享 `config/harness.toml` 里的
+> 团队策略，本机只负责填路径；键名不存在时 `--validate` 会 rc=2 —— 这正是「拼错 /
+> 忘了登记」唯一会被发现的时刻。要管多个仓，见「添加新 gate」。
+
+### 3. 定制规则
+
+示例 gate 的规则都在 `checks/example_ruleset.py` 的 `EXAMPLE_RULES` 列表里，
+改这个列表即可，不需要新建脚本：
 
 ```python
-# checks/my_ruleset.py
-from example_ruleset import Rule
-
-NO_TODO = Rule(
-    rule_id="NO-TODO",
-    severity="block",
-    pattern=r'\bTODO\b',
+NO_TODO = RegexRule(
+    id="NO-TODO",
+    pattern=r"\bTODO\b",
     message="禁止 TODO 注释残留",
     fix_hint="实现或删除 TODO",
 )
 ```
 
-### 4. 注册 gate
-
-在 `config/harness.yaml` 添加 gate：
-
-```yaml
-gates:
-  my_project:
-    enabled: true
-    repo: my_project
-    script: checks/my_code_check.py
-    run_on: [pre_commit, post_edit]
-```
-
-### 5. 运行
+把它加进 `EXAMPLE_RULES`，然后回到 agentguard 工程根：
 
 ```bash
-# 定向检查（仅本次改动）
-python harness/agents/auto-gate.py
-
-# 全量扫描
-python harness/run_gate.py my_project --all
-
-# 配置体检
-python harness/run_gate.py --validate
+cd /path/to/agentguard
+python harness/run_gate.py example --all
+python harness/run_gate.py --validate   # 规则 ID / 配置键都会被体检
 ```
 
-### 6. 安装 hooks（可选）
+### 4. 安装 hooks（可选，推荐）
 
 ```bash
-# 提交期 hook
-sh sandbox/install_hooks.sh my_project
+# 提交期 hook（在业务仓根执行；gate 名可省略，按 cwd 自动识别）
+cd /path/to/your/project
+sh /path/to/agentguard/sandbox/install_hooks.sh
 
-# 编辑期 hook
-python sandbox/install_shim.py
+# 编辑期 hook（给 AI 客户端转发 post-edit 事件）
+python /path/to/agentguard/sandbox/install_shim.py
 ```
 
 ## 示例规则
@@ -110,15 +137,24 @@ python sandbox/install_shim.py
 
 | 规则 ID | 检查内容 | 严重级别 |
 |---|---|---|
-| `NO-CONSOLE` | 禁止 `console.log` 残留 | block |
-| `NO-HARDIP` | 禁止硬编码 IP 地址 | block |
-| `EOL-UNIFIED` | 行尾不统一（CRLF / LF 混用） | block |
+| `NO-CONSOLE` | 代码里的 `console.log` 残留 | block（字符串字面量里降为 warn） |
+| `NO-HARDIP` | 硬编码 IP 地址（每段 ≤255，排除版本号） | block |
+| `EOL-UNIFIED` | 行尾混用 CRLF / LF | block |
 
-运行示例规则：
+运行示例 gate：
 
 ```bash
-python checks/example_code_check.py --repo . --all
+python harness/run_gate.py example --repo <你的仓> --all
 ```
+
+这些规则是**启发式**，不是生产级解析器。能力边界写在规则集头部，也由自检输出：
+
+- 注释里的内容不算命中（`//`、`/* */`、`<!-- -->`、Python `#`）；
+- 字符串里的 `console.log` 只提示、不阻断 —— 它可能是日志文案或文档示例；
+- `1.2.3.4` 这类版本号不判 IP（看 `version=` / `v=` 等上下文），非法 IPv4 也不判；
+- 多行块注释的**续行**、跨行字符串不做状态跟踪（单行启发式）。
+
+需要更强的判定时，用 `checks/rule_base.py` 的 `Rule` 子类自己写 `applicable()` / `check()`。
 
 ## 黄金范式：拦截之后的下一步
 
@@ -161,7 +197,7 @@ python checks/example_code_check.py --repo . --all
        |
 判定引擎            run_gate.py -> checks/*_check.py -> *_ruleset.py
        |
-台账与体检          gate_log.jsonl / coverage / doctor
+台账与体检          reports/gate_log-<YYYY-MM>.jsonl / coverage / doctor
 ```
 
 ### 关键目录
@@ -197,45 +233,64 @@ class Rule:
         ...
 ```
 
-`checks/example_ruleset.py` 是更轻的实例式写法（`Rule(rule_id, severity, pattern, message, fix_hint)`），
-适合单行正则型规则；需要按文件类型收窄、或多态判定严重级别时用 `rule_base.Rule` 子类。
+`checks/example_ruleset.py` 的 `RegexRule` 是同一协议下的正则适配器：
+
+```python
+RegexRule(id, pattern, message, fix_hint="",
+          see="", string_severity=None, version_exempt=False, validator=None)
+```
+
+它和自建规则一样走 `Rule.run(ctx)`：`check(ctx)` 返回 `Finding`，严重级用
+`Severity.ERROR / WARN / INFO`。单条命中需要不同级别时（例如字符串里的
+`console.log` 只提示）直接给 `Finding.severity` 赋值；其余由规则级
+`severity_default` 与存量降级钩子决定。
+
+需要按文件类型收窄、或按上下文判定严重级别时，直接继承 `rule_base.Rule` 并覆写
+`applicable()` / `check()`。`rule_base` 还提供提交期读暂存区（`read_bytes`）、
+注释区间识别（`comment_spans`）、行内豁免（`inline_waiver`）等公共件。
 
 ### 规则类型
 
 | 类型 | 适用场景 | 示例 |
 |---|---|---|
 | 单行正则 | 反模式检测 | `console.log`、硬编码 IP |
-| 整文件规则 | 文件级约束 | 编码、行尾、文件命名 |
-| 结构化规则 | 复杂逻辑 | 组件收敛、分层依赖 |
+| 整文件规则 | 文件级约束 | 行尾混用 |
+| `rule_base.Rule` 子类 | 需要文件类型 / 上下文 / 多态 severity | 自定义 `applicable()` + `severity()` |
 
 ## 配置
 
-主配置：`config/harness.yaml`
+主配置：`config/harness.toml`（Python 3.11+ 标准库 `tomllib` 读取，零第三方依赖）
 
-```yaml
-repos:
-  my_project: ""  # 本机路径在 harness.local.yaml 填
+```toml
+[repos]
+example_repo = ""      # 键名留在共享配置；本机路径在 harness.local.toml 填
 
-gates:
-  my_project:
-    enabled: true
-    repo: my_project
-    script: checks/my_code_check.py
-    mode: strict           # strict | loose
-    run_on: [pre_commit, post_edit]
-    line_ending: auto      # auto | CRLF | LF
-    encoding: utf-8        # 后端常用 utf-8-bom
-    legacy_baseline: true  # 存量降级为 info
-    disabled_rules: []     # 本 gate 关闭的规则 ID
+[gates.example]
+enabled = true
+repo = "example_repo"
+script = "checks/example_code_check.py"
+mode = "strict"           # strict | loose
+run_on = ["pre_commit", "post_edit"]
+line_ending = "auto"      # auto | CRLF | LF
+encoding = "utf-8"        # 后端常用 utf-8-bom
+legacy_baseline = false   # 存量降级为 info
+disabled_rules = []       # 本 gate 关闭的规则 ID
 ```
+
+`gates.<名>.repo` 引用的键**必须先出现在 `[repos]` 段**（`harness_self` 例外：它由引擎注入）；
+`config.script` 指向的脚本必须存在。`--validate` 会同时检查这两件事，以及
+`run_on` / `mode` / `line_ending` 等字段的值域。
 
 ### 本地覆盖层
 
 | 优先级 | 来源 | 用途 |
 |---|---|---|
-| 1 | 环境变量 `AGENTGUARD_CONFIG` | CI 或特殊布局 |
-| 2 | `config/harness.local.yaml` | 本机仓库路径 |
-| 3 | `config/harness.yaml` | 共享基线 |
+| 1 | 环境变量 `HARNESS_CONFIG` | CI 或特殊布局 |
+| 2 | `config/harness.local.toml` | 本机仓库路径 |
+| 3 | `config/harness.toml` | 共享基线 |
+
+旧版 `config/harness.local.yaml` / `config/harness.yaml` 仍可被读入（兼容层），
+但两种格式同时存在时 **TOML 优先**并会在 stderr 提醒；新配置请一律用 TOML。
 
 ## 命令速查
 
@@ -263,7 +318,7 @@ gates:
 |---|---|---|
 | `0` | 通过 | 继续 |
 | `1` | 门禁拦截 | 按输出修复 |
-| `2` | 配置错误 | 检查配置 |
+| `2` | 配置 / 调用错误（含点名的目标文件不存在、不可读） | 检查配置与传入的文件 |
 | `3` | 非受管仓库 | 跳过 |
 
 ## 审计证据强度
@@ -279,15 +334,29 @@ gates:
 
 ### 添加新规则
 
-1. 在 `checks/` 创建或修改 ruleset
-2. 在对应的 `*_code_check.py` 注册规则
-3. 运行测试验证：`python sandbox/run_tests.py --fast`
+1. 在 `checks/example_ruleset.py` 的 `EXAMPLE_RULES` 里加一条 `RegexRule(...)`；
+   自建规则集则在检查脚本里改 import
+2. `python harness/run_gate.py example --all` 试跑
+3. `python harness/run_gate.py --validate` —— 规则 ID、配置键都会体检
 
-### 添加新 gate
+### 添加新 gate（多仓 / 独立规则集）
 
-1. 在 `config/harness.yaml` 添加 gate 配置
-2. 在 `checks/registry.py` 登记 `gate -> script`
-3. 运行配置体检：`python harness/run_gate.py --validate`
+三处都要动，少一处的症状是「看起来配好了」：
+
+1. **共享** `config/harness.toml` 的 `[repos]` 段加键名（值 `""`）—— 键名是团队策略，
+   与机器无关
+2. **共享** `config/harness.toml` 的 `[gates.<名>]` 表加 gate，`repo =` 指向该键，`script =`
+   指向检查脚本。新脚本可从 `checks/example_code_check.py` 复制，把
+   `from example_ruleset import ...` 换成自己的 ruleset
+3. **本机** `config/harness.local.toml` 的 `[repos]` 里填该键的路径（只有这一步是本机的）
+
+建议在 `checks/registry.py` 登记 `gate -> script`；未登记会走 `config.script` 兜底，
+`--validate` 会给出提示，不算失败。最后跑：
+
+```bash
+python harness/run_gate.py --validate      # 必须 rc=0
+python sandbox/run_tests.py --fast
+```
 
 ### 行内豁免
 
@@ -327,7 +396,7 @@ if (DEBUG) console.log("debug info")
 ## 测试
 
 ```bash
-# 快速测试（编辑回路；跳过真打包/真安装/真 git 链路，本机约 50s）
+# 快速测试（编辑回路；跳过真打包/真安装/真 git 链路，本机约 1 分钟）
 python sandbox/run_tests.py --fast
 
 # 全量测试（提交前/CI；含真打包/真安装/真 git 链路）

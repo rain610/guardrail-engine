@@ -81,13 +81,13 @@ def _msys_bash():
 # 也不含 docs/ 与 dist/（文档引用正文、包里是渲染产物）。
 CODE_DIRS = ("sandbox", "harness", "checks", "agentguard", "integrations")
 
-# 端级模板**是要下发到每个客户仓的**（M2 的产物）—— 它们正是「正文会不会被再抄一份」的
+# 端级模板**是要下发到每个受管仓的**（M2 的产物）—— 它们正是「正文会不会被再抄一份」的
 # 高风险地带：模板看着"只是几行摘要"，往里面补一句规则正文是最自然不过的动作。
 # 所以跟代码同一条判据：守则正文只许有一处，模板里一个标志行都不许有。
 TEMPLATE_DIR = os.path.join("golden-patterns", "templates")
 
 # 正文标志行：取两处**结构标题**，它们不是随口一句话，改动它们等于改了守则的骨架。
-BODY_MARKERS = ("## AgentGuard 客户仓库守则（最高优先级）",
+BODY_MARKERS = ("## AgentGuard 受管仓库守则（最高优先级）",
                 "## 通用编码准则（Karpathy 四准则）")
 
 # 快跑（HARNESS_FAST=1，2026-09-19 接线）：本文件只有末了一个类慢 —— 它要**真跑整脚本**
@@ -134,7 +134,7 @@ class TestBodyLivesInExactlyOnePlace(unittest.TestCase):
         """★ 本文件存在的首要理由。
 
         扫的范围是**会分发出去的东西**：引擎代码（.py/.sh）+ **端级模板**（.md，M2 的产物、
-        要下发到每个客户仓）。后者是"再抄一份正文"的高风险地带 —— 模板看着只是几行摘要，
+        要下发到每个受管仓）。后者是"再抄一份正文"的高风险地带 —— 模板看着只是几行摘要，
         往里补一句规则正文是最自然的动作，而补完就有了第二份可漂的正文。
         """
         hits = {}
@@ -201,7 +201,7 @@ class TestBodyCarriesNoMachinePath(unittest.TestCase):
 
     为什么值得单独一条（2026-09-22）：正文里的绝对路径**在维护机上看着完全正常**，
     坏的是别人那份 —— 与 `stale_note` 那个洞同形，也与同一天查出的
-    「22 份产物全部带着 `D:/KnowledgeVault/…`」同源。本机真需要烘路径的地方走
+    「22 份产物全部带着 `D:/team-vault/…`」同源。本机真需要烘路径的地方走
     `PLACEHOLDER` 机制（渲染那一刻才填），所以判据是"有没有**字面量**"，不是"有没有路径"。
 
     ⚠ 与 `test_body_markers_appear_in_exactly_one_shipped_file` 是**两个方向**：

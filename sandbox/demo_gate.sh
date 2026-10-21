@@ -1,19 +1,23 @@
 #!/bin/sh
-# agentguard/sandbox/demo_gate.sh —— 门禁现场演示脚本（分享给同事用）
+# agentguard/sandbox/demo_gate.sh —— 60 秒门禁现场演示（不需要配置任何业务仓）
 # ============================================================
 # 演示内容（三步）：
-#   1. 故意写一个违规 .cs 文件（状态魔法数字裸写 10，违反 R9 规则）→ 跑门禁 → 展示【拦截】
-#   2. 修复成 SysConst 常量写法 → 再跑门禁 → 展示【放行】
-#   3. 清理临时文件
+#   1. 在临时目录写一个含 console.log 的 .js → 跑示例门禁 → 必须 rc=1 且点名 NO-CONSOLE
+#   2. 改成合规写法 → 再跑 → 必须 rc=0
+#   3. 清理临时目录（跑完即删，不碰任何真实代码）
 # 用法：
-#   sh <harness>/sandbox/demo_gate.sh [gate名]
-#   gate 默认 hy_hzy_backend（hzy 后端仓），也可传其他已配置的后端 gate。
-# 前提：对应端仓库已 clone 到本机，且 config/harness.local.yaml 已配置该仓路径。
-# 安全：只在临时文件上演示，跑完自动清理；不碰真实代码。
-# 实现：直接调 run_gate.py 传单个文件（只检查 Demo 文件，不被全仓 diff 存量污染）。
-set -e
+#   sh <harness>/sandbox/demo_gate.sh
+# 说明：演示固定走 `example` gate（开源版唯一开箱即用的规则集），用 `--repo <临时目录>`
+#       覆盖仓库路径，所以**不依赖** config/harness.local.toml 里配过任何受管仓。
+set -u
 
-GATE=${1:-hy_hzy_backend}
+GATE=${1:-example}
+if [ "$GATE" != "example" ]; then
+    echo "✗ 本演示的探针内容只对应 example gate 的规则（console.log）。"
+    echo "  想看其它 gate 的现场拦截，请在对应业务仓里按 README 的接入流程跑。"
+    exit 2
+fi
+
 HARNESS=$(cd "$(dirname "$0")/.." && pwd)
 if command -v cygpath >/dev/null 2>&1; then
     HARNESS_WIN=$(cygpath -m "$HARNESS")
@@ -48,112 +52,90 @@ if [ -z "$HARNESS_PY" ] && command -v py >/dev/null 2>&1; then
 fi
 if [ -z "$HARNESS_PY" ]; then
     echo "✗ 找不到可用的 Python 3 解释器（已试：HARNESS_PYTHON / python3 / python / py -3）"
-    echo "  演示全程靠它解析 gate 仓路径 + 跑门禁，已按 fail-closed 中止。"
+    echo "  演示全程靠它跑门禁，已按 fail-closed 中止。"
     echo "  修复：装 Python 3.11+；或显式指定解释器：export HARNESS_PYTHON=python3"
     exit 2
 fi
 # 调用处一律写 $HARNESS_PY 且**不加引号**（"py -3" 需要按空格拆成两个词）。
 # ------------------------------------------------------------------------------
 
-echo "============================================================"
-echo " agentguard 门禁演示（gate=$GATE）"
-echo "============================================================"
-
-# 从 config 解析 gate 的仓库路径（含 local 覆盖层）
-REPO=$($HARNESS_PY - "$HARNESS_WIN" "$GATE" <<'PYEOF'
-import sys, os
-harness, gate = sys.argv[1], sys.argv[2]
-sys.path.insert(0, os.path.join(harness, "harness"))
-from _config import gate as get_gate
-g = get_gate(gate)
-print(g.get("_repo_path") or "")
-PYEOF
-)
-
-if [ -z "$REPO" ] || [ ! -d "$REPO" ]; then
-    echo "✗ gate=$GATE 的仓库路径无效：$REPO"
-    echo "  请检查 config/harness.local.yaml 是否配置了该仓库路径。"
+DEMO_DIR=$(mktemp -d "${TMPDIR:-/tmp}/agentguard-demo.XXXXXX") || {
+    echo "✗ 无法创建临时目录（mktemp -d 失败）"
     exit 2
+}
+if command -v cygpath >/dev/null 2>&1; then
+    DEMO_DIR_WIN=$(cygpath -m "$DEMO_DIR")
+else
+    DEMO_DIR_WIN="$DEMO_DIR"
 fi
-echo "目标仓库：$REPO"
-echo ""
-
-DEMO_FILE="$REPO/RMCHY/Eagle.RMCHY.Entities/Demo_GateShow.cs"
-cleanup() { rm -f "$DEMO_FILE"; }
+DEMO_FILE_POSIX="$DEMO_DIR/demo.js"
+DEMO_FILE_WIN="$DEMO_DIR_WIN/demo.js"
+cleanup() { rm -rf "$DEMO_DIR"; }
 trap cleanup EXIT
 
-run_gate() {
-    HARNESS_ENTRY=demo $HARNESS_PY "$HARNESS_WIN/harness/run_gate.py" "$GATE" "$DEMO_FILE"
+run_demo() {
+    HARNESS_ENTRY=demo $HARNESS_PY "$HARNESS_WIN/harness/run_gate.py" \
+        "$GATE" --repo "$DEMO_DIR_WIN" "$DEMO_FILE_WIN"
 }
+
+echo "============================================================"
+echo " agentguard 门禁演示（gate=$GATE，临时仓=$DEMO_DIR_WIN）"
+echo "============================================================"
+echo ""
 
 # ---------- 第 1 步：写违规文件，展示拦截 ----------
-echo "【第 1 步】故意写一个违规文件（状态魔法数字裸写 10，违反 R9 规则）…"
-# 注意：必须写 utf-8-bom（仓约定），否则 ENC 规则先拦，演示不出 R9 的效果。
-$HARNESS_PY - "$DEMO_FILE" <<'PYEOF'
-import sys
-path = sys.argv[1]
-content = '''using System;
-
-namespace Eagle.RMCHY.Entities
-{
-    /// <summary>门禁演示用：本文件故意违规，跑完即删</summary>
-    public class Demo_GateShow
-    {
-        /// <summary>违规写法：状态与裸数字比较（应为 SysConst.NormalStatus）</summary>
-        public bool IsNormal(int Status)
-        {
-            return Status == 10;
-        }
-    }
-}
-'''
-with open(path, "w", encoding="utf-8-sig") as f:
-    f.write(content)
-print("已写入:", path)
-PYEOF
+echo "【第 1 步】写一个含 console.log 的临时文件（模拟调试代码忘了删）…"
+cat > "$DEMO_FILE_POSIX" <<'EOF'
+// 演示：调试残留，提交前应被门禁拦下
+console.log("debug");
+EOF
+echo "已写入: $DEMO_FILE_WIN"
 echo ""
-echo "---- 运行门禁（应被 R9 拦截）----"
-run_gate || true
+echo "---- 运行门禁（期望 rc=1，点名 NO-CONSOLE）----"
+if OUT=$(run_demo 2>&1); then
+    RC=0
+else
+    RC=$?
+fi
+printf '%s\n' "$OUT"
 echo ""
-echo "---- 上面显示了 R9 拦截？这就是机械规则 vs 靠 AI 自觉的区别 ----"
+if [ "$RC" != "1" ]; then
+    echo "❌ 演示失败：期望 rc=1（拦截），实得 rc=$RC"
+    exit 1
+fi
+if ! printf '%s' "$OUT" | grep -q "\[NO-CONSOLE\]"; then
+    echo "❌ 演示失败：rc=1 但输出里没有 [NO-CONSOLE]（拦的可能不是这条规则）"
+    exit 1
+fi
+echo "✅ 拦截成功：这条改动提交不上去。"
 echo ""
 
 # ---------- 第 2 步：修复，展示放行 ----------
-echo "【第 2 步】修复违规：改用 SysConst 常量…"
-$HARNESS_PY - "$DEMO_FILE" <<'PYEOF'
-import sys
-path = sys.argv[1]
-content = '''using System;
-using Eagle.Common;
-
-namespace Eagle.RMCHY.Entities
-{
-    /// <summary>门禁演示用：修复后版本，跑完即删</summary>
-    public class Demo_GateShow
-    {
-        /// <summary>合规写法：引用 SysConst 常量比较</summary>
-        public bool IsNormal(int Status)
-        {
-            return Status == SysConst.NormalStatus;
-        }
-    }
-}
-'''
-with open(path, "w", encoding="utf-8-sig") as f:
-    f.write(content)
-print("已修复为 SysConst.NormalStatus 写法")
-PYEOF
+echo "【第 2 步】删掉调试日志，改成合规写法…"
+cat > "$DEMO_FILE_POSIX" <<'EOF'
+const answer = 42;
+EOF
 echo ""
-echo "---- 再次运行门禁（应通过）----"
-run_gate || true
+echo "---- 再次运行门禁（期望 rc=0）----"
+if OUT2=$(run_demo 2>&1); then
+    RC2=0
+else
+    RC2=$?
+fi
+printf '%s\n' "$OUT2"
 echo ""
-echo "---- 通过了？修复一次即放行 ----"
+if [ "$RC2" != "0" ]; then
+    echo "❌ 演示失败：修复后期望 rc=0（放行），实得 rc=$RC2"
+    exit 1
+fi
+echo "✅ 放行成功：同样的门禁，改对了就能过。"
 echo ""
 
 # ---------- 第 3 步：清理 ----------
-echo "【第 3 步】清理演示文件…"
+echo "【第 3 步】清理临时文件…"
 cleanup
-echo "已删除 $DEMO_FILE"
+trap - EXIT
+echo "已删除 $DEMO_DIR"
 echo ""
 echo "============================================================"
 echo " 演示结束。结论：门禁 = 提交前的硬性检查，AI 记不记得住不重要，"

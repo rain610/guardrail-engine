@@ -13,7 +13,7 @@ PostToolUse 钩子同级）。
 
 ```md
 ## 门禁
-改 AgentGuard 任意客户×三端仓库代码后，必须在仓库根跑：
+改 AgentGuard 任意受管仓代码后，必须在仓库根跑：
 python <HARNESS>/harness/agents/auto-gate.py
 退出码 0=通过，1=拦截（修复后重跑，不要绕过），3=非受管仓库跳过。
 ```

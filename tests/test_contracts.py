@@ -148,7 +148,7 @@ class TestAcceptBaselineGates(unittest.TestCase):
 
 @_slow("契约指纹实跑（7 家 × 3 事件，约 30s）")
 class TestContractFingerprintsLive(unittest.TestCase):
-    """7 家客户的契约指纹必须与基线一致（漂移即红）。"""
+    """7 个受管仓的契约指纹必须与基线一致（漂移即红）。"""
 
     def test_all_baselines_exist(self):
         missing = [c for c in CC.CLIENTS if not os.path.isfile(os.path.join(BASE, "%s.json" % c))]

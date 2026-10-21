@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""A 组客户仓 `AGENTS.md` 骨架**生成器** —— 与体检器分居两个文件，落盘只落 `--emit` 指的目录。
+"""A 组受管仓 `AGENTS.md` 骨架**生成器** —— 与体检器分居两个文件，落盘只落 `--emit` 指的目录。
 
 为什么不并进 `agents_audit.py`
 --------------------------------------------------------------------------------
 `agents_audit.py` 的头注里有一句是它的**契约**：「本文件没有任何写入路径」。
-那是 §六 ① 的机械保证 —— 审阅工具一旦能写，就没人敢在客户仓旁边跑它了。
+那是 §六 ① 的机械保证 —— 审阅工具一旦能写，就没人敢在受管仓旁边跑它了。
 所以生成器另开一个文件，**只 import 它的判定**（`judge` / `target_form` / `load_sink` /
 `product_line`），一条判据都不重写：判据漂移的代价是「审下来能删的行」和「真删的行」
 是两张不同的表。
@@ -19,14 +19,14 @@ A 组是什么（2026-09-21 实测）
     stay=1, move=1   22 个仓   ← 本文件处理的对象
     stay>=11, move=0  7 个仓   ← 真有本仓知识（各客户端的三端系列）
 
-22 个仓的正文**逐字节只差三处客户字段**（首行标题 / `## 项目` 那句 / `知识库：` 路径），
+22 个仓的正文**逐字节只差三处仓字段**（首行标题 / `## 项目` 那句 / `知识库：` 路径），
 骨架完全同形。所以这是**一件生成器活，不是 22 份手改 diff**。
-但它仍然服从 §六 ①：**本程序绝不写客户仓**，只往 `--emit` 指的目录里产出，
+但它仍然服从 §六 ①：**本程序绝不写受管仓**，只往 `--emit` 指的目录里产出，
 逐仓 diff 由人过目后自己决定落不落盘。
 
 三道不许越的线
 --------------------------------------------------------------------------------
-  ① **不写客户仓**：`--emit` 的目录若落在任一受管仓内 → 直接拒绝（连同子目录）。
+  ① **不写受管仓**：`--emit` 的目录若落在任一受管仓内 → 直接拒绝（连同子目录）。
   ② **不许丢知识**：落盘前逐行自检 —— `keep_lines` 与 `move_lines` 的每一行（搬迁行去掉
      已被新标题取代的 `知识库：` 标签后）都必须在产物里**逐字**找得到；差一行这一仓就不写。
      这是 §六 ①「这类知识删了不可恢复」的机械执行。
@@ -58,7 +58,7 @@ A 组是什么（2026-09-21 实测）
     配置里找不到 / 目录里冒出没登记的仓，全算不合格）。同变异冒烟把 SKIP 当失败那一套。
   · **不存本机路径**：出生证明里只有哈希、字节数和**引擎仓相对路径**。存了绝对路径，
     这张证明就只在生成它的那台机器上读得懂（同 `agents_audit.py` 把维护机路径换成 `<VAULT>`
-    的那个理由）。所以复核时仓路径现从本机覆盖层（`config/harness.local.yaml`）按**键名**重取。
+    的那个理由）。所以复核时仓路径现从本机覆盖层（`config/harness.local.toml`）按**键名**重取。
   · **合并写，不覆盖**（2026-10-04 补）：`_sources.json` 与 `_manifest.md` 都是**逐仓**的文件，
     而一次 `--only k1` 只产出 k1 那一份。整写会把别的仓整片抹掉 —— 目录里它们的产物还在，
     于是两个文件互相打脸，读的人以为其余 21 个仓没了。**假警比漏报更贵**（它教人不再相信清单），
@@ -229,7 +229,7 @@ def candidates(reps, only=None):
     """→ [{"key", "path", "end", "customer", "drop", "stay", "move", "why"}...]
 
     判据两条（合起来正好圈出那 22 个，中间没有灰区）：
-      · `stay <= 1` —— 本仓独有最多一行（就是那句客户身份），没有需要人判读的留守知识；
+      · `stay <= 1` —— 本仓独有最多一行（就是那句仓身份），没有需要人判读的留守知识；
       · `keep_lines` 里没有表格行 —— 见头注③（表体留下、表头被结构行规则吃掉 = 孤儿表）。
     """
     out = []
@@ -268,10 +268,10 @@ def inside_managed_repo(outdir):
 
 
 def safe_outdir(outdir, force=False):
-    """① 不写客户仓 + 不写别人造过的目录。→ (ok, 原因)。"""
+    """① 不写受管仓 + 不写别人造过的目录。→ (ok, 原因)。"""
     hit = inside_managed_repo(outdir)
     if hit:
-        return False, ("`--emit` 指到了受管仓里面（%s）—— §六 ①：本程序绝不写客户仓，"
+        return False, ("`--emit` 指到了受管仓里面（%s）—— §六 ①：本程序绝不写受管仓，"
                        "产物一律落在仓外的目录，逐仓 diff 由人过目后自己落盘" % hit)
     if os.path.isfile(outdir):
         return False, "`--emit` 指到了一个**文件**：%s" % outdir
@@ -408,10 +408,10 @@ def emit(outdir, cands, reps, force=False, check_only=False, sink_path=None):
         os.makedirs(outdir, exist_ok=True)
         with open(os.path.join(outdir, MARKER), "w", encoding="utf-8") as f:
             f.write("本目录由 sandbox/agents_scaffold.py 生成 —— 里面的 AGENTS.md 是**拟改产物**，\n"
-                    "不是客户仓现状。§六 ①：落盘由人过目 diff 后自己决定。\n")
+                    "不是受管仓现状。§六 ①：落盘由人过目 diff 后自己决定。\n")
 
     head = ["# A 组 AGENTS.md 拟改产物清单", "",
-            "由 `sandbox/agents_scaffold.py --emit` 生成。**未写入任何客户仓**。",
+            "由 `sandbox/agents_scaffold.py --emit` 生成。**未写入任何受管仓**。",
             "判据来自 `sandbox/agents_audit.py`（本程序不重写判据，只复用）。", ""]
     sections = {}                # 键 → 本轮的段（含末行「产物：…」）
     n_ok, n_lost, n_written = 0, [], 0
@@ -611,12 +611,12 @@ def print_plan(cands):
         for r in refused:
             print("   ⏭ %-24s %s" % (r["key"], "；".join(r["why"])))
     print()
-    print("  落盘：python sandbox/agents_scaffold.py --emit <仓外目录>   # 绝不写客户仓")
+    print("  落盘：python sandbox/agents_scaffold.py --emit <仓外目录>   # 绝不写受管仓")
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="A 组客户仓 AGENTS.md 骨架生成器（**不写客户仓**；产物落 --emit 指的目录）")
+        description="A 组受管仓 AGENTS.md 骨架生成器（**不写受管仓**；产物落 --emit 指的目录）")
     ap.add_argument("--plan", action="store_true", help="只列候选与判据（默认行为）")
     ap.add_argument("--emit", metavar="目录", help="往这个**仓外**目录产出拟改 AGENTS.md")
     ap.add_argument("--only", metavar="k1,k2", help="只处理这些仓键名")

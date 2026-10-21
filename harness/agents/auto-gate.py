@@ -5,7 +5,7 @@ agentguard/harness/agents/auto-gate.py —— 跨 Agent 通用门禁入口
 设计目标：任何 AI agent（Claude Code / Codex / OpenCode / CodeBuddy / Hermes）
 在任意端仓库工作目录下跑一行命令即可触发门禁，无需知道 gate 名。
 它自动完成 3 件事：
-  1. 用当前目录（或 --repo）匹配 config/harness.yaml，识别属于哪个 gate（客户_端）；
+  1. 用当前目录（或 --repo）匹配 config/harness.toml，识别属于哪个 gate（<仓>_<端>）；
      （--only <file> 可指定"只检查这个文件"，编辑期钩子用它避免把整仓未提交改动算进来）
   2. 收集该仓库 git diff 的改动文件（.vue/.js/.ts/.cs）；
   3. 把文件交给 run_gate.py 跑对应门禁脚本。
@@ -71,7 +71,7 @@ def _find_gate(cwd):
     if best_gate:
         return (best_gate, best)
     # worktree 兜底：cwd 不在登记清单，但若是某登记仓库的 git worktree
-    # （同仓库族共享同一 common-dir：所有客户 worktree 都挂在主仓库 .git 下），
+    # （同仓库族共享同一 common-dir：所有受管仓 worktree 都挂在主仓库 .git 下），
     # 按 common-dir 相等归位到对应 gate（临时分支改码场景必需）。
     try:
         clean_env = {k: v for k, v in os.environ.items()
@@ -86,7 +86,7 @@ def _find_gate(cwd):
             # git 对仓内路径常返回相对形态（".git"）——必须基于【该仓自身】转绝对，
             # 不能用 abspath（基于进程 cwd 解析）：在临时 git 仓里跑 auto-gate 时
             # 会把所有登记仓的 common-dir 都算到临时仓下，恒等导致误匹配第一个 gate
-            # （2026-09-09 实测：unmanaged 临时仓被误判成 hy_pc，rc=3 契约被破坏）。
+            # （2026-09-09 实测：unmanaged 临时仓被误判成某个已登记的端 gate，rc=3 契约被破坏）。
             if not os.path.isabs(out):
                 out = os.path.join(path, out)
             return _norm(os.path.abspath(out))

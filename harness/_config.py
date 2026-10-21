@@ -1,8 +1,19 @@
 # -*- coding: utf-8 -*-
-"""agentguard 配置读取（零依赖 mini-yaml，支持本工程 harness.yaml 子集）。"""
+"""agentguard 配置读取（主格式 TOML，标准库 tomllib；旧版 YAML 只作兼容层）。
+
+主格式是 `config/harness.toml`（本机覆盖层 `config/harness.local.toml`）。两者都用
+Python 3.11+ 标准库 `tomllib` 解析，零第三方依赖，也不会再出现"自研子集解析器静默
+读错"的问题。
+
+旧版 `config/harness.yaml` / `harness.local.yaml` 仍可读（`_load_yaml`，兼容层）：
+  · 找不到 TOML 时自动回退到 YAML；
+  · 两种格式同时存在时以 TOML 为准，并在 stderr 说明被忽略的是哪一份（不静默）；
+  · `HARNESS_CONFIG` 指向的文件按扩展名分派（.toml / .yaml / .yml）。
+"""
 import hashlib
 import os
 import sys
+import tomllib
 
 # UTF-8 兜底（2026-09-13 评审 v3 H1 系统性修法）：宿主管道可能是 GBK/ASCII，
 # 打印中文/✗ 会抛 UnicodeEncodeError；errors=replace 最坏只是个别字符变问号。
@@ -178,27 +189,102 @@ def _parse_block(lines, idx, indent):
     return result, i
 
 
+def _config_dir():
+    """配置目录。**每次调用都从当前 `_HARNESS_ROOT` 算** —— 测试会 monkey-patch 它指到
+    临时工程根；若在导入时固化成常量，patch 就失效，用例会去读真仓配置（静默跑错对象）。
+    """
+    return os.path.join(_HARNESS_ROOT, "config")
+
+
+def _base_config_path():
+    """共享配置：TOML 优先；两者并存时**出声**说明 YAML 那份被忽略。
+
+    与 `_local_config_path` 同一纪律：改了 YAML 却不生效、屏幕上一切正常，
+    正是本仓反复栽过的「看起来配好了」。
+    """
+    d = _config_dir()
+    toml = os.path.join(d, "harness.toml")
+    yaml = os.path.join(d, "harness.yaml")
+    if os.path.isfile(toml):
+        if os.path.isfile(yaml):
+            _warn("同时存在 %s 与 %s：以 TOML 为准，YAML 那份已被忽略（可删掉或改名）"
+                  % (toml, yaml))
+        return toml
+    if os.path.isfile(yaml):
+        return yaml
+    raise ConfigError("找不到共享配置：%s（旧版兼容路径 %s 也不存在）" % (toml, yaml))
+
+
+def _local_config_path():
+    """本机覆盖层：HARNESS_CONFIG > harness.local.toml > harness.local.yaml。
+
+    两种格式同时存在时以 TOML 为准，并说清被忽略的是哪一份 —— 否则改了 YAML 不生效，
+    而屏幕上一切正常。
+    """
+    env = os.environ.get("HARNESS_CONFIG")
+    if env:
+        return env
+    d = _config_dir()
+    toml = os.path.join(d, "harness.local.toml")
+    yaml = os.path.join(d, "harness.local.yaml")
+    if os.path.isfile(toml):
+        if os.path.isfile(yaml):
+            _warn("同时存在 %s 与 %s：以 TOML 为准，YAML 那份已被忽略（可删掉或改名）"
+                  % (toml, yaml))
+        return toml
+    if os.path.isfile(yaml):
+        return yaml
+    return None
+
+
+def _load_toml(path):
+    """读 TOML。解析失败一律转 ConfigError（语义同旧版 `_load_yaml`，由 run_gate 报 rc=2）。"""
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except OSError as e:
+        raise ConfigError("配置文件读取失败：%s（%s）" % (path, e))
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError("配置解析失败（TOML）：%s（%s）" % (path, e))
+    return data or {}
+
+
+def _load_file(path):
+    """按扩展名读配置：.toml 主格式；.yaml/.yml 走旧版兼容解析器。
+
+    不按内容猜格式：猜错时最坏会"读出一份看起来正常的数据"（本仓最反对的失效形态），
+    而扩展名是调用方明确给出的意图。
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".toml":
+        return _load_toml(path)
+    if ext in (".yaml", ".yml"):
+        return _load_yaml(path)
+    raise ConfigError("不认识的配置文件类型：%s（支持 .toml；旧版 .yaml/.yml 仍可读）" % path)
+
+
 def load(path=None):
     """读取 harness 配置（2026-09-06 加本地覆盖层，解决多人/多机器路径差异）：
-      - 显式传 path（单测/工具直接指文件）→ 只读该文件，行为与旧版一致；
-      - path=None（生产路径）→ base(config/harness.yaml) 上深合并本地覆盖层：
-        优先级 环境变量 HARNESS_CONFIG > config/harness.local.yaml > 仅 base。
+      - 显式传 path（单测/工具直接指文件）→ 只读该文件，按扩展名分派解析器；
+      - path=None（生产路径）→ base(config/harness.toml) 上深合并本地覆盖层：
+        优先级 环境变量 HARNESS_CONFIG > config/harness.local.toml >
+        config/harness.local.yaml（旧版兼容）> 仅 base。
         local 不入库（.gitignore），各人只写自己机器的 repos 路径映射；
-        gates 段继承 base，repo: 键引用自动解析到本地路径。"""
+        gates 段继承 base，repo 键引用自动解析到本地路径。"""
     if path is not None:
         _reset_policy_signals()
-        return _load_yaml(path)
+        return _load_file(path)
     # 2026-09-16（评审 v13 复查遗留项②）：三个信号都是「**最近一次** load() 的结果」，
     # 必须在每次调用开头清空。旧实现只在"本地覆盖层文件存在"那条分支里赋值 —— 于是
     # `load(path=显式文件)` 与「HARNESS_CONFIG 指的文件不存在」这两条早退路径会
     # **留着上一次的答案**：谁按「本机现在放行了哪几条」去读它，读到的可能是几分钟前
     # 另一次加载的残值，而它看起来与真话一模一样。
     _reset_policy_signals()
-    base = _load_yaml(os.path.join(_HARNESS_ROOT, "config", "harness.yaml"))
-    local = os.environ.get("HARNESS_CONFIG") or os.path.join(_HARNESS_ROOT, "config", "harness.local.yaml")
-    if os.path.isfile(local):
+    base = _load_file(_base_config_path())
+    local = _local_config_path()
+    if local and os.path.isfile(local):
         try:
-            override = _load_yaml(local)
+            override = _load_file(local)
         except Exception as e:
             # local 坏了不能静默跳过（否则 paths 错了又回到"静默放行"假保护）
             sys.stderr.write(f"[config-warn] 本地覆盖层解析失败已忽略: {local} ({e})" + "\n")
@@ -245,7 +331,7 @@ def load(path=None):
                 _policy_notice_once(
                     ("repos-all-local", local, tuple(sorted(_filled))),
                     "[config-policy] 本机 repos 全部来自本地覆盖层（%d 条）：%s%s\n"
-                    "                设计如此 —— 共享 config/harness.yaml 只声明键名、不含任何机器路径；\n"
+                    "                设计如此 —— 共享 config/harness.toml 只声明键名、不含任何机器路径；\n"
                     "                换机器 / 换目录只改这一处，不影响别人。文件：%s\n"
                     % (len(_filled), _ex, "…" if len(_filled) > 6 else "", local))
             elif _diff:
@@ -261,8 +347,12 @@ def load(path=None):
 
 
 def _load_yaml(path):
-    """读 + 解析。**解析崩溃一律转 ConfigError**（2026-09-16 N3）：
+    """旧版 YAML 兼容层（主格式已是 TOML，见 `_load_toml`）。
 
+    保留原因：已有本机 `harness.local.yaml` 与外部 `HARNESS_CONFIG` 夹具不因升级当天失效。
+    新配置不要再写 YAML —— 这个子集解析器对超纲语法只能"出声"，不能真正解析。
+
+    读 + 解析。**解析崩溃一律转 ConfigError**（2026-09-16 N3）：
     旧实现裸抛 AttributeError/TypeError 逃出 run_gate，Python 以 rc=1 退出 —— 钩子把它
     当"门禁拦截"，人去改代码，而真问题是配置文件本身写坏了。转 ConfigError 后
     run_gate 统一报 rc=2（配置错误），语义归位。
@@ -457,17 +547,18 @@ def _sanity_check(cfg):
     warn = _warn    # 统一出口（同进程去重 + stderr）
 
     if not cfg:
-        warn("config 解析结果为空 —— mini-yaml 可能解析失败，请检查 config/harness.yaml")
+        warn("config 解析结果为空 —— 请检查 config/harness.toml（旧版 harness.yaml 仍可读）")
         return
     repos = cfg.get("repos")
     if repos is None:
         # `repos:` 段留空 —— 2026-09-18（跨平台批次 2）之后这是**常态**：仓库路径是「每机事实」，
-        # 全部下沉到 gitignored 的 config/harness.local.yaml，共享文件里那一段刻意为空。
-        # mini-yaml 对「键下面只有注释」给的是 None（实测），不是 {}。
+        # 全部下沉到 gitignored 的 config/harness.local.toml，共享文件里那一段刻意为空。
+        # 旧版 mini-yaml 对「键下面只有注释」给的是 None（实测），不是 {}；TOML 未写 [repos]
+        # 时同样可能缺失 —— 这支兜底对两种格式都成立。
         repos = {}
         cfg["repos"] = repos
     elif not isinstance(repos, dict):
-        warn("repos 段解析结果不是字典，mini-yaml 可能解析失败")
+        warn("repos 段解析结果不是字典，配置结构异常")
         repos = {}
         cfg["repos"] = repos
     # ⚠ 上面两处 `cfg["repos"] = repos` 不是多余的：gate() / all_gates() 是从
@@ -483,17 +574,17 @@ def _sanity_check(cfg):
     repos["harness_self"] = _HARNESS_ROOT
     gates = cfg.get("gates")
     if gates is None or gates == {}:
-        warn("gates 段缺失或为空 —— 门禁将全部失效，请检查 config/harness.yaml")
+        warn("gates 段缺失或为空 —— 门禁将全部失效，请检查 config/harness.toml")
         return
     if not isinstance(gates, dict):
-        warn("gates 段解析结果不是字典，mini-yaml 可能解析失败")
+        warn("gates 段解析结果不是字典，配置结构异常")
         return
     missing = []                       # 「仓不在这台机器上」的 gate，汇总成一条（见函数尾）
     undeclared = []                    # 「键名共享配置里没有」的 gate，汇总成一条（真配置错）
     unconfigured = []                  # 「键在、本机没填路径」的已启用 gate，同样汇总（常态）
     for name, g in gates.items():
         if not isinstance(g, dict):
-            warn(f"gate {name} 解析结果不是字典，mini-yaml 可能解析失败")
+            warn(f"gate {name} 解析结果不是字典，配置结构异常")
             continue
         repo_key = g.get("repo", "")
         rp = (repos or {}).get(repo_key, "")
@@ -513,7 +604,7 @@ def _sanity_check(cfg):
             warn(f"gate {name} 的 mode '{mode}' 非法（应为 strict/loose）")
         run_on = g.get("run_on")
         if run_on is not None and not isinstance(run_on, list):
-            warn(f"gate {name} 的 run_on 解析结果不是列表，mini-yaml 可能解析失败")
+            warn(f"gate {name} 的 run_on 解析结果不是列表，配置结构异常")
 
     if missing:
         # 收敛成**一条**（2026-09-15）：逐 gate 各发一条时，同事机器上 30+ 条诊断会把钩子的
@@ -529,15 +620,15 @@ def _sanity_check(cfg):
     if undeclared:
         # 2026-09-18（跨平台批次 7）：这一支是**真配置错**，与下面 unconfigured 那支必须
         # 说清区别 —— 两者的现场长得很像（都表现为「gate 跑不了」），但改的地方完全不同：
-        # 这里要改**共享** config/harness.yaml 的 repos 段（拼错 / 新 gate 忘了登记键名），
-        # 那里要改**自己**的 config/harness.local.yaml（填路径）。报错指向错地方，
+        # 这里要改**共享** config/harness.toml 的 repos 段（拼错 / 新 gate 忘了登记键名），
+        # 那里要改**自己**的 config/harness.local.toml（填路径）。报错指向错地方，
         # 是批次 7 那个事故的一半（同事被指向共享文件，而共享文件里故意不写路径）。
         items = "、".join("%s(repo=%s)" % (n, k) for n, k in undeclared[:8])
         more = "，等共 %d 个" % len(undeclared) if len(undeclared) > 8 else ""
         warn("有 %d 个 gate 引用了 repos 段里**没有声明**的键：%s%s\n"
-             "        这是**配置错**：键名拼错，或新加的 gate 忘了在 config/harness.yaml 的\n"
-             "        repos 段登记一行。注意与「本机没配路径」的区别 —— 后者长这样：\n"
-             "        键在、值留空（`my_gate: \"\"`），那是常态、不阻断。"
+             "        这是**配置错**：键名拼错，或新加的 gate 忘了在 config/harness.toml 的\n"
+             "        [repos] 段登记一行。注意与「本机没配路径」的区别 —— 后者长这样：\n"
+             "        键在、值留空（`my_gate = \"\"`），那是常态、不阻断。"
              % (len(undeclared), items, more))
 
     if unconfigured:
@@ -547,10 +638,10 @@ def _sanity_check(cfg):
         items = "、".join(unconfigured[:8])
         more = "，等共 %d 个" % len(unconfigured) if len(unconfigured) > 8 else ""
         warn("本机有 %d 个已启用 gate 没配仓库路径（本机已填 %d 条）：%s%s\n"
-             "        这不是配置错：**键名**在共享 config/harness.yaml 里（团队策略），\n"
-             "        **路径**在各人 gitignored 的 config/harness.local.yaml 里（每机事实）。\n"
-             "        首次接入先跑：sh sandbox/setup_machine.sh     # 首次会提示你编辑 local.yaml 后重跑\n"
-             "        或照 config/harness.local.example.yaml 的「场景 A」抄一份 repos 段。"
+             "        这不是配置错：**键名**在共享 config/harness.toml 里（团队策略），\n"
+             "        **路径**在各人 gitignored 的 config/harness.local.toml 里（每机事实）。\n"
+             "        首次接入先跑：sh sandbox/setup_machine.sh     # 首次会提示你编辑 local.toml 后重跑\n"
+             "        或照 config/harness.local.example.toml 的「场景 A」抄一份 [repos] 段。"
              % (len(unconfigured), len(_machine_repos), items, more))
 
 

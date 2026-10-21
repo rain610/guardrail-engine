@@ -26,7 +26,7 @@ def main():
     cfg = load_config()
     repos = (cfg.get("repos") or {})
     if not repos:
-        print("✗ config/harness.local.yaml 里没有 repos 段", file=sys.stderr)
+        print("✗ config/harness.local.toml 里没有 repos 段", file=sys.stderr)
         return 2
 
     today = time.strftime("%Y%m%d")

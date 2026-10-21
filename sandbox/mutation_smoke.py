@@ -415,16 +415,17 @@ MUTATIONS = [
             "本批要治的那个病的**另一种形态**（平台/环境噪音冒充内容变化）。"
             "★ 与 M40 的区别：M40 是行尾，本条是工具链版本。两条都治好了「本机 vs CI」才真的对得上 —— "
             "实测那一对包里 8 处差异中，5 处行尾、2 处工具链、1 处派生件，正好 M39/M40 + M42 + M41。"},
-    {"id": "M43-gate-key-glued-into-the-previous-line", "file": "config/harness.yaml", "kind": "exact",
-     "old": '    run_on: [pre_commit, post_edit]\n  \n  # 示例 gate（展示配置结构，按需修改或删除）\n  example:\n',
-     "new": '    run_on: [pre_commit, post_edit]  example:\n',
+    {"id": "M43-gate-key-glued-into-the-previous-line", "file": "config/harness.toml", "kind": "exact",
+     "old": 'run_on = ["pre_commit", "post_edit"]\n\n# 示例 gate（展示配置结构，按需修改或删除）\n[gates.example]\n',
+     "new": 'run_on = ["pre_commit", "post_edit"] [gates.example]\n',
      "lock": "test_review_v13_batch9.py",
      "expect": "test_no_gate_key_is_glued_onto_the_previous_line",
-     "why": "把 gate 键 `  example:` 粘回上一行末尾 —— 复现 2026-09-18 施工中**真出过**的那次事故："
-            "批量删行时替换把该行与下一行之间的换行一起吞了。在 YAML 里该键成了上一行值的一部分，"
+     "why": "把 gate 表头 `[gates.example]` 粘回上一行末尾 —— 复现 2026-09-18 施工中**真出过**的那次事故："
+            "批量删行时替换把该行与下一行之间的换行一起吞了。YAML 时代该键成了上一行值的一部分，"
             "**这个 gate 从配置里整个消失**，而症状不是报错，是「看起来配好了」。"
-            "★ 严格行扫描与配置加载器会**同时**看不见它，集合仍然相等 —— 真正咬得住的是粘连正则。"
-            "★ 这条变异治的是**编辑动作**而不是代码：只要以后还有人在 `harness.yaml` 里批量删行，它就会复发。"},
+            "迁到 TOML 后同一形态会让整份配置解析失败（症状更吵），但病根没变：仍是「表头必须独立成行」。"
+            "★ 严格行扫描（只认 `^[gates.key]$`）会**漏掉**粘在值行后面的表头 —— 咬得住的是粘连正则。"
+            "★ 这条变异治的是**编辑动作**而不是代码：只要以后还有人在 `harness.toml` 里批量删行，它就会复发。"},
     {"id": "M46-machine-keys-counts-empty-values", "file": "harness/_config.py", "kind": "exact",
      "old": '    return sorted(k for k in repos if k != "harness_self" and repos[k])',
      "new": '    return sorted(k for k in repos if k != "harness_self")',

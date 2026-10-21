@@ -11,6 +11,7 @@
 """
 import argparse
 import ast
+import glob
 import importlib.util
 import io
 import json
@@ -20,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 # 快跑（HARNESS_FAST=1，2026-09-17 批 4 接线）：本文件慢在**真跑 upgrade.py 全流程**
 # （真起临时 HOME + 真跑六个步骤），接线前完全没接（全文 0 处 HARNESS_FAST），
@@ -55,6 +57,17 @@ def _write(path, text):
 def _read(path):
     with io.open(path, encoding="utf-8", errors="replace") as f:
         return f.read()
+
+
+def _consts(path, names):
+    """从模块顶层 `NAME = <字面量>` 里取常量（AST，不执行被读的文件）。"""
+    tree = ast.parse(_read(path), filename=path)
+    out = {}
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names):
+            out[node.targets[0].id] = ast.literal_eval(node.value)
+    return out
 
 
 def _fake_exe(root, name, rc=0, log=None):
@@ -156,6 +169,9 @@ class UpgradeTest(unittest.TestCase):
         env["CLAUDE_CONFIG_DIR"] = os.path.join(self.home, ".claude")
         env["OPENCLAW_STATE_DIR"] = os.path.join(self.home, ".openclaw-autoclaw")
         env["AGENTGUARD_OPS_LOG"] = self.ops
+        # [5/7] 引擎步会经 init 调 run_gate（--list 自检）；探针记录必须落临时目录，
+        # 否则写进仓库的 reports/gate_log.jsonl（第四轮 N-2 实测污染 124 条）。
+        env["HARNESS_LOG_FILE"] = os.path.join(self.base, "gate_log.jsonl")
         for k in ("AGENTGUARD_DIR", "HARNESS_DIR"):
             env.pop(k, None)
         if env_extra:
@@ -165,7 +181,7 @@ class UpgradeTest(unittest.TestCase):
 
     # ---- 用例 ----
 
-    @_slow("真跑 upgrade.py 全六步的 --dry-run 支路（1.93s）")
+    @_slow("真跑 upgrade.py 全七步的 --dry-run 支路（1.93s）")
     def test_preview_changes_nothing(self):
         """预演必须一个字节都不写：包内 .mcp.json 仍是占位符，且不提任何通道的归档/覆盖。"""
         pack = self._pack()
@@ -202,7 +218,7 @@ class UpgradeTest(unittest.TestCase):
         r = self._run("--pack", pack, "--harness", bad, "--yes", "--skip", "claude,openclaw,pip,skills,shim")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("路径适配失败", r.stdout)
-        self.assertNotIn("[2/6]", r.stdout, "适配都没过，却继续往下刷通道了")
+        self.assertNotIn("[2/7]", r.stdout, "适配都没过，却继续往下刷通道了")
         self.assertIn("__PY__", _read(os.path.join(pack, "marketplace", "plugins",
                                                    "agentguard", ".mcp.json")))
 
@@ -299,6 +315,132 @@ class UpgradeTest(unittest.TestCase):
         src = _read(SCRIPT)
         for kw in ('"plugin", "marketplace", "add"', '"plugin", "update"'):
             self.assertIn(kw, src, "升级没走这条命令：%s" % kw)
+
+
+class TestInitMarkerContract(unittest.TestCase):
+    """`init` 写的标记 = `upgrade.py` 认的标记：两份常量必须逐字相同。
+
+    两个文件不能互相 import（upgrade.py 随安装包分发，机器上可能没装包），只能各写一份。
+    漂移的后果**没有报错**：init 写 A、upgrade 找 B ⇒ 引擎副本永远「认不出」，而升级全程绿。
+    """
+
+    def test_marker_constants_are_the_same_on_both_sides(self):
+        names = {"INIT_MARKER", "INIT_MARKER_KIND"}
+        cli = _consts(os.path.join(ROOT, "agentguard", "cli.py"), names)
+        up = _consts(SCRIPT, names)
+        self.assertEqual(sorted(cli), sorted(names),
+                         "agentguard/cli.py 里的标记常量被改名/删掉了：%s" % sorted(cli))
+        self.assertEqual(sorted(up), sorted(names),
+                         "sandbox/upgrade.py 里的标记常量被改名/删掉了：%s" % sorted(up))
+        self.assertEqual(up, cli,
+                         "两处所有权标记常量不一致 —— init 写下的标记 upgrade.py 会认不出")
+
+
+class TestEngineCopyTargets(unittest.TestCase):
+    """[5/7] 的**选靶**判据（纯逻辑，不跑 init）。
+
+    选错靶不可逆：`init --force` 会把目标目录改名归档 —— 打到用户仓库上就是把**源**搬走。
+    四种候选形态逐条钉住：标记 / 旧版兼容 / .git / 指针（+仓库）。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("_upgrade_targets", SCRIPT)
+        cls.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mod)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = self.tmp.name
+        self.home = os.path.join(self.base, "home")
+        os.makedirs(self.home)
+        keys = ("HOME", "USERPROFILE", "AGENTGUARD_DIR", "HARNESS_DIR")
+        self._saved = {k: os.environ.get(k) for k in keys}
+        self.addCleanup(self._restore)
+        os.environ["HOME"] = self.home
+        os.environ["USERPROFILE"] = self.home
+        for k in ("AGENTGUARD_DIR", "HARNESS_DIR"):
+            os.environ.pop(k, None)
+
+    def _restore(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def _engine(self, path, marker=True, git=False):
+        _write(os.path.join(path, "VERSION"), "1.0.0\n")
+        _write(os.path.join(path, "harness", "run_gate.py"), "# mini engine\n")
+        if marker:
+            _write(os.path.join(path, self.mod.INIT_MARKER),
+                   json.dumps({"kind": self.mod.INIT_MARKER_KIND, "version": "1.0.0"}) + "\n")
+        if git:
+            os.makedirs(os.path.join(path, ".git"))
+        return path
+
+    def _repo(self):
+        h = os.path.join(self.base, "repo")
+        _write(os.path.join(h, "harness", "run_gate.py"), "#\n")
+        os.makedirs(os.path.join(h, ".git"))
+        return h
+
+    def _pointer(self, target):
+        _write(os.path.join(self.home, ".agentguard", "harness.path"), target + "\n")
+
+    def _ns(self, harness):
+        return argparse.Namespace(harness_norm=self.mod.norm(harness) if harness else "")
+
+    def _paths(self, harness):
+        return [p for p, _label, _note in self.mod.engine_copy_targets(self._ns(harness))]
+
+    def test_marked_dir_is_targeted(self):
+        eng = self._engine(os.path.join(self.base, "custom-engine"))
+        self.assertEqual(self._paths(eng), [eng])
+
+    def test_unmarked_custom_dir_is_left_alone(self):
+        """没有标记 ≠ init 副本：来历不明的目录一律不碰（宁可少刷，也不猜）。"""
+        eng = self._engine(os.path.join(self.base, "custom-engine"), marker=False)
+        self.assertEqual(self._paths(eng), [])
+
+    def test_unmarked_default_without_git_is_recognized_as_legacy(self):
+        """旧版 init 没有标记：只对**默认路径 + 没有 .git** 做兼容识别，并说明依据。"""
+        eng = self._engine(os.path.join(self.home, ".agentguard", "engine"), marker=False)
+        got = [(p, note) for p, _label, note in self.mod.engine_copy_targets(self._ns(""))]
+        self.assertEqual(got, [(eng, "旧版 init 没有标记；按「默认路径 + 没有 .git」识别")])
+
+    def test_unmarked_default_with_git_is_left_alone(self):
+        """默认路径上放着一份 clone（带 .git）→ 那是仓库，不是 init 副本。"""
+        self._engine(os.path.join(self.home, ".agentguard", "engine"), marker=False, git=True)
+        self.assertEqual(self._paths(""), [])
+
+    def test_repo_harness_is_never_a_target(self):
+        """`--harness` 就是引擎源：对它跑 init --force 会把源改名归档。"""
+        repo = self._repo()
+        self._pointer(repo)
+        self.assertEqual(self._paths(repo), [])
+
+    def test_pointer_finds_the_init_copy_behind_a_repo_harness(self):
+        """真实形态：--harness 是仓库、指针指向 init 副本 → 只刷副本（且去重成一项）。"""
+        repo = self._repo()
+        eng = self._engine(os.path.join(self.home, ".agentguard", "engine"))
+        self._pointer(eng)
+        self.assertEqual(self._paths(repo), [eng])
+
+    def test_engine_step_refuses_a_wheel_without_an_engine(self):
+        """旧版包（轮子不自带 _engine）→ 当场判失败，不假装刷过，也不动目标目录。"""
+        eng = self._engine(os.path.join(self.base, "custom-engine"))
+        pack = os.path.join(self.base, "pack")
+        os.makedirs(pack)
+        with zipfile.ZipFile(os.path.join(pack, "agentguard-0.1.2-py3-none-any.whl"), "w") as z:
+            z.writestr("agentguard/__init__.py", "")
+        a = argparse.Namespace(python=sys.executable, pack=pack, harness_norm=self.mod.norm(eng),
+                               yes=True, harness_cli="")
+        fails = self.mod.step_engine(a)
+        self.assertTrue(any("未自带引擎" in f for f in fails), fails)
+        self.assertEqual(self.mod.engine_version(eng), "1.0.0", "拒绝了却动了目标目录")
+        self.assertFalse(glob.glob(eng + ".disabled-*"))
 
 
 class TestUnitGuards(unittest.TestCase):

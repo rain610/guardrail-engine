@@ -38,7 +38,7 @@ Claude Code 原生读 `AGENTS.md`（仓库根已有）+ 支持 `settings.json` h
 在全局 CLAUDE.md 加一行：
 
 ```
-改 AgentGuard 任意客户×三端仓库代码后，必须在仓库根跑
+改 AgentGuard 任意受管仓代码后，必须在仓库根跑
 python <HARNESS>/harness/agents/auto-gate.py 过门禁。
 ```
 

@@ -2,13 +2,19 @@
 
 > 读者：要在一台机器 / 一个端仓接入 agentguard 门禁的人（**不需要读过任何其他文档**）。
 > 一页速查 → 三入口 → 台账 → 旁路 → 回滚 → 排障 → 已知限制 → 演进建议。
-> 路径约定：`<HARNESS>` = agentguard 工程根（如 `D:/Rain/project/agentguard`）。
+> 路径约定：`<HARNESS>` = agentguard 引擎根。两种来源都成立：
+> ① `pip install agentguard && agentguard init` 之后是 `~/.agentguard/engine`；
+> ② clone 源码时是工程根（如 `D:/Rain/project/agentguard`）。
+> ① 的形态下，下文 `python <HARNESS>/agentguard/cli.py …` 都可换成 `agentguard …`。
 
 ---
 
 ## 0. 一页速查（"装一次即可用"）
 
 ```bash
+# ⓪ 只有 pip 包时：先把随包引擎落到本机（clone 源码的跳过）
+pip install agentguard && agentguard init
+
 # ① 自检（3 秒，任何目录）——同时打印全部接入方式
 python <HARNESS>/agentguard/cli.py quickstart
 
@@ -48,7 +54,7 @@ python <HARNESS>/agentguard/cli.py check <你改过的文件>
 
 - **门禁台账**：`reports/gate_log.jsonl`。每条含：`ts`(时间) / `entry`(来源入口: hook|cli|mcp) / `ver`(引擎版本) / `gate` / `scope` / `files` / `rc` / `ms` / `rules`(规则级统计)。
   - `skipped: true` = 本次**没有执行任何规则**（gate 未启用）。它与「跑了且通过」都是 `rc=0`，靠这个字段区分（评审 v13 中 15）。
-  - `weakened: [...]` = 本次判定被**允许的**手段削弱过，只在发生时出现：`local_disabled`（本机 `config/harness.local.yaml` 把该 gate 关掉了）/ `policy_override:gates.<gate>.<字段>`（`HARNESS_ALLOW_POLICY_OVERRIDE=1` 放行了策略覆盖）。一条 `grep weakened reports/gate_log.jsonl` 即可捞出全部被削弱的判定。
+  - `weakened: [...]` = 本次判定被**允许的**手段削弱过，只在发生时出现：`local_disabled`（本机 `config/harness.local.toml` 把该 gate 关掉了）/ `policy_override:gates.<gate>.<字段>`（`HARNESS_ALLOW_POLICY_OVERRIDE=1` 放行了策略覆盖）。一条 `grep weakened reports/gate_log.jsonl` 即可捞出全部被削弱的判定。
   - 两个字段干净跑时**都不写**（每行都挂空标记等于没标记）；`cli.py log` 表格的 `mark` 列把它们渲染成 `skip` / `weak:…`，`harness/run_gate.py --summary` 也会单独报「跳过 N 次 / 被削弱 N 次（哪些 gate）」。
 - 查看：`cli.py log --last 50`（表格）｜导出：`cli.py log --export out.csv --format csv|json`｜聚合：`cli.py summary`｜覆盖度：`cli.py coverage`。
 - **运维台账**：`reports/ops_log.jsonl`（安装/卸载/旁路声明等动作），查看：`cli.py ops`。
@@ -64,7 +70,7 @@ python <HARNESS>/sandbox/audit_reconcile.py --since 7d --gate example
 ```
 
 产物 `reports/reconcile_<时间戳>.md`：四分类（✅ 有记录 / ◻ 早于台账期 / ⚠ 无记录 / ⛔ 存在非通过记录）+ **全部受管仓**的钩子体检 + `.git/config` 修改时间佐证。
-「几个仓」不写死 —— 那是**每机事实**（仓路径在 gitignored 的 `config/harness.local.yaml` 里，各人不同），
+「几个仓」不写死 —— 那是**每机事实**（仓路径在 gitignored 的 `config/harness.local.toml` 里，各人不同），
 要看本机清单：`python <HARNESS>/harness/run_gate.py --list`。
 口径提醒：产物是**审计线索**不是判罪（台账写失败本身是静默的）；「早于台账期」「配置修改于提交之后」的标注用于区分接线过渡期的历史提交。
 
@@ -114,14 +120,14 @@ python <HARNESS>/sandbox/install_shim.py --uninstall
 
 | 症状 | 原因 | 处置 |
 |---|---|---|
-| 提交"好像没被检查"、无任何输出 | hooksPath 未设置 / 指向不存在目录（git 静默跳过） | `git config core.hooksPath` 自查；`cli.py hooks install --repo <仓>`；对照《README_推广接入》三态表 |
+| 提交"好像没被检查"、无任何输出 | hooksPath 未设置 / 指向不存在目录（git 静默跳过） | `git config core.hooksPath` 自查；`cli.py hooks install --repo <仓>`；对照 `README.md` 的三态说明 |
 | 提交被拦但看不懂 | 正常拦截 | 按输出 ❌ 修复；拿 `cli.py log` 看这次判定的规则明细 |
 | rc=2 配置/定位错误 | gate 登记或路径问题 | `python <HARNESS>/harness/run_gate.py --validate` |
 | MCP 工具在宿主里不出现 | 配置未生效/命令写错 | `openclaw mcp probe agentguard` / `claude mcp list` / `codex mcp list` 自查；看服务 stderr |
 | 控制台乱码/崩溃 | GBK 控制台 | 三个壳都带 UTF-8 兜底；其他入口见 `doctor` 第 1 节检查 |
 | 文档/证据出现乱码字符（� / 锟斤拷 类） | 采集管道编码损伤（PS 管道按 cp936 解码 / Windows CLI 的 GBK 输出被按 UTF-8 采集） | 采集时：python 直接写 UTF-8 文件、CLI 输出 cp936 回退解码；提交前：`python sandbox/check_mojibake.py` 自检（本行示例字符为说明用途，mojibake-ok） |
 | hooks 报 `python: command not found` | PATH 无 python | 把 python 加进 PATH；或改用 `cli.py` 直跑验证后再装钩子 |
-| 疑似误报 | 规则边界 | 优先"行内豁免"（`harness-ok: <规则ID> <理由>`，见技能包《行内豁免》节）；确实不适用该客户的规则 → 报负责人改 `disabled_rules`，**不要**硬加标记 |
+| 疑似误报 | 规则边界 | 优先"行内豁免"（`harness-ok: <规则ID> <理由>`，见技能包《行内豁免》节）；确实不适用该仓的规则 → 报负责人改 `disabled_rules`，**不要**硬加标记 |
 
 ## 6. 插件形态（Claude Code / OpenClaw，可选）
 
@@ -134,7 +140,7 @@ python <HARNESS>/sandbox/install_shim.py --uninstall
 python <HARNESS>/integrations/plugins/build_marketplace.py --harness <HARNESS> --out <DIR>
 ```
 
-整个内部安装包（wheel + marketplace + 安装说明 + SHA1SUMS + zip）一键重建：
+整个离线安装包（wheel + marketplace + 安装说明 + SHA1SUMS + zip）一键重建：
 
 ```bash
 python <HARNESS>/sandbox/pack_release.py
@@ -164,14 +170,14 @@ claude plugin uninstall agentguard
 claude plugin marketplace remove agentguard-tools
 ```
 
-> 完全内部使用；构建产物含本机绝对路径，不入仓库（仓库只存模板 + 构建器）。
+> 构建产物含本机绝对路径，不入仓库（仓库只存模板 + 构建器）。
 >
-> 平台边界：在受管运行时（如 AutoClaw 桌面端）上，宿主插件安装需**由人执行**——agent 发起会被写权限边界拦截。
+> 平台边界：在受管运行时（某些桌面端宿主）上，宿主插件安装需**由人执行**——agent 发起会被写权限边界拦截。
 
 ## 7. 已知限制（诚实版）
 
-- pip 包形态**已提供**（`pyproject.toml` + `[project.scripts] agentguard`，随内部安装包分发 wheel）；
-  未提供的是**公开发布到 PyPI**，分发走 Release / 内部安装包（见 README「打包与分发」）。
+- pip 包形态**已提供**（`pyproject.toml` + `[project.scripts] agentguard`，随离线安装包分发 wheel）；
+  未提供的是**公开发布到 PyPI**，分发走 Release / 离线安装包（见 README「打包与分发」）。
 - Claude 插件原型按机器打戳（配置含绝对路径），宿主市场分发形态未验证（见 `COMPAT.md`）。
 - `bypass` 只记录"声明"，无法强制拦截 `--no-verify`（需钩子侧配合，属后续增量）。
 - MCP/CLI 的**持久化回归测试已入库**（`tests/test_agentguard.py`，10 例：协议 fixtures / 工具行为 / 三入口一致性）。

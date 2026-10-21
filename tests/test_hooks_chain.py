@@ -270,20 +270,20 @@ class TestSetupMachineScript(unittest.TestCase):
     def test_first_run_generates_local_template(self):
         if not _SH:
             self.skipTest("Git Bash sh 不可用（PATH 无 sh 且未找到 Git for Windows 固定安装位）")
-        """无 local 时首跑：生成 local.yaml 并提示编辑，退出 0（不装 hook）。"""
+        """无 local 时首跑：生成 local.toml 并提示编辑，退出 0（不装 hook）。"""
         # 用临时 HARNESS？setup 从 $0 推导根，会写真实 config/。
         # 规避：mock 一个最小 harness 树（config + example + sandbox 副本）。
         h2 = os.path.join(self.tmp, "harness_copy")
         os.makedirs(os.path.join(h2, "config"))
         os.makedirs(os.path.join(h2, "sandbox"))
         shutil.copy(os.path.join(SANDBOX, "setup_machine.sh"), os.path.join(h2, "sandbox"))
-        shutil.copy(os.path.join(ROOT, "config", "harness.local.example.yaml"),
+        shutil.copy(os.path.join(ROOT, "config", "harness.local.example.toml"),
                     os.path.join(h2, "config"))
         r = _run(["sh", os.path.join(h2, "sandbox", "setup_machine.sh")])
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(os.path.exists(os.path.join(h2, "config", "harness.local.yaml")),
+        self.assertTrue(os.path.exists(os.path.join(h2, "config", "harness.local.toml")),
                         "首跑未生成 local 模板")
-        self.assertIn("harness.local.yaml", r.stdout)
+        self.assertIn("harness.local.toml", r.stdout)
 
     def test_dry_run_lists_enabled_gates(self):
         if not _SH:
@@ -291,10 +291,10 @@ class TestSetupMachineScript(unittest.TestCase):
         """--dry-run：枚举启用 gate（只读不装）。
 
         2026-09-12 密闭化（CI 首次运行暴露）：原版直接跑**真实仓**的 setup_machine.sh，
-        依赖"本机已存在 config/harness.local.yaml"——CI/同事全新克隆上该文件不存在，
+        依赖"本机已存在 config/harness.local.toml"——CI/同事全新克隆上该文件不存在，
         脚本走"首跑生成模板后 exit 0"分支，从不枚举 gate → 断言必红（GitHub Actions
         run#1 python3.11/3.12 双矩阵同点失败）。附带问题：缺文件时它还会往真实仓写
-        harness.local.yaml（测试有副作用）。
+        local 配置（测试有副作用）。
         现改为最小 harness 树 + 自带空覆盖层，断言落在 fixture 自己的 gate 上。"""
         h2 = os.path.join(self.tmp, "harness_copy")
         for d in ("config", "sandbox", "harness"):
@@ -305,11 +305,12 @@ class TestSetupMachineScript(unittest.TestCase):
         # 端仓目录真实存在 → dry-run 才会打印 "[dry-run] <gate> -> <path>"
         repo = os.path.join(self.tmp, "fx_repo")
         os.makedirs(repo)
-        with open(os.path.join(h2, "config", "harness.yaml"), "w", encoding="utf-8") as f:
-            f.write("repos:\n  fx_pc: " + repo.replace("\\", "/") + "\n"
-                    "gates:\n  fx_pc:\n    enabled: true\n    repo: fx_pc\n")
+        with open(os.path.join(h2, "config", "harness.toml"), "w", encoding="utf-8") as f:
+            f.write("[repos]\nfx_pc = \"%s\"\n"
+                    "[gates.fx_pc]\nenabled = true\nrepo = \"fx_pc\"\n"
+                    % repo.replace("\\", "/"))
         # 覆盖层已就位 = 非首跑状态（正是 CI 与本机的差异点，也是本用例的前提）
-        with open(os.path.join(h2, "config", "harness.local.yaml"), "w", encoding="utf-8") as f:
+        with open(os.path.join(h2, "config", "harness.local.toml"), "w", encoding="utf-8") as f:
             f.write("# 空覆盖层（本用例只验枚举，不改路径）\n")
         r = _run(["sh", os.path.join(h2, "sandbox", "setup_machine.sh"), "--dry-run"])
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -335,7 +336,8 @@ class TestProtectedPathContract(unittest.TestCase):
 
         for rel in ("checks/example_code_check.py",            # 规则实现
                     "checks/example_ruleset.py",               # 规则集
-                    "config/harness.yaml",                     # 策略配置
+                    "config/harness.toml",                     # 策略配置
+                    "config/harness.yaml",                     # 旧版策略配置（兼容层）
                     "integrations/hooks/agentguard-gate.py"):  # ★ 本次漂移的那一类
             self.assertTrue(_in_protected(rel), "%s 应属受保护文件（保护循环会拦未提交改动）" % rel)
         for rel in ("docs/x.md", "tests/test_x.py", "README.md", "sandbox/install_hooks.sh"):

@@ -33,17 +33,23 @@ def check_agents_md_no_absolute_paths():
     """业务仓 AGENTS.md 不得含指向 agentguard 的绝对路径（进仓文件必须机器无关）。
 
     绝对路径只应该出现在不进仓的渲染产物里（~/.agentguard/GLOBAL_AGENTS.md）
-    或本机配置里（config/harness.local.yaml）。
+    或本机配置里（config/harness.local.toml）。
 
-    Returns: (passed: bool, message: str)
+    Returns: (passed, message) —— True=通过，False=违规，None=无法检查（rc=2）
     """
     try:
         import _config as C
         cfg = C.load()
     except Exception as e:
-        return (True, f"读取 config 失败（{e!r}）——业务仓 AGENTS.md 绝对路径检查跳过")
+        print("❌ 读取 config 失败：%r —— 业务仓 AGENTS.md 绝对路径检查无法执行"
+              % (e,), file=sys.stderr)
+        return (None, "读取 config 失败")
 
     repos = cfg.get("repos") or {}
+    if not isinstance(repos, dict):
+        print("❌ config 的 repos 段不是键值映射 —— 业务仓 AGENTS.md 绝对路径检查无法执行",
+              file=sys.stderr)
+        return (None, "repos 段格式错误")
     if not repos:
         return (True, "本机未配置业务仓路径，跳过")
 
@@ -58,6 +64,7 @@ def check_agents_md_no_absolute_paths():
     ]
 
     violations = []
+    unreadable = []
     for key, repo_path in sorted(repos.items()):
         if not repo_path or not os.path.isdir(repo_path):
             continue  # 路径未配或不存在，跳过
@@ -69,7 +76,8 @@ def check_agents_md_no_absolute_paths():
         try:
             with open(agents_md, encoding="utf-8", errors="replace") as f:
                 content = f.read()
-        except Exception:
+        except Exception as e:
+            unreadable.append("%s（%s）" % (key, e))
             continue
 
         # 检查是否含指向 agentguard 的绝对路径
@@ -77,6 +85,11 @@ def check_agents_md_no_absolute_paths():
             if re.search(pattern, content):
                 violations.append(key)
                 break
+
+    if unreadable:
+        print("❌ %d 个业务仓 AGENTS.md 无法读取 —— 检查未执行：%s"
+              % (len(unreadable), ", ".join(unreadable[:6])), file=sys.stderr)
+        return (None, "AGENTS.md 读取失败")
 
     if violations:
         msg = ("%d 个业务仓 AGENTS.md 含绝对路径（违反机器无关原则）：%s\n"
@@ -90,12 +103,14 @@ def check_agents_md_no_absolute_paths():
 
 def main():
     passed, msg = check_agents_md_no_absolute_paths()
-    if passed:
+    if passed is True:
         print(f"✅ {msg}")
         return 0
-    else:
+    if passed is False:
         print(f"❌ {msg}")
         return 1
+    print(f"❌ {msg}（无法检查 ≠ 通过，按配置错误处理）")
+    return 2
 
 
 if __name__ == "__main__":

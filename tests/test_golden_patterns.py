@@ -92,22 +92,22 @@ class TestGoldenPatternPointers(unittest.TestCase):
             see = getattr(rule, "see", "")
             if not see:
                 continue
-            pointers.append(rule.rule_id)
-            self.assertFalse(os.path.isabs(see), "%s 的 see 是绝对路径：%r" % (rule.rule_id, see))
-            self.assertNotIn("\\", see, "%s 的 see 用了反斜杠：%r" % (rule.rule_id, see))
+            pointers.append(rule.id)
+            self.assertFalse(os.path.isabs(see), "%s 的 see 是绝对路径：%r" % (rule.id, see))
+            self.assertNotIn("\\", see, "%s 的 see 用了反斜杠：%r" % (rule.id, see))
             self.assertTrue(see.startswith("golden-patterns/"),
-                            "%s 的 see 不在 golden-patterns/ 下：%r" % (rule.rule_id, see))
+                            "%s 的 see 不在 golden-patterns/ 下：%r" % (rule.id, see))
             target = os.path.join(ROOT, *see.split("/"))
             self.assertTrue(os.path.isfile(target),
-                            "%s 的 see 指向不存在的文件：%s" % (rule.rule_id, see))
-            self.assertIn(rule.rule_id, _read(target),
-                          "%s 指向的范式没提这条规则：%s" % (rule.rule_id, see))
+                            "%s 的 see 指向不存在的文件：%s" % (rule.id, see))
+            self.assertIn(rule.id, _read(target),
+                          "%s 指向的范式没提这条规则：%s" % (rule.id, see))
         self.assertGreaterEqual(len(pointers), 2,
                                 "带 see 的示例规则少于 2 条，闭环演示会退化成单点：%s" % pointers)
 
     def test_golden_pattern_files_carry_no_machine_specific_paths(self):
         # 先证明判据自己认得出坏路径，否则下面的循环在正则写坏时恒绿。
-        self.assertIsNotNone(_MACHINE_PATH.search("见 D:/KnowledgeVault/x.md"), "判据没认出盘符路径")
+        self.assertIsNotNone(_MACHINE_PATH.search("见 D:/team-vault/x.md"), "判据没认出盘符路径")
         self.assertIsNotNone(_MACHINE_PATH.search("见 /home/rain/x.md"), "判据没认出家目录路径")
         files = sorted(_all_pattern_files())
         self.assertGreaterEqual(len(files), 15, "范式目录里的文件少得可疑：%s" % files)

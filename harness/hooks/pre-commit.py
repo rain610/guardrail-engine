@@ -59,7 +59,7 @@ def main():
     sys.path.insert(0, LIB)
 
     # worktree 纠偏（2026-09-07）：hook 安装在共享 .git/hooks，gate 是安装时写死的
-    # （如 hy_backend 指向主仓）。但 worktree（如 hzy）里提交时，cwd 才是真仓库。
+    # （如某个 backend gate 指向主仓）。但 worktree（路径与主仓不同）里提交时，cwd 才是真仓库。
     # 若 cwd 所在仓在 config 里登记了另一个 gate，则以 cwd 识别为准（覆盖写死值）。
     try:
         # auto-gate.py 文件名带连字符，不能 import；用 importlib 从路径加载
@@ -87,7 +87,7 @@ def main():
     if not gate_name:
         # hooksPath 共享分发器模式 + cwd 纠偏失败 = 该仓未纳管 → fail-closed 明确指引
         print("[pre-commit] 当前目录不在 harness 受管仓库内（未注册 gate）。")
-        print("  - 若该仓应纳管：在 config/harness.yaml 注册 repo+gate 后，")
+        print("  - 若该仓应纳管：在 config/harness.toml 注册 repo+gate 后，")
         print(f"    在仓根跑 sh {ROOT}/sandbox/install_hooks.sh <gate名>")
         print("  - 若不应纳管：此钩子经 core.hooksPath 全局生效，如需绕过请说明原因（git commit --no-verify）。")
         return 2
@@ -138,7 +138,7 @@ def main():
         # 若不排除，检查器只能读到工作区残留副本 → 又变成读工作区（P0 的另一面）。
         # 2026-09-16（剖析报告续）：本调用原先 `text=True` 但**没写 encoding** —— Python 会按
         # **本机 locale**（中文 Windows = GBK）解码 git 输出的 UTF-8 路径，于是含中文的文件名
-        # 变成 mojibake（`README_推广接入.md` → `README_鎺ㄥ箍鎺ュ叆.md`），下游 checkout-index
+        # 变成 mojibake（`README_中文名.md` → `README_鎺ㄥ箍鎺ュ叆.md`），下游 checkout-index
         # 就报 "is not in the cache" → fail-closed 阻断提交，而提示只说"配置/环境问题"。
         # 实测：本仓 31 个非 ASCII 路径全部中招，端仓（中文文件名常见）同样。
         # 同函数下面 checkout-index 那处**写了** encoding="utf-8" —— 同一个函数里两种写法，

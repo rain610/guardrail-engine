@@ -12,7 +12,7 @@ r"""评审 v3 批次 3 回归锁：接入验收门 ⑤ syntax 传感器 + regist
 判据环境无关：容器里没有端仓时 ① 会 ❌（属环境，不是缺陷），但 ⑤ 用**密闭夹具**与端仓无关 ——
 因此 ⑤ 为假时必须有说明，而不是凭环境直接放过（也不许静默）。
 
-开源裁剪（2026-10-20）：业务 gate 已随客户仓删除，pc/h5 的两向探针用例
+开源裁剪（2026-10-20）：业务 gate 已随业务仓删除，pc/h5 的两向探针用例
 （`test_pc_gate_syntax_probe_is_two_way` / `test_pc_gate_syntax_is_true_when_node_present`）
 失去被测对象，连同实现一起移除。保留 harness_self 的「无语法层 → None 且必须写明原因」，
 它锁的是验收报告不得沉默这一通用契约。
@@ -68,6 +68,37 @@ class TestAcceptanceSyntaxSensor(unittest.TestCase):
         self.assertIsNone(row["syntax"], "工程仓自检 gate 没有 node 语法层 → ⑤ 应为 None（不适用）")
         self.assertTrue(any("不适用" in n for n in row["notes"]),
                         "⑤ 不适用时必须写明原因，不能沉默：%s" % row["notes"])
+
+
+@_slow("真跑 acceptance_check 的 example 夹具（起子进程跑门禁）")
+class TestAcceptanceExampleGate(unittest.TestCase):
+    """开源唯一 gate 必须能被验收：②③ 真跑，⑤ 明确不适用，④ 认台账记录。"""
+
+    def test_example_gate_has_probe_clean_and_ledger(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "_acc_example_probe", os.path.join(ROOT, "sandbox", "acceptance_check.py"))
+        A = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(A)
+
+        d = _mkdtemp("acc-example-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        log = os.path.join(d, "gate_log-2026-10.jsonl")
+        with open(log, "w", encoding="utf-8") as f:
+            f.write('{"gate": "example"}\n')
+
+        old = os.environ.pop("HARNESS_CONFIG", None)
+        try:
+            row = A.check_gate("example", {"gates": {}, "repos": {}}, log)
+        finally:
+            if old is not None:
+                os.environ["HARNESS_CONFIG"] = old
+
+        notes = " ".join(row.get("notes") or [])
+        self.assertTrue(row["probe"], "example 违规探针没拦住：%s" % notes)
+        self.assertTrue(row["clean"], "example 合规反锁没放行：%s" % notes)
+        self.assertTrue(row["ledger"], "example 台账记录没认出来：%s" % notes)
+        self.assertIsNone(row["syntax"], "example 没有语法层，⑤ 应为 None（不适用）")
 
 
 class TestRegistryValidateThreeStates(unittest.TestCase):

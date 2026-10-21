@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""外部评审 v9（2026-09-15）落地回归锁 —— 闭合 Codex v4 与 AutoClaw v9 的缺口。
+r"""外部评审 v9（2026-09-15）落地回归锁 —— 闭合 Codex v4 与 外部评审 v9 的缺口。
 
 本模块的每一条都对应"外部评审发现的问题"，且都写成**行为锁**（不靠源码文本匹配），
 判据是退出码 / 输出关键字 / 真实的 rel+changed_lines 计算结果：
@@ -11,9 +11,9 @@ L1  Codex v4 P1-1：worktree 提交时检查基准必须是**实际提交仓**�
 L2  Codex v4 P1-3：后端检查器读取失败必须是**阻断级 error**，不能用空 violations 表示通过。
 L3  Codex v4 P2-1：分发器必须**透传退出码**（2=配置错 / 1=业务拦截），不得压平成 1。
 L4  Codex v4 P1-2：commit-msg 的链式查找必须与 pre-commit 一致（common-dir → absolute-git-dir）。
-L5  AutoClaw v9 V9-1：提交期 repo-wide 分支（file_types.matches 短路）必须有锁 —— 变异后原为全绿。
-L6  AutoClaw v9 V9-2：分发器**链首自检**（工程仓体检失败 → rc=2）必须有锁。
-L7  AutoClaw v9 V9-3：acceptance ⑤ syntax 探针在**缺 node** 时必须为 False（防"恒真盲区"）。
+L5  外部评审 v9 V9-1：提交期 repo-wide 分支（file_types.matches 短路）必须有锁 —— 变异后原为全绿。
+L6  外部评审 v9 V9-2：分发器**链首自检**（工程仓体检失败 → rc=2）必须有锁。
+L7  外部评审 v9 V9-3：acceptance ⑤ syntax 探针在**缺 node** 时必须为 False（防"恒真盲区"）。
 """
 import io
 import os

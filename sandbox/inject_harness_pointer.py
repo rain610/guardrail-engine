@@ -30,7 +30,7 @@ POINTER_NOTE = r"""
 > 3. 都没有 → 本机没跑过接入脚本。**别猜路径**：请让用户重跑一次接入脚本
 >    （`sandbox/setup_machine.sh`），跑完上面第 2 条就有了。
 >
-> 拿到工程根后，可用 `config/harness.local.yaml` 的 `harness:` 键交叉验证；两者不一致时
+> 拿到工程根后，可用 `config/harness.local.toml` 的 `harness:` 键交叉验证；两者不一致时
 > 以 `harness:` 键为准（接入脚本每次都会校正它）。
 """
 
@@ -42,7 +42,7 @@ def load_config():
     cfg = _config.load() or {}
     repos = cfg.get("repos") or {}
     if not repos:
-        print("ERROR: 本机未配 repos 段（检查 config/harness.local.yaml）")
+        print("ERROR: 本机未配 repos 段（检查 config/harness.local.toml）")
         sys.exit(1)
     return repos
 

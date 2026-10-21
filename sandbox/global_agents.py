@@ -83,7 +83,7 @@ ENGINE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 正文（全仓唯一一份）。普通 Python 字符串：里面的 `$`、反引号、`>` 全是字面量。
 # 本机真实路径写成 PLACEHOLDER，渲染时烘进去 —— 本文件住在 ~/.agentguard/，本来就是每机一份。
 # ⚠ 改这里的措辞前先想一句话：**别的机器上的人怎么收到这次改动？** 答不上来就别写正文，
-#   改成指路（见 golden-patterns/templates/00_知识分层设计.md §一 的唯一判据）。
+#   改成指路（见 golden-patterns/index.md 的仓库结构约定）。
 # ---------------------------------------------------------------------------
 BODY = """# 全局 AI Agent 统一守则（所有工具共用一份）
 
@@ -91,12 +91,12 @@ BODY = """# 全局 AI Agent 统一守则（所有工具共用一份）
 > （`~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md`、`~/.config/opencode/AGENTS.md`）都指向本文件
 > —— **改哨兵区即全部生效**（这正是它跟"各自抄一份"的关键差别）。
 > **本文件只负责「指路」，不装规则正文** —— 正文在 harness 工程里：机械规则在 `checks/`，
-> 范式与端级模板在 `golden-patterns/`。分层设计见
-> `__HARNESS__/golden-patterns/templates/00_知识分层设计.md`。
+> 范式与端级模板在 `golden-patterns/`，入口见
+> `__HARNESS__/golden-patterns/index.md`。
 > ⚠ 下面哨兵区由 harness 每次运行重渲染，手改会被覆盖；**哨兵区之外是你自己的，harness 永不触碰**。
 
-## AgentGuard 客户仓库守则（最高优先级）
-在**已接入门禁的任何客户仓库**改码前（受管仓清单：python __HARNESS__/harness/run_gate.py --list）：
+## AgentGuard 受管仓库守则（最高优先级）
+在**已接入门禁的任何受管仓库**改码前（受管仓清单：python __HARNESS__/harness/run_gate.py --list）：
 1. 先读该仓库根的 AGENTS.md（仓库级指针：它指向端级模板与范式）
 2. 改完必须跑统一门禁（仓库根执行）：
    python3 __HARNESS__/harness/agents/auto-gate.py
@@ -105,13 +105,13 @@ BODY = """# 全局 AI Agent 统一守则（所有工具共用一份）
    退出码：0=通过 / 1=拦截修复 / 2=配置错 / 3=非受管仓库
 3. 被拦截按门禁输出修复，禁止 --no-verify（紧急除外，须说明）
 4. pre-commit 钩子会再拦一遍
-5. 多客户 worktree 并行时：只动自己任务的文件
+5. 多仓 worktree 并行时：只动自己任务的文件
 
-## 客户仓 AGENTS.md 里的 `<VAULT>`（多数人用不上）
-客户仓根 `AGENTS.md` 的 `## 项目知识库` 一节写的是 `<VAULT>/concepts/customers/<客户>/`。
+## 受管仓 AGENTS.md 里的 `<VAULT>`（多数人用不上）
+受管仓根 `AGENTS.md` 的 `## 项目知识库` 一节写的是 `<VAULT>/concepts/projects/<项目>/`。
 `<VAULT>` = **团队知识库根目录，只有负责人本机上有**。
 **你这台机器上没有这个目录，就忽略这一节** —— 它不参与门禁、不影响你改代码。
-⚠ 不要为了"把它填上"去改客户仓的 `AGENTS.md`：那文件随仓分发给所有人，
+⚠ 不要为了"把它填上"去改受管仓的 `AGENTS.md`：那文件随仓分发给所有人，
 里面只该出现占位符，不该出现任何人的本机路径。
 
 ## 通用编码准则（Karpathy 四准则）
@@ -395,7 +395,7 @@ def main():
         return 0 if check(root=root or ENGINE_ROOT) else 1
     if not root:
         print("✗ 找不到 HARNESS 工程根：设 AGENTGUARD_DIR 环境变量，"
-              "或在 config/harness.local.yaml 里写 `harness:` 键，"
+              "或在 config/harness.local.toml 里写 `harness:` 键，"
               "或 `python sandbox/global_agents.py <HARNESS>` 显式传", file=sys.stderr)
         return 2
     if looks_like_msys(root):

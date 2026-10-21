@@ -37,6 +37,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import tomllib
 
 # UTF-8 兜底：本模块的 `require_python` 会往 stderr 写中文 —— 宿主控制台可能是 GBK/ASCII
 # （同一坑在 auto-gate/shims 上踩过三次）。各壳也各自兜了一遍，这里是**独立**的一份：
@@ -49,17 +50,69 @@ except Exception:
     pass
 
 __all__ = ["find_root", "read_version", "py_exe", "require_python", "find_bash",
-           "gate_owning", "GATE_RE", "flag_like"]
+           "gate_owning", "GATE_RE", "flag_like", "packaged_engine", "package_dir",
+           "ENGINE_DIRS", "ENGINE_FILES", "ENGINE_EXCLUDE"]
+
+# 随 wheel 出厂的引擎内容（相对工程根）。**单一来源**：`setup.py` 里有逐字相同的一份
+# （构建脚本不能 import 包，构建阶段包还没进 sys.path），由
+# tests/test_init_bundle.py 用 AST 对拍 —— 两处漂移会当场红。
+#
+# 为什么不把 `config/harness.local.toml`（及旧版 `.yaml`）打进去：那是**本机事实**（各仓磁盘路径），
+# 打进去等于把打包机的目录结构发给所有人；`init` 复制时也会跳过它。
+ENGINE_DIRS = ("checks", "harness", "config", "sandbox", "golden-patterns",
+               "integrations", "docs")
+ENGINE_FILES = ("VERSION", "LICENSE", "README.md", "AGENTS.md")
+ENGINE_EXCLUDE = ("config/harness.local.toml", "config/harness.local.yaml")
+
+
+def package_dir():
+    """壳模块所在目录（开发树 = `<repo>/agentguard/`，wheel = `site-packages/agentguard/`）。
+
+    `init` 用它把 `mcp.py` / `cli.py` / `_shell.py` 一并复制进引擎根：插件与
+    `fix_paths.py` 认的布局是 `<HARNESS>/agentguard/mcp.py`，只复制 checks/harness
+    会让 `~/.agentguard/engine` 缺这一格，MCP 注册直接指向空。
+    """
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def packaged_engine():
+    """轮子自带的引擎目录（`agentguard/_engine`）；开发树里返回 None。
+
+    刻意**不**并入 `find_root()`：引擎根也是台账（`reports/gate_log-*.jsonl`）的默认落点，
+    让 `find_root()` 直接返回 site-packages 会把台账写进包的安装目录 —— 升级即丢，
+    系统级安装还可能只读。所以随包引擎只是 `agentguard init` 的**源**；
+    真正生效要等 init 把它复制到可写目录并写指针。
+    """
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_engine")
+    if os.path.isfile(os.path.join(d, "harness", "run_gate.py")):
+        return d
+    return None
 
 
 # ---------- 工程根定位（统一解析链） ----------
 
+def _read_config_harness(path):
+    """从配置文件**顶层**取 `harness` 键：`.toml` 用标准库 tomllib，旧版 `.yaml` 走极简行读。
+
+    只读这一个键，不解析整份配置：这里是壳层的"工程根定位"，不该因为配置里别处写坏
+    而拿不到根（真正的配置校验在 `harness/_config.py`，那边会把错误报成 rc=2）。
+    """
+    if path.lower().endswith(".toml"):
+        try:
+            with open(path, "rb") as f:
+                val = tomllib.load(f).get("harness")
+            return val if isinstance(val, str) else None
+        except Exception:
+            return None
+    return _read_yaml_simple(path)
+
+
 def _read_yaml_simple(path):
-    """极简 YAML 读取：只取顶层 `harness:` 键的值。
+    """旧版 YAML 兼容：只取顶层 `harness:` 键的值。
 
     为什么不用 PyYAML：本仓零第三方依赖（pyproject.toml 无 dependencies 键，
     tests/test_stdlib_only.py 用 AST 扫描锁定）。`harness.local.yaml` 的 `harness:`
-    值是简单字符串，不需要完整 YAML 解析。
+    值是简单字符串，不需要完整 YAML 解析。新配置请用 TOML（见 `_read_config_harness`）。
     """
     try:
         with open(path, encoding="utf-8") as f:
@@ -81,7 +134,8 @@ def find_root():
 
     解析链：
       ① 环境变量 `AGENTGUARD_DIR` / `HARNESS_DIR`（CI/测试覆盖）
-      ② `config/harness.local.yaml` → `harness:` 键（本机配置，gitignored）
+      ② `config/harness.local.toml` → `harness` 键（本机配置，gitignored；
+         旧版 `harness.local.yaml` 的 `harness:` 键仍可读）
        `~/.agentguard/harness.path`（向后兼容，install_shim.py 写入）
       ④ 从 cwd 向上找（最后的兜底，要求该目录下有 harness/run_gate.py）
 
@@ -96,15 +150,20 @@ def find_root():
     if env:
         cands.append(env)
 
-    # ② 本机配置文件（config/harness.local.yaml → harness: 键）
+    # ② 本机配置文件（config/harness.local.toml → harness 键；旧版 .yaml 兼容）
     # 从本文件位置向上找引擎根，再拼 config 路径
     d = os.path.dirname(os.path.abspath(__file__))
     for _ in range(5):
-        cfg = os.path.join(d, "config", "harness.local.yaml")
-        if os.path.isfile(cfg):
-            val = _read_yaml_simple(cfg)
-            if val:
-                cands.append(val)
+        found = False
+        for name in ("harness.local.toml", "harness.local.yaml"):
+            cfg = os.path.join(d, "config", name)
+            if os.path.isfile(cfg):
+                val = _read_config_harness(cfg)
+                if val:
+                    cands.append(val)
+                found = True
+                break
+        if found:
             break
         d = os.path.dirname(d)
 

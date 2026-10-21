@@ -18,6 +18,9 @@
 因此本脚本只做一件事：**把产物当成第三方交付物来验**，每一项都对着"单一来源"比：
   · 轮子里有没有该有的模块   ← 对照 `agentguard/` 目录（**不写死清单**：写死清单
     正是本次漂移的成因；将来加模块时会自动纳入检查）
+  · 轮子里有没有自带引擎     ← `agentguard/_engine/harness/run_gate.py`（否则 `pip install`
+    之后仍要 clone 引擎，§5.2 的采用障碍）；且 `config/harness.local.toml` / 旧版 `.yaml` 不许进包
+    （那是打包机的本机路径）
   · `Requires-Python`        ← 对照 `pyproject.toml` 的 `requires-python`
   · 入口点 / 包名 / 版本      ← 对照 `pyproject.toml` 与 `VERSION` 文件
   · 安装包完整性              ← 对照 `SHA1SUMS.txt` 与实际文件（双向：多列/漏列/哈希不符）
@@ -144,6 +147,27 @@ def check_wheel(wheel, p, proj, version, modules, label="wheel"):
             p.add(label, "轮子里缺模块 %s（源码 %s 下一共 %d 个 .py）—— "
                          "「修好了但没出货」就是这个形状"
                   % ("、".join(missing), "agentguard/", len(modules)))
+        # ①b 自带引擎（评审 2026-10-21 §5.2）：shell-only 的 wheel 装完仍要 clone 引擎，
+        #     "装完就能跑"是断的。只查入口文件：它们是引擎可运行的充要条件，且不写死清单。
+        engine_required = ("agentguard/_engine/harness/run_gate.py",
+                           "agentguard/_engine/checks/example_code_check.py",
+                           "agentguard/_engine/config/harness.toml")
+        missing_engine = [n for n in engine_required if n not in names]
+        if missing_engine:
+            p.add(label, "轮子里没有自带引擎：缺 %s —— `pip install` 之后仍要 clone 引擎并设 "
+                         "AGENTGUARD_DIR（§5.2 的采用障碍）；检查 setup.py 的 build_py 是否把 "
+                         "引擎复制进了 agentguard/_engine/" % "、".join(missing_engine))
+        # ①c 打包机的本机事实 / 缓存不得进包
+        # 判据按前缀而不是两个精确文件名：本机真身 local.toml / 旧版 local.yaml 都在
+        # 排除清单里，但「改名归档」的副本（如 local.yaml.disabled-20261021）曾真被
+        # 打进过 wheel —— 归档者的本意是留个备份，出货却把打包机路径发给了所有人。
+        # `.example.` 例外：模板是给所有人抄的，必须出货。
+        leaks = [n for n in names
+                 if ("/config/harness.local." in n and "harness.local.example." not in n)
+                 or "__pycache__/" in n or n.endswith((".pyc", ".pyo"))]
+        if leaks:
+            p.add(label, "轮子里混进了本机配置/缓存：%s —— harness.local.* 是打包机的仓库路径，"
+                         "发出去等于把打包机的目录结构交给所有人" % "、".join(leaks[:5]))
         # ② Requires-Python 必须等于 pyproject
         metas = [n for n in names if n.endswith(".dist-info/METADATA")]
         if not metas:
@@ -238,7 +262,7 @@ def _check_shipped_tools(stage, p):
 
 
 def check_package(stage, p, proj, version, modules):
-    """验一个「内部安装包」目录：文件齐 / SHA1SUMS 双向对账 / 适配器盖得住 .mcp.json。"""
+    """验一个「离线安装包」目录：文件齐 / SHA1SUMS 双向对账 / 适配器盖得住 .mcp.json。"""
     wheels = [n for n in os.listdir(stage) if n.endswith(".whl")]
     if len(wheels) != 1:
         p.add(stage, "应有且仅有 1 个 wheel，实际 %d 个：%s" % (len(wheels), wheels))
@@ -611,7 +635,7 @@ def main(argv=None):
     targets = list(a.paths)
     if not targets:
         stage = os.path.join(ROOT, "dist", "install-package",
-                             "agentguard-内部安装包-v%s" % version)
+                             "agentguard-package-v%s" % version)
         if not os.path.isdir(stage):
             print("✗ 找不到 %s" % stage)
             print("  说明：本仓库还没有 v%s 的安装包产物 —— 先跑 "

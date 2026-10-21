@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""`sandbox/agents_audit.py` 回归锁 —— 客户仓瘦身判据的**唯一**来源，所以要钉死。
+"""`sandbox/agents_audit.py` 回归锁 —— 受管仓瘦身判据的**唯一**来源，所以要钉死。
 
 为什么需要（2026-09-19）
 --------------------------------------------------------------------------------
-「33 个客户仓瘦身」的判据是「这一行有没有归宿」，而归宿表（`sandbox/sink_table.txt`）
+「33 个受管仓瘦身」的判据是「这一行有没有归宿」，而归宿表（`sandbox/sink_table.txt`）
 是**手写的**。手写的判据有两种坏法，都无声：
 
   ① **指空** —— 改了 `AGENTS_*_slim.md` 的措辞、忘了同步锚点，那条归宿就永远求不到。
      后果不是误删（那几行会退回「待迁」），而是**静默少删** —— 使用者只会以为
      "审下来就是没得删"。所以 `verify()` 要出声，本文件再把「出声」钉住。
   ② **匹配太宽** —— 一旦用子串匹配，`1. Controller 只做参数校验…` 那条会连带把
-     客户自己写的相近句子一起删掉。删客户仓的知识不可恢复（§六 ①），所以判据是
+     使用者自己写的相近句子一起删掉。删受管仓的知识不可恢复（§六 ①），所以判据是
      **归一化后的精确相等**：差一个标点就落到「待迁」= 留而不删。
 
 本文件锁四组事：
@@ -18,11 +18,11 @@
                              解析器一律报错（不是静默忽略）。
   **乙、判据两侧都守住** —— 指空 → 出声且退回待迁；差一个标点 → 待迁；归一化必须
                          同时认正斜杠与反斜杠两种引擎仓路径写法（★ 首跑实测踩到过：
-                         只替换反斜杠 → 客户那 11 行整片落进「待迁」）。
+                         只替换反斜杠 → 受管仓那 11 行整片落进「待迁」）。
   **丙、提案不许自己丢内容** —— 标题只在块里没有留守行时才跟着删（否则出现无主孤行）；
                          保留行逐字留（只 rstrip），`知识库：` 整行留、**不从中抠片段**
                          （初版按反引号抠路径，把「（工单必读 `00_工单必读.md`）」丢了）。
-  **丁、工具只读且清单可信** —— 跑一遍不动任何客户仓；真实归宿表的每条锚点当下都求证得到
+  **丁、工具只读且清单可信** —— 跑一遍不动任何受管仓；真实归宿表的每条锚点当下都求证得到
                          （改模板措辞却没同步本表时，这条锁先响）；没接入的仓要点名。
 
 安全约定：所有夹具在 `TemporaryDirectory` 里，用完自动收（本文件不 mkdtemp 裸留）。
@@ -48,7 +48,7 @@ SINK_REAL = os.path.join(ROOT, "sandbox", "sink_table.txt")
 LINE_HOME = "1. 有归宿的规则行"
 LINE_ORPHAN = "2. 没归宿的规则行"
 LINE_VAULT = "知识库：`D:/Vault/x/`（工单必读 `00.md`）"
-# 这条刻意写成**客户仓里那种正斜杠绝对路径**：夹具里带着本机 ROOT，于是它既是被判定的
+# 这条刻意写成**受管仓里那种正斜杠绝对路径**：夹具里带着本机 ROOT，于是它既是被判定的
 # 那一行，也是「归一化真的生效了」的证据 —— 换台机器 clone 到别处，这条照样得判成可删。
 GATE_LINE = ("改完代码仓库根执行：`python %s/harness/agents/auto-gate.py`"
              % ROOT.replace("\\", "/"))
@@ -67,7 +67,7 @@ REPO_MD = "\n".join([
     "",
 ])
 
-# A 组 22 个客户仓的实际形状：唯一留守内容就是 `## 项目` 下面那句**项目身份**。
+# A 组 22 个受管仓的实际形状：唯一留守内容就是 `## 项目` 下面那句**项目身份**。
 PROJECT_SENTENCE = "EHS 综合管理平台 PC 端，Vue3 + TypeScript + Vite。712 = 712 所。"
 PROJECT_MD = "\n".join([
     "# 测试仓 AGENTS.md",
@@ -91,7 +91,7 @@ def _fingerprint(path):
 
 
 class _Fixture(unittest.TestCase):
-    """一套临时夹具：一个客户仓 AGENTS.md + 一个"归宿文件" + 一张归宿表。"""
+    """一套临时夹具：一个受管仓 AGENTS.md + 一个"归宿文件" + 一张归宿表。"""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -195,16 +195,16 @@ class TestMatchingIsExactAndPathAgnostic(_Fixture):
         self.assertIn(LINE_HOME, [x.strip() for x in r["stay"]])
 
     def test_substring_does_not_match(self):
-        """归宿表里只写了半行 → 不许当成匹配（子串匹配会连带删掉客户自己写的相近句）。"""
+        """归宿表里只写了半行 → 不许当成匹配（子串匹配会连带删掉使用者自己写的相近句）。"""
         self.write_sink(self.group("有归宿的"))
         r, _sink, _errs = self.judge()
         self.assertEqual([], [x.strip() for x in r["drop"]])
 
     def test_a_line_carrying_the_local_engine_path_still_matches(self):
-        """★ 端到端验归一化：客户仓那行写着本机绝对路径，仍必须判成「可删」。
+        """★ 端到端验归一化：受管仓那行写着本机绝对路径，仍必须判成「可删」。
 
-        首跑踩到的正是这个：`ROOT` 由 abspath 得来是**反斜杠**，客户仓写的是正斜杠，
-        只替换其中一种 → 客户那 11 行整片落进「待迁」，而**没人会发现**（方向安全，
+        首跑踩到的正是这个：`ROOT` 由 abspath 得来是**反斜杠**，受管仓写的是正斜杠，
+        只替换其中一种 → 受管仓那 11 行整片落进「待迁」，而**没人会发现**（方向安全，
         但等于这条判据只在这台机器上成立）。
         """
         self.good_sink()
@@ -266,7 +266,7 @@ class TestProposalNeverDropsContent(_Fixture):
 class TestProjectIdentityIsNotRepoExclusive(_Fixture):
     """丙之二、`## 项目` 那句是**项目身份**，不许挂到 `## 本仓独有` 底下（2026-09-21）。
 
-    事实经过：A 组 22 个客户仓的唯一留守内容就是这句项目身份（`stay==1`）。而 `## 项目`
+    事实经过：A 组 22 个受管仓的唯一留守内容就是这句项目身份（`stay==1`）。而 `## 项目`
     在 `SCAFFOLD` 里、其正文是留守行 → `judge()` 按「块里还有留守行，标题留下」把标题留了
     下来。原样拼进目标形态就成了 `## 本仓独有` **紧跟** `## 项目`，读起来像「这句只有这个
     仓有」——意思正好反了。修法是把这一块整块提到 `## 端级规则` 之前。
@@ -310,7 +310,7 @@ class TestProjectIdentityIsNotRepoExclusive(_Fixture):
 
 
 class TestTheShippedTableAndTool(unittest.TestCase):
-    """丁、真实那张表 + 工具本身：锚点当下求证得到，且跑一遍不动任何客户仓。"""
+    """丁、真实那张表 + 工具本身：锚点当下求证得到，且跑一遍不动任何受管仓。"""
 
     def _run_main(self, argv):
         buf = io.StringIO()
@@ -345,23 +345,23 @@ class TestTheShippedTableAndTool(unittest.TestCase):
         self.assertEqual([], errs, "sink_table.txt 有指空的锚点 —— 同步它，或改回模板措辞")
 
     def test_audit_is_read_only_and_exits_zero(self):
-        """★ 跑一遍真实体检：不许动任何客户仓（本工具没有任何写入路径）。
+        """★ 跑一遍真实体检：不许动任何受管仓（本工具没有任何写入路径）。
 
         ⚠ 2026-09-19 CI 实测：本夹具读的是**本机** `config` 的 repos 段。CI 上没有那个本地
-        覆盖层 → 受管仓 0 个 → 这条不是"失败"而是**无从验起**（"不许动客户仓"在没有客户仓时
+        覆盖层 → 受管仓 0 个 → 这条不是"失败"而是**无从验起**（"不许动受管仓"在没有受管仓时
         是句空话）。原先写的是 `assertTrue(paths, "夹具不成立")`，于是它在 CI 上永远红 ——
         正是 `c2b6e1b` 修过的那一类「夹具写死了开发机状态」的第三次复发。
         改为**跳过并说明**：它在本机（有仓）仍照咬，在 CI 上不再冒充一条真警报。
-        rc==0 那一半另有 `test_repos_without_agents_md_are_named_in_the_report` 守着（它不依赖客户仓）。
+        rc==0 那一半另有 `test_repos_without_agents_md_are_named_in_the_report` 守着（它不依赖受管仓）。
         """
         paths = self._repo_files()
         if not paths:
             self.skipTest("本机 repos 段里没有带 AGENTS.md 的仓（CI 常态）→ "
-                          "「体检会不会动客户仓」这半条无从验起")
+                          "「体检会不会动受管仓」这半条无从验起")
         before = {p: _fingerprint(p) for p in paths}
         rc, out = self._run_main([])
         self.assertEqual(0, rc, out[-800:])
-        self.assertEqual(before, {p: _fingerprint(p) for p in paths}, "体检动了客户仓的文件")
+        self.assertEqual(before, {p: _fingerprint(p) for p in paths}, "体检动了受管仓的文件")
 
     def test_repos_without_agents_md_are_named_in_the_report(self):
         """没接入的仓要在报告里点名 —— 静默跳过会让人以为"33 个都审过了"。"""

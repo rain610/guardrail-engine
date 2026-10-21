@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""AutoClaw 评审 2026-09-23 §3.2 的 M4/M5/M6/M7 落地锁：后端 R1/R2/R3/R5/R6/R9 边界探针表。
+r"""外部评审 2026-09-23 §3.2 的 M4/M5/M6/M7 落地锁：后端 R1/R2/R3/R5/R6/R9 边界探针表。
 
 与被锁的判据同源 —— 每条都**直接调规则本体的 check()**（不是 grep 源码，也不是重抄一遍
 模式）：改了规则而锁没跟着改，这里立刻红；锁被弱化到空转，`sandbox/mutation_smoke.py`
@@ -24,12 +24,12 @@ r"""AutoClaw 评审 2026-09-23 §3.2 的 M4/M5/M6/M7 落地锁：后端 R1/R2/R3
 | M7 | R9 的跳过由 `"const" in line` 收紧为 `\bconst\b` | **0** |
 
 ★ 有意**不锁**的两条（属业务语义，待用户拍板，见台账）：
-  · R6 对 `base.GetPageData(` 的豁免要不要撤（实测存量 903 处会被翻成命中）；
+  · R6 对 `base.<分页方法>(` 的豁免要不要撤（实测存量 903 处会被翻成命中）；
   · R9 命中面要不要从 `\bStatus\b` 放宽到 `\w*Status`（实测 608 处宽模式候选）。
   在拍板之前把它们锁死，等于把"还没决定的事"伪装成"已经决定的事"。
 
 2026-09-23 同批追加（同一份评审的低项，落在这里是因为它同样是"判据与产品同源"那一类）：
-L16 —— 台账摘要里的**历史夹具 gate 名**不许被当成客户 gate，见文末
+L16 —— 台账摘要里的**历史夹具 gate 名**不许被当成受管 gate，见文末
 `TestSummarySeparatesUnregisteredNames`。
 
 2026-09-23 再追加（低项 L1/L2/L3/L10，见文末四条 `TestL1…/TestL2…/TestL3…/TestL10…`）：
@@ -89,11 +89,11 @@ def _slow(reason):
     return unittest.skipIf(FAST, f"快速模式（HARNESS_FAST=1）跳过{reason}")
 
 class TestSummarySeparatesUnregisteredNames(unittest.TestCase):
-    """L16 回归锁（2026-09-23 评审报告）：台账里的**历史夹具条目**不许被当成客户 gate。
+    """L16 回归锁（2026-09-23 评审报告）：台账里的**历史夹具条目**不许被当成受管 gate。
 
     现场（修复前实测）：台账 `reports/gate_log.jsonl` 混着夹具在临时配置下真跑出来的判定
     （`t_pc` 18 / `test_pc` 7 / `t_on` 6 / `t_off` 2 / `myproj_pc` 1 / `tmpc_pc` 1，都 ≤2026-09-16），
-    而 `--summary` 把它们与客户 gate 平铺在同一张表里 —— 于是表头那句"共 N 个 gate"把
+    而 `--summary` 把它们与受管 gate 平铺在同一张表里 —— 于是表头那句"共 N 个 gate"把
     夹具名也算进去，读者会读成"这台机器有这么多 gate"。评审报告点名的正是这一条。
 
     ★ 处置取「标注」而不是「清理」，这条锁要钉住的就是这个取舍：**审计日志不删历史行**
@@ -608,8 +608,8 @@ class TestL4WaiverMarkerMustBeInComment(unittest.TestCase):
              "注释正文里的撇号不吞掉注释"),
             ("  /* 没在本行收尾", [" 没在本行收尾"], "块注释不在本行收尾 → 本行余下都是注释"),
             ("  <!-- harness-ok: X 理由 -->", [" harness-ok: X 理由 "], "HTML 注释（模板段规则的豁免出口）"),
-            ('  <eagle-model title="harness-ok: X 理由" :hasLayer="false">', [],
-             '属性字符串里的标记不是注释 → 不能解除对该行的检查（PC-MODAL 的安全边界）'),
+            ('  <demo-widget title="harness-ok: X 理由" :hasLayer="false">', [],
+             '属性字符串里的标记不是注释 → 不能解除对该行的检查（模板段规则的安全边界）'),
             ("  <div><!-- 没在本行收尾", [" 没在本行收尾"], "HTML 注释不在本行收尾 → 本行余下都是注释"),
             ("", [], "空行"),
         ]
@@ -1022,7 +1022,7 @@ class TestM12GitSensorFailureIsNotLegacy(unittest.TestCase):
 
     def _ctx(self, sensor_failed, changed_lines=None):
         """legacy 仓 + 定向口径的一份标准 ctx（各降级点的共同输入）。"""
-        rel = "RMC/Eagle.RMC.Controller/HomeController.cs"
+        rel = "src/backend/HomeController.cs"
         return self.rb.CheckContext(path=pathlib.Path(rel), rel=rel, raw=b"x", content="x",
                                     mode="strict", repo="R", changed_lines=changed_lines,
                                     is_new_file=False, legacy_exempt=True, targeted=True,

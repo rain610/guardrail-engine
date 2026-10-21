@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """agentguard 自检 gate（`harness_self`）—— 工程仓自我体检。
 
-为什么需要：工程仓自己也需要门禁。原先 harness 仓不在 `config/harness.yaml` 的受管清单里，
+为什么需要：工程仓自己也需要门禁。原先 harness 仓不在 `config/harness.toml` 的受管清单里，
 提交时走的是"未注册 → rc=2"分支（fail-closed 没问题，但等于**本仓没有自检**）；
 2026-09-14（Codex 评审 v8 后）把它注册成一个正常 gate，顺带把工程自己的护栏变成提交期强制项。
 
@@ -158,11 +158,13 @@ def heuristic_rules():
 
     评审 v8 / Codex P2：把"能力边界"从口头承诺变成报告里的一行事实。
     规则既可能是类（`class XxxRule(Rule)`），也可能是 Rule 实例（示例规则集），两种都收。
+    规则集来源取 registry.RULESETS（与覆盖度自评同一份登记，不另写清单）。
     """
+    import importlib
+    from registry import RULESETS
     ids = []
-    for mod_name in ("example_ruleset",):
+    for mod_name in sorted(set(RULESETS.values())):
         try:
-            import importlib
             mod = importlib.import_module(mod_name)
         except Exception:
             continue
@@ -184,7 +186,7 @@ def check_config():
     """⑤ 配置结构：script 必须存在、gate 引用的 repo 键必须在 repos 段里声明（❌）；
     「键在、本机没填路径 / 路径不存在」只 ⚠（同事机器上多数端仓不在本机）。
 
-    2026-09-18（跨平台批次 2）补两条 —— 都是「repos 段下沉到 gitignored 的 local.yaml」逼出来的，
+    2026-09-18（跨平台批次 2）补两条 —— 都是「repos 段下沉到 gitignored 的本机配置」逼出来的，
     而且**两条都是实测踩到的**，不是推演：
 
       · `harness_self` **不是** repos 段里的条目：它的「仓」就是工程仓自身，由
@@ -215,12 +217,12 @@ def check_config():
         import _config as C
         cfg = C.load()
     except Exception as e:
-        problems.append("⑤ 读取 config/harness.yaml 失败：%r" % (e,))
+        problems.append("⑤ 读取 config/harness.toml 失败：%r" % (e,))
         return
     gates = cfg.get("gates") or {}
     repos = cfg.get("repos") or {}
     if not gates:
-        problems.append("⑤ 配置里没有任何 gate（config/harness.yaml 结构异常）")
+        problems.append("⑤ 配置里没有任何 gate（config/harness.toml 结构异常）")
     _undeclared = []
     for name, g in sorted(gates.items()):
         script = (g or {}).get("script") or ""

@@ -4,7 +4,7 @@ agentguard 统一规则基类（阶段1 规则模型统一，2026-09-04）
 ================================================================
 把三端检查脚本从「各自内部逻辑」收敛为「统一 Rule 实例列表」。
 设计分工（用户确认）：Rule 只产 Finding 数据，输出格式由各 ruleset 自行决定。
-阶段1 不动 harness/ 任何文件、不做 glob 发现（那是阶段2）、不拆客户插件。
+阶段1 不动 harness/ 任何文件、不做 glob 发现（那是阶段2）、不拆业务端插件。
 
 规则接口：
     class Rule:
@@ -42,7 +42,9 @@ class Severity(str, Enum):
 class Finding:
     rule_id: str
     message: str                       # 最终展示文案（各 ruleset 负责对齐历史字符串）
-    severity: Severity = Severity.ERROR
+    # None = 未指定，由 Rule.run 用规则级 severity 填；显式赋值 = 本条命中自己的级别
+    # （示例规则用它把字符串上下文里的 console.log 降为 warn）。
+    severity: Optional[Severity] = None
     line: Optional[int] = None
     fix: str = ""
     see: str = ""
@@ -136,7 +138,8 @@ class Rule:
             return []
         out = []
         for f in self.check(ctx):
-            f.severity = self.severity(ctx)
+            if f.severity is None:
+                f.severity = self.severity(ctx)
             # 评审 2026-10-15（批次 1）：范式指路单一来源。规则类声明 `see` 类属性
             # （指向 golden-patterns/ 具体文档§节），本处统一盖章到 Finding 上 ——
             # 后端规则在 check() 里自带 see（`see=self.see`），`f.see or` 保持其原值不变；
@@ -174,12 +177,12 @@ class WholeFileRule(Rule):
     "这个文件含 CRLF"「这个文件里有 v-for 缺 :key」是**整个文件的属性**，无法判断命中的是
     存量还是本次新增。而基类默认降级要求 `changed_lines 为空`，于是 legacy 仓里**改一行**
     的提交（changed_lines＝{那一行}）拿不到降级 → 既有 CRLF / 既有 v-for 缺 key / 老死组件
-    引用照出 ❌ 把提交拦死 —— 正是 legacy_baseline 承诺要避免的事（评审里 `ntrx_pc` 被死组件
+    引用照出 ❌ 把提交拦死 —— 正是 legacy_baseline 承诺要避免的事（评审里某个老仓被死组件
     引用拦死的场景）。注意评审建议的公式（`legacy_exempt and not changed_lines and not is_new_file`）
     对**行级**规则成立，对**无行号的文件级结论不成立**：这里取"无法归因就不拦"。
     新建文件照拦（整份都是新代码，与存量无关）。
     """
-    file_level = True      # 无行号结论，永远不参与按行过滤（后端侧 filter_findings_by_lines 读它）
+    file_level = True      # 无行号结论，永远不参与按行过滤（filter_findings_by_lines 读它）
 
     def severity(self, ctx: CheckContext) -> Severity:
         # M12（评审 2026-09-23）：这一类本就不看 changed_lines（"无法归因就不拦"），
@@ -814,12 +817,12 @@ def legacy_baseline(repo=None, gate_name=None, lib=None):
 
 
 def disabled_rules(gate_name=None, repo=None, lib=None):
-    """本 gate 在 config 里声明关闭的规则 id 集合（`disabled_rules: [H5-UPLOAD]`）。
+    """本 gate 在 config 里声明关闭的规则 id 集合（`disabled_rules: [SOME-RULE]`）。
 
     2026-09-12 新增（配置表开关）。为什么需要它：**规则的适用范围该由配置说了算**，
-    而不是把某客户的专属要求硬塞给所有 gate。触发场景：H5-UPLOAD（上传须带签名头）
-    只对某一个客户仓成立——全仓实扫该仓 108 处 buildUploadHeader，其余 8 个客户仓 0 处，
-    其上传本来就不签名；全局启用会给它们制造"按行豁免"噪声，而豁免理由本身是假的。
+    而不是把某个仓的专属要求硬塞给所有 gate。触发场景：「上传必须带签名头」这类规则
+    只在个别仓成立——那些仓的上传本来就不签名；全局启用会给其他仓制造"按行豁免"噪声，
+    而豁免理由本身是假的。
 
     取法：优先按 gate_name 查；查不到再按 repo 路径反查（直接跑脚本、没传 --gate 时）。
     任何异常都返回空集合（fail-open 到"不过滤"，即保持原行为，不因配置异常误关规则）。

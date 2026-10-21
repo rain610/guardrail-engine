@@ -98,7 +98,7 @@ def _next_steps(harness, pack_dir):
     print("下一步（都在这份安装包里，顺序照做即可）：")
     print("  1. 路径适配 —— 把包里的占位符填成本机路径（**每次装/升级都要做一次**）")
     print("       python \"%s/fix_paths.py\" --harness \"%s\"" % (pack_dir, harness))
-    print("  2. 生成你机器的仓库覆盖层（首次会提示你编辑它生成的 config/harness.local.yaml，改完重跑）")
+    print("  2. 生成你机器的仓库覆盖层（首次会提示你编辑它生成的 config/harness.local.toml，改完重跑）")
     print("       sh \"%s/sandbox/setup_machine.sh\"" % harness)
     print("  3. 按《安装说明》装入口：人用 CLI / Claude 插件 / OpenClaw（任选，可都装）")
     print("")

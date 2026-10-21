@@ -28,6 +28,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -52,7 +53,10 @@ except ImportError:      # 无包上下文；若是 _shell 自身的 ImportError
     import _shell
 
 ROOT = _shell.find_root()
-MCP_PATH = os.path.join(ROOT, "agentguard", "mcp.py") if ROOT else ""
+# MCP 服务跟着**包**走，不跟引擎根走：轮子形态下 mcp.py 在 site-packages/agentguard/，
+# 而引擎根是 `agentguard init` 复制出来的 `~/.agentguard/engine`（里面没有 agentguard/ 子目录）。
+# 跟着 ROOT 拼会在 init 之后指向一个不存在的路径 —— MCP 宿主只会看到"服务起不来"。
+MCP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp.py")
 SKILL_SRC = os.path.join(ROOT, "integrations", "agentguard-skill") if ROOT else ""
 SKILL_PRESETS = {
     "claude": os.path.join(os.path.expanduser("~"), ".claude", "skills"),
@@ -323,6 +327,234 @@ def _copy_tree_if_changed(src, dst):
     return created, updated, same
 
 
+# ---------------- 随包引擎：`agentguard init` ----------------
+# 轮子自带 `agentguard/_engine/`（见 setup.py）。它只是**源**：引擎根同时是台账
+# （reports/gate_log-*.jsonl）的默认落点，不能直接指向 site-packages —— 升级即丢，
+# 系统级安装还可能只读。init 把它复制到可写目录并写 `~/.agentguard/harness.path`。
+
+def _cmd_prefix():
+    """打印给用户复制的命令前缀：装出来的控制台脚本 vs 仓库里的脚本直跑。"""
+    exe = os.path.basename(sys.argv[0] or "").lower()
+    if exe in ("agentguard", "agentguard.exe", "agentguard.cmd"):
+        return "agentguard"
+    return "python agentguard/cli.py"
+
+
+def _engine_source():
+    """init 的源目录 → (路径, 说明)；都没有时 (None, "")。"""
+    p = _shell.packaged_engine()
+    if p:
+        return p, "随包引擎（wheel）"
+    if ROOT:
+        return ROOT, "当前工程根"
+    return None, ""
+
+
+def _within(child, parent):
+    """child 是否等于 parent 或在其子树内（用于拒绝「复制进自己」）。"""
+    c = os.path.normcase(os.path.abspath(child)).rstrip(os.sep)
+    p = os.path.normcase(os.path.abspath(parent)).rstrip(os.sep)
+    return c == p or c.startswith(p + os.sep)
+
+
+def _engine_entries(src):
+    """引擎源的 (相对路径, 绝对路径) 清单（与 setup.py 的打包清单同源）。"""
+    out = []
+    for name in _shell.ENGINE_DIRS:
+        root = os.path.join(src, name)
+        if not os.path.isdir(root):
+            continue
+        for dp, dns, fns in os.walk(root):
+            dns[:] = sorted(d for d in dns if d not in ("__pycache__", ".pytest_cache", ".git"))
+            for fn in sorted(fns):
+                if fn.endswith((".pyc", ".pyo")):
+                    continue
+                p = os.path.join(dp, fn)
+                rel = os.path.relpath(p, src).replace("\\", "/")
+                if rel in _shell.ENGINE_EXCLUDE:
+                    continue
+                out.append((rel, p))
+    for name in _shell.ENGINE_FILES:
+        p = os.path.join(src, name)
+        if os.path.isfile(p):
+            out.append((name, p))
+    # 壳文件也要进引擎根：MCP 插件与 fix_paths.py 认的布局是 `<HARNESS>/agentguard/mcp.py`。
+    # 只复制 checks/harness 会让 `~/.agentguard/engine` 缺这一格 —— 注册好的 MCP 指向空文件。
+    pkg = _shell.package_dir()
+    for fn in sorted(os.listdir(pkg)):
+        if fn.endswith(".py"):
+            out.append(("agentguard/" + fn, os.path.join(pkg, fn)))
+    return out
+
+
+def _files_equal(a, b):
+    try:
+        if os.path.getsize(a) != os.path.getsize(b):
+            return False
+        with open(a, "rb") as fa, open(b, "rb") as fb:
+            while True:
+                x, y = fa.read(65536), fb.read(65536)
+                if x != y:
+                    return False
+                if not x:
+                    return True
+    except OSError:
+        return False
+
+
+def _same_engine(src, dst):
+    """目标目录是不是**已经就是**这份引擎（幂等重跑用）。
+
+    逐文件比内容，不只看 VERSION：同版本号下也可以有本地改动（改了规则再 init），
+    那种情况不该被当成"已是最新"，而应要求 --force（旧目录归档，可逆）。
+    """
+    if _shell.read_version(src) != _shell.read_version(dst):
+        return False
+    entries = _engine_entries(src)
+    if not entries:
+        return False
+    for rel, p in entries:
+        if not _files_equal(p, os.path.join(dst, rel)):
+            return False
+    return True
+
+
+def _copy_engine(src, dst):
+    entries = _engine_entries(src)
+    if not entries:
+        raise OSError("引擎源里没有任何文件：%s" % src)
+    for rel, p in entries:
+        target = os.path.join(dst, rel)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copy2(p, target)
+    return len(entries)
+
+
+def _write_engine_pointer(dest):
+    """写 `~/.agentguard/harness.path`（`_shell.find_root` 的解析链之一）。"""
+    base = os.path.join(os.path.expanduser("~"), ".agentguard")
+    os.makedirs(base, exist_ok=True)
+    p = os.path.join(base, "harness.path")
+    with open(p, "w", encoding="utf-8", newline="\n") as f:
+        f.write(dest + "\n")
+    return p
+
+
+# 引擎副本的**所有权标记**。为什么需要：`~/.agentguard/harness.path` 也会被
+# install_shim / setup_machine 写成**仓库**路径，光看指针分不清「init 复制出来的副本」
+# 与「用户自己的仓库」。upgrade.py 只刷新带这个标记的目录 —— 对仓库跑 `init --force`
+# 会把源改名归档，那不是升级。常量在 sandbox/upgrade.py 里也有一份（那个脚本随包分发，
+# 不能 import 本模块），两处漂移由 tests/test_upgrade.py 用 AST 对拍。
+INIT_MARKER = ".agentguard-init.json"
+INIT_MARKER_KIND = "agentguard-init"
+
+
+def _write_init_marker(dest):
+    """标记「这个目录归 agentguard init 管」；只写所有权，不写源路径（副本可能被打包带走）。"""
+    data = {"kind": INIT_MARKER_KIND, "version": _shell.read_version(dest),
+            "source": "wheel" if _shell.packaged_engine() else "repo"}
+    p = os.path.join(dest, INIT_MARKER)
+    with open(p, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    return p
+
+
+def _mark_init_copy(dest):
+    """写标记；失败只提示不阻断 —— 引擎已经装好，丢的是「下次升级能自动认出它」。"""
+    try:
+        p = _write_init_marker(dest)
+    except OSError as e:
+        print("⚠ 所有权标记写不进去（%s）：upgrade.py 将无法自动刷新这份引擎副本" % e)
+        return
+    print("init marker  : %s" % p)
+
+
+def _init_selfcheck(dest):
+    """装完立刻验一次：引擎能起、gate 表读得出来。"""
+    rc, out, err = _run([_py(), os.path.join(dest, "harness", "run_gate.py"), "--list"],
+                        cwd=dest, timeout=120)
+    return rc, len(_parse_gates(out)), (err or out)
+
+
+def cmd_init(a):
+    """把随包引擎落到可写目录，并写指针 —— 「装完就能跑」的那一步。"""
+    print("== agentguard init ==")
+    src, source_desc = _engine_source()
+    if not src:
+        print("✗ 找不到可安装的引擎：本包没有 agentguard/_engine/，当前也不在引擎工程根。",
+              file=sys.stderr)
+        print("  · wheel 安装：包不完整，请重装（正常 wheel 自带引擎）；", file=sys.stderr)
+        print("  · 源码使用：在有 harness/run_gate.py 的工程根下运行本命令。", file=sys.stderr)
+        return 2
+
+    default_dest = os.path.join(os.path.expanduser("~"), ".agentguard", "engine")
+    dest = os.path.abspath(os.path.expanduser(a.dir or default_dest))
+
+    # 拒绝「复制进自己」：--dir 指到工程根 / 工程根的子目录时，归档会把源本身搬走。
+    if _within(dest, src) or _within(src, dest):
+        print("✗ 目标目录与引擎源重叠：源=%s 目标=%s（会把源复制进自己或归档掉源）"
+              % (src, dest), file=sys.stderr)
+        return 2
+
+    archived = None
+    if os.path.exists(dest):
+        if _same_engine(src, dest):
+            ptr = _write_engine_pointer(dest)
+            print("引擎已是最新：%s（version %s）" % (dest, _shell.read_version(dest)))
+            print("pointer      : %s" % ptr)
+            # 旧版 init 装出来的副本没有标记；幂等重跑顺手补上（upgrade.py 靠它识别）。
+            _mark_init_copy(dest)
+            print("下一步: %s quickstart" % _cmd_prefix())
+            return 0
+        if not a.force:
+            print("✗ 目标目录已存在且内容不同：%s" % dest, file=sys.stderr)
+            print("  重跑并加 --force：旧目录会**改名归档**（%s.disabled-<戳>），不删除任何文件。"
+                  % dest, file=sys.stderr)
+            return 2
+        archived = archive_name(dest)
+        try:
+            os.rename(dest, archived)
+        except OSError as e:
+            print("✗ 旧引擎归档失败：%s（%s）" % (archived, _rename_hint(e)), file=sys.stderr)
+            return 2
+        print("旧引擎已归档：%s" % archived)
+
+    os.makedirs(dest, exist_ok=True)
+    try:
+        n = _copy_engine(src, dest)
+    except OSError as e:
+        # 可逆：本次新建的半份副本删掉，归档的旧引擎放回原位（指针因此仍然有效）。
+        shutil.rmtree(dest, ignore_errors=True)
+        if archived:
+            try:
+                os.replace(archived, dest)
+            except OSError:
+                pass
+        print("✗ 复制引擎失败：%s（已回滚到复制前状态）" % e, file=sys.stderr)
+        return 2
+
+    ptr = _write_engine_pointer(dest)
+    print("engine source: %s（%s）" % (src, source_desc))
+    print("engine root  : %s（%d 个文件）" % (dest, n))
+    print("version      : %s" % _shell.read_version(dest))
+    print("pointer      : %s" % ptr)
+
+    rc, ngates, detail = _init_selfcheck(dest)
+    print("self-check   : list-gates rc=%s gates=%d" % (rc, ngates))
+    if rc != 0:
+        print("✗ 引擎自检失败 —— 文件已复制，但这份引擎跑不起来：%s"
+              % (detail or "").strip()[:400], file=sys.stderr)
+        return 2
+    # 自检通过才打所有权标记：upgrade.py 会把这个目录整目录归档重放，标记不能贴在坏副本上。
+    _mark_init_copy(dest)
+    print("")
+    print("下一步:")
+    print("  %s quickstart" % _cmd_prefix())
+    print("  %s setup --repo <你的仓库> [--target claude]" % _cmd_prefix())
+    return 0
+
+
 # ---------------- 本机安装矩阵（G4：装出来的副本各自读各自的地方） ----------------
 # 为什么需要（升级链路剖析报告 G4）：`version` 读的是**引擎仓**的 VERSION，而升级要升的
 # 是「装出来的副本」（pip 包 / 插件缓存 / 技能副本）。两台机器装了两版插件、引擎仓却是同一份时，
@@ -529,6 +761,9 @@ def cmd_where(_a):
         print("✗ 找不到 harness 工程根", file=sys.stderr)
         print("  解析链：$HARNESS_DIR / $AGENTGUARD_DIR → ~/.agentguard/harness.path → cwd 向上查找")
         print("  修复：设环境变量或写 ~/.agentguard/harness.path（内容 = harness 工程根绝对路径）")
+        if _shell.packaged_engine():
+            print("  本包自带引擎：%s init 会自动落到 ~/.agentguard/engine 并写指针。"
+                  % _cmd_prefix(), file=sys.stderr)
         return 1
 
     # 反向推导解析来源（便于调试）
@@ -547,7 +782,7 @@ def cmd_where(_a):
                 pass
         if source == "unknown":
             # 可能是 cwd 向上找到的
-            source = "cwd 向上查找（或 config/harness.local.yaml）"
+            source = "cwd 向上查找（或 config/harness.local.toml）"
 
     print(ROOT)
     if getattr(_a, "verbose", False):
@@ -1322,13 +1557,14 @@ def cmd_quickstart(_a):
     print()
     _print_mcp_config()
     print()
+    p = _cmd_prefix()
     print("② 提交期硬兜底（每个端仓一次）:")
-    print("   python agentguard/cli.py hooks install --repo <端仓路径> [--gate <gate>]")
+    print("   %s hooks install --repo <端仓路径> [--gate <gate>]" % p)
     print("③ 技能包（可选，agent 侧说明书）:")
-    print("   python agentguard/cli.py skill install --target claude")
+    print("   %s skill install --target claude" % p)
     print("④ 第一次门禁判定:")
-    print("   python agentguard/cli.py check <你改过的文件>")
-    print("⑤ 或一键全做: python agentguard/cli.py setup --repo <端仓> --target claude")
+    print("   %s check <你改过的文件>" % p)
+    print("⑤ 或一键全做: %s setup --repo <端仓> --target claude" % p)
     print()
     # G4：装出来的副本各自是哪一版 —— 升级前先看清"现在跑的是什么"
     install_matrix()
@@ -1391,6 +1627,11 @@ def build_parser():
     sub.add_parser("quickstart")
     sub.add_parser("installed")
 
+    p_init = sub.add_parser("init", help="把随包引擎落到可写目录（默认 ~/.agentguard/engine）并写指针")
+    p_init.add_argument("--dir", help="安装目录（默认 ~/.agentguard/engine）")
+    p_init.add_argument("--force", action="store_true",
+                        help="目标已存在且内容不同：旧目录**改名归档**后重装（不删除）")
+
     p_run = sub.add_parser("run")
     p_run.add_argument("gate")
     p_run.add_argument("files", nargs="*")
@@ -1431,7 +1672,9 @@ def build_parser():
     p_ops.add_argument("--last", type=int, default=50)
 
     p_mcp = sub.add_parser("mcp")
-    p_mcp.add_argument("rest", nargs="*")
+    # REMAINDER：转发器要把 `--selftest` / `--print-config` 原样交给 mcp.py。
+    # `nargs="*"` 会把它们当成本层未知选项而 rc=2（RUNBOOK 里那条 `mcp --print-config` 就撞过）。
+    p_mcp.add_argument("rest", nargs=argparse.REMAINDER)
 
     p_skill = sub.add_parser("skill")
     p_skill.add_argument("action", choices=["install", "status", "uninstall"])
@@ -1464,16 +1707,29 @@ def _require_python(vi=None):
 
 def main(argv=None):
     _require_python()   # 前置检查（Python 3.11+）
-    if not ROOT:
-        print("agentguard root not found（设 AGENTGUARD_DIR 或把本文件保留在 <root>/agentguard/ 下）")
-        return 2
+    # 先解析再判 ROOT：`init` 的职责就是把「没有引擎根」变成「有」，它必须在守卫之前跑；
+    # `version` / `where` 也必须能在未初始化时回答"我是谁"（--version 走 argparse，本来就与 ROOT 无关）。
     ap = build_parser()
     a = ap.parse_args(list(sys.argv[1:] if argv is None else argv))
+    if a.cmd == "init":
+        return cmd_init(a)
+    if not ROOT:
+        if a.cmd == "version":
+            return cmd_version(a)
+        if a.cmd == "where":
+            return cmd_where(a)
+        if _shell.packaged_engine():
+            print("✗ 引擎尚未初始化：本包自带引擎，但还没落到可写目录（台账不能写进 site-packages）。")
+            print("  先跑：%s init" % _cmd_prefix())
+            print("  然后：%s quickstart" % _cmd_prefix())
+        else:
+            print("agentguard root not found（设 AGENTGUARD_DIR 或把本文件保留在 <root>/agentguard/ 下）")
+        return 2
     if not a.cmd:
         return cmd_quickstart(a)
     fn = {
         "version": cmd_version, "where": cmd_where, "list": cmd_list, "quickstart": cmd_quickstart,
-        "installed": cmd_installed,
+        "installed": cmd_installed, "init": cmd_init,
         "run": cmd_run, "check": cmd_check, "done": cmd_done,
         "summary": cmd_summary, "coverage": cmd_coverage,
         "doctor": cmd_doctor, "log": cmd_log, "ops": cmd_ops, "mcp": cmd_mcp,

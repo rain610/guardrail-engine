@@ -1,62 +1,64 @@
-# agentguard 本地覆盖层模板
-# ============================================================
-# 用法：复制本文件为 config/harness.local.yaml（同目录），改成你机器的实际路径。
+# agentguard 本地覆盖层模板（TOML 主格式）
+# ============================================================================
+# 用法：复制本文件为 config/harness.local.toml（同目录），改成你机器的实际路径。
 # 该文件已被 .gitignore 忽略——只在你本机生效，不提交、不影响其他人。
-# 优先级：环境变量 HARNESS_CONFIG 指向的文件 > config/harness.local.yaml > 共享 harness.yaml。
+# 优先级：环境变量 HARNESS_CONFIG 指向的文件 > config/harness.local.toml > 共享 harness.toml。
 #
-# 只写需要覆盖的键；没写的段（如 gates 策略）自动继承共享 harness.yaml。
+# 只写需要覆盖的键；没写的段（如 gates 策略）自动继承共享 harness.toml。
 #
+# 旧版 YAML（config/harness.local.yaml / config/harness.yaml）仍可读取，但只作为兼容层；
+# 两种格式同时存在时以 TOML 为准，并会在 stderr 提示被忽略的那一份。
+
 # ---- 引擎仓路径（统一解析链第 ② 环）----
 # 本机上 agentguard 工程根的位置。各 AI 客户端的 GLOBAL_AGENTS.md、仓级 AGENTS.md
 # 渲染时都从这取路径（不再写死绝对路径，换机器只改这一处）。
-# 缺省留空 = 走解析链下一环（~/.agentguard/harness.path → cwd 上溯）。
+# 缺省注释掉 = 走解析链下一环（~/.agentguard/harness.path → cwd 上溯）。
 #
-# harness: D:/Rain/project/agentguard
-#
+# harness = "D:/Rain/project/agentguard"
+
 # ---- 值留空 = 本机不受管（**知道这个，比知道怎么填更重要**）----
-# **键名不用你写**：共享 config/harness.yaml 的 repos 段已经声明了全部键（值一律留空）——
+# **键名不用你写**：共享 config/harness.toml 的 [repos] 段已经声明了全部键（值一律留空）——
 # 那是团队策略（哪些仓受管），与机器无关。你这一份只负责填**自己机器上的路径**。
-# 所以**没填路径的机器上，那些客户 gate 都不生效** —— 这不是坏掉，是还没配。它**不会**报错
+# 所以**没填路径的机器上，那些受管 gate 都不生效** —— 这不是坏掉，是还没配。它**不会**报错
 # 中断，只会以三种**看得见**的方式说出来：
 #   · 提交期钩子 / 各门禁入口：一条 [config-warn] 汇总说清「N 个已启用 gate 没配路径」+ 怎么配；
 #   · python <HARNESS>/harness/run_gate.py --list ：逐条显示 `@ (未配置)`，末尾给同一条提示；
 #   · python <HARNESS>/harness/run_gate.py --validate ：这些 gate 显示 ⊘ 并在末尾汇总，**不阻断**
 #     （CI 跑在干净容器里正是这个形态 —— 那里本来就没有本机路径，不该因此变红）。
-# 判据：`python <HARNESS>/harness/run_gate.py --list` 里那些客户 gate 显示的是真路径。
+# 判据：`python <HARNESS>/harness/run_gate.py --list` 里那些受管 gate 显示的是真路径。
 # 只配一半也行：写了几条，那几条就生效，其余留空不影响别人。
 #
 # ⚠ 但**别动键名**：漏写一个键、或把键名拼错，与「值留空」是两件完全不同的事 ——
 #   键名不在共享配置里 = 真配置错，`--validate` 会阻断（rc=2）、提交期自检会报 ❌，
-#   因为那正是「新 gate 忘了登记 / 键名拼错」唯一能被发现的时刻。要新加客户（场景 B）
-#   请照下面那样**在共享 harness.yaml 的 repos 段加一行键名**，再在自己这份里填路径。
+#   因为那正是「新 gate 忘了登记 / 键名拼错」唯一能被发现的时刻。要新加受管仓（场景 B）
+#   请照下面那样**在共享 harness.toml 的 [repos] 段加一行键名**，再在自己这份里填路径。
 #
-# 场景 A（最常见）：仓库 clone 在别的盘/别的目录——只覆盖 repos 段（**只写你有的那几个**）：
+# 场景 A（最常见）：仓库 clone 在别的盘/别的目录——只覆盖 [repos] 段（**只写你有的那几个**）：
 #
-# repos:
-#   my_project: /path/to/your/project
+# [repos]
+# my_project = "/path/to/your/project"
 #
-# 场景 B：做新 gate（共享 harness.yaml 还没有该 gate）——共享配置**加键名 + gate 条目**，
+# 场景 B：做新 gate（共享 harness.toml 还没有该 gate）——共享配置**加键名 + gate 条目**，
 # 自己这份里填路径。三处都要动，少一处的症状是「看起来配好了」：
-#   ① config/harness.yaml 的 repos 段加一行 `new_repo: ""`（**键名是团队策略，进共享文件**）
-#   ② config/harness.yaml 的 gates 段加该 gate（同上）
+#   ① config/harness.toml 的 [repos] 段加一行 `new_repo = ""`（**键名是团队策略，进共享文件**）
+#   ② config/harness.toml 加该 gate 的 [gates.new_gate] 段（同上）
 #   ③ 本文件里填路径（只有这一步是你自己的）
 # 少了 ① 的话，gate 引用的键在任何机器上都解析不到 → 自检 ⑤ 报 ❌、`--validate` rc=2
 # （这是有意的：那是"拼错 / 漏登记"唯一会出声的时刻）。
-#
-# gates:
-#   new_gate:
-#     enabled: true
-#     repo: new_repo
-#     script: checks/my_code_check.py
-#     mode: strict
-#     run_on: [pre_commit]
-#
+
+[repos]
+# 示例（只写你机器上确实存在的那几个仓）：
+# my_project = "D:/work/my_project"
+
+# 场景 B 的本地部分（只填路径，不重复声明键名）：
+# new_repo = "D:/work/new_repo"
+
 # ---- 拦截推送飞书（个人模式，可选）----
 # 想在自己飞书群收「门禁拦截」通知：建群 → 设置 → 群机器人 → 添加「自定义机器人」
 # → 安全设置勾「自定义关键词」填：门禁  → 把 webhook 填到下面（去掉注释）：
 #
-# notify:
-#   feishu_webhook: https://open.feishu.cn/open-apis/bot/v2/hook/你的token
+# [notify]
+# feishu_webhook = "https://open.feishu.cn/open-apis/bot/v2/hook/你的token"
 #
 # 只在门禁拦截(rc=1)时推送，通过/配置错不推；同 gate 60 秒节流防刷屏；
 # 不配置就完全关闭，对门禁速度与退出码零影响。

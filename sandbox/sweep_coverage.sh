@@ -39,7 +39,7 @@ fi
 # ------------------------------------------------------------------------------
 
 cd "$(dirname "$0")/.." || exit 1
-# gate 清单从配置读，不硬编码客户仓名：启用即纳入，新增 gate 不用改本脚本。
+# gate 清单从配置读，不硬编码受管仓名：启用即纳入，新增 gate 不用改本脚本。
 GATES=$($HARNESS_PY - 2>/dev/null <<'PYEOF'
 import os, sys
 sys.path.insert(0, os.path.join(os.getcwd(), "harness"))

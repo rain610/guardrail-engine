@@ -43,8 +43,11 @@ ROOT = os.path.dirname(HARNESS)                             # <root>
 sys.path.insert(0, os.path.join(ROOT, "checks"))
 sys.path.insert(0, HARNESS)
 
+# 端标签与规则集来源只在 checks/registry.py 声明一份；这里反推，不再硬编码。
+from registry import ENDPOINT_BY_SCRIPT, RULESETS  # noqa: E402
+
 LOG_FILE = os.environ.get("HARNESS_LOG_FILE") or os.path.join(ROOT, "reports", "gate_log.jsonl")
-CONFIG = os.path.join(ROOT, "config", "harness.yaml")
+CONFIG = os.path.join(ROOT, "config", "harness.toml")
 
 
 def ledger_files():
@@ -129,7 +132,6 @@ def _quick_from_anchor():
         print("  …还有 %d 条" % (len(blind) - 20))
     return 0
 
-ENDPOINT_BY_SCRIPT = {"example_code_check.py": "example"}
 ENDPOINT_LABEL = {"example": "示例(Example)"}
 
 
@@ -163,7 +165,7 @@ def load_records(path=None, days=None, last=None):
 
 
 def load_config():
-    """gate → {enabled, endpoint, disabled_rules, repo}（直接用工程自己的 mini-yaml，零第三方）。"""
+    """gate → {enabled, endpoint, disabled_rules, repo}（直接用工程自己的配置加载器（TOML 主格式，零第三方））。"""
     import _config
     # 第四轮 N-4：原先的 `_config.load_config() if hasattr(...)` 是死分支（_config 没这个函数，
     # 恒取 {}）。唯一数据源就是 all_gates()。
@@ -182,17 +184,18 @@ def load_config():
 
 
 # loader 级（非 Rule 实例、由 loader 直接执行）的检查清单。
-# 开源裁剪后示例门禁的 3 条规则全部是 Rule 实例，由 static_rules 从 example_ruleset
-# 自动收集；这里留空，等有真正的 loader 级检查（如语法校验）再登记。
+# 开源裁剪后示例门禁的 3 条规则全部是 Rule 实例，由 static_rules 从 registry 登记的
+# ruleset 自动收集；这里留空，等有真正的 loader 级检查（如语法校验）再登记。
 LOADER_LEVEL_CHECKS = {}
 
 
 def static_rules():
-    """全部规则 ID → 名称/端（从 rulesets 现取，不维护第二份清单）。"""
+    """全部规则 ID → 名称/端（从 registry 声明的 rulesets 现取，不维护第二份清单）。"""
     out = {}
-    for mod_name, endpoint in (("example_ruleset", "example"),):
+    for script, ruleset in sorted(RULESETS.items()):
+        endpoint = ENDPOINT_BY_SCRIPT.get(script, "unknown")
         try:
-            mod = __import__(mod_name)
+            mod = __import__(ruleset)
         except Exception:
             continue
         for key, val in vars(mod).items():
@@ -279,7 +282,7 @@ def classify(rid, info, agg_one, cfg, endpoint_runs):
     disabled_in = [n for n in enabled_gates if rid in cfg[n]["disabled"]]
     hits = (agg_one or {}).get("error", 0) + (agg_one or {}).get("warn", 0) + (agg_one or {}).get("info", 0)
     if enabled_gates and len(disabled_in) == len(enabled_gates):
-        return "按客户禁用"                      # 所有启用该端的 gate 都关了它 = 有意关闭
+        return "按 gate 禁用"                    # 所有启用该端的 gate 都关了它 = 有意关闭
     if endpoint_runs == 0:
         return "该端窗口内无运行"                # 这条端没跑过，说明不了规则好坏
     if hits > 0:
@@ -394,10 +397,10 @@ def render_text(rep, log_path=LOG_FILE):
         eps = sorted({r["endpoint"] for r in inactive})
         L.append("")
         L.append(f"【该端窗口内无运行 · {len(inactive)} 条】端={','.join(eps)}——先跑该端门禁再评估。")
-    off = [r for r in rep["rules"] if r["status"] == "按客户禁用"]
+    off = [r for r in rep["rules"] if r["status"] == "按 gate 禁用"]
     if off:
         L.append("")
-        L.append(f"【按客户禁用 · {len(off)} 条】所有启用该端的 gate 都关了它（有意关闭，非故障）：")
+        L.append(f"【按 gate 禁用 · {len(off)} 条】所有启用该端的 gate 都关了它（有意关闭，非故障）：")
         L.append("    · " + "、".join(r["rule"] for r in off))
     # 有触发的
     fired = [r for r in rep["rules"] if r["status"] == "活跃"]

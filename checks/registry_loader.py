@@ -11,7 +11,7 @@ agentguard 规则注册表 loader（阶段2 发现式注册，2026-09-06）
 新增一个规则集的步骤：
   1. checks/ 下写 xxx_ruleset.py，导出 XXX_RULES: list[Rule]；
   2. checks/registry.py 的 ENDPOINT_SCRIPTS/OVERRIDES 登记；
-  3. config/harness.yaml（或 local）加 gate 条目。完事。
+  3. config/harness.toml（或 local）加 gate 条目。完事。
 """
 import os
 import importlib.util

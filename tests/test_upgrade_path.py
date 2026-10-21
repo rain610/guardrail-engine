@@ -22,6 +22,7 @@
 显式 `--skip claude` 或注入假 `claude` —— 本机 PATH 上可能真有 claude，一次误调就会去改
 **真机**的插件配置（`_run` 里有硬断言，别绕过）。
 """
+import glob
 import io
 import json
 import os
@@ -196,6 +197,64 @@ def _wheel(path, marker):
         z.writestr("agentguard/__init__.py", "MARKER = %r\n" % marker)
 
 
+def _engine_wheel(path, version, marker):
+    """造一个**自带引擎**的 wheel：真壳文件 + 迷你引擎树（[5/7] 解包后由它跑 init）。
+
+    迷你引擎只要求 `harness/run_gate.py --list` rc=0（init 自检的唯一硬条件）和一份 `VERSION`；
+    `harness/engine_marker.py` 是这一版的正文指纹 —— 断言"换掉的确实是内容"靠它，不靠版本号。
+    """
+    with zipfile.ZipFile(path, "w") as z:
+        for fn in ("__init__.py", "cli.py", "_shell.py", "mcp.py"):
+            z.write(os.path.join(ROOT, "agentguard", fn), "agentguard/" + fn)
+        z.writestr("agentguard/_engine/VERSION", version + "\n")
+        z.writestr("agentguard/_engine/harness/run_gate.py",
+                   "# 迷你引擎：init 自检只要求 --list rc=0\n"
+                   "import sys\nprint('[ON ] probe: probe @ /x')\nsys.exit(0)\n")
+        z.writestr("agentguard/_engine/harness/engine_marker.py", "MARKER = %r\n" % marker)
+
+
+FAKE_NOOP_INIT = '''# -*- coding: utf-8 -*-
+"""替身解释器：init **假装成功但什么都不做**；其余命令原样转发给真解释器。
+
+用来锁 [5/7] 的判据：init 的 rc 不是判据，产物逐字节对得上才算刷新成功。
+"""
+import subprocess
+import sys
+
+REAL = "__REAL__"
+
+
+def main():
+    argv = sys.argv[1:]
+    if argv[:2] == ["-m", "pip"]:
+        sys.stdout.write("WARNING: Package(s) not found: agentguard\\n")
+        return 1
+    if "init" in argv and any(a.endswith("cli.py") for a in argv):
+        sys.stdout.write("pretend init ok\\n")
+        return 0
+    return subprocess.call([REAL] + argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
+def _fake_noop_init_python(root):
+    """假解释器：init 返回 0 但一个字节都不写（其余命令转发给真解释器）。"""
+    main = os.path.join(root, "fake_noop_init_main.py")
+    _write(main, FAKE_NOOP_INIT.replace('"__REAL__"', repr(sys.executable)))
+    if os.name == "nt":
+        p = os.path.join(root, "noopinit.cmd")
+        _write(p, '@echo off\r\n"%s" "%s" %%*\r\nexit /b %%ERRORLEVEL%%\r\n'
+               % (sys.executable, main))
+    else:
+        p = os.path.join(root, "noopinit")
+        _write(p, '#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, main))
+        os.chmod(p, 0o755)
+    return p
+
+
 class UpgradePathTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -236,6 +295,43 @@ class UpgradePathTest(unittest.TestCase):
     def _bundle(self, pack):
         return os.path.join(pack, "marketplace", "plugins", "agentguard")
 
+    def _engine_pack(self, name, version, marker):
+        """安装包 + **自带引擎**的轮子（[5/7] 的刷新源就是这只轮子）。"""
+        pack = self._pack(name, version, "# %s 版\n" % name, "only-%s.md" % name, marker)
+        _engine_wheel(os.path.join(pack, "agentguard-%s-py3-none-any.whl" % version),
+                      version, marker)
+        return pack
+
+    def _install_engine_a(self, pack):
+        """用 A 包轮子里的 cli 真跑一次 init —— 造出「这台机器上已经是 A」的引擎副本。
+
+        不拿本仓库当源：那样"前一代"就变成几千个真实文件，慢且与被测行为无关。
+        走的是同一段 `agentguard init` 代码，产出（标记 / 指针 / 布局）与真包一致。
+        """
+        wheel = glob.glob(os.path.join(pack, "*.whl"))[0]
+        ext = os.path.join(self.base, "extract-" + os.path.basename(pack))
+        with zipfile.ZipFile(wheel) as z:
+            for n in z.namelist():
+                if n.startswith("agentguard/") and not n.endswith("/"):
+                    dst = os.path.join(ext, n.replace("/", os.sep))
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    with open(dst, "wb") as f:
+                        f.write(z.read(n))
+        eng = os.path.join(self.home, ".agentguard", "engine")
+        env = dict(os.environ)
+        env["HOME"] = self.home
+        env["USERPROFILE"] = self.home
+        # init 的自检会跑 <dest>/harness/run_gate.py --list：探针记录钉到临时文件，
+        # 不许落到仓库的 reports/gate_log.jsonl（test_coverage 的隔离判据要求）。
+        env["HARNESS_LOG_FILE"] = os.path.join(self.base, "gate_log.jsonl")
+        for k in ("AGENTGUARD_DIR", "HARNESS_DIR"):
+            env.pop(k, None)
+        r = subprocess.run([sys.executable, os.path.join(ext, "agentguard", "cli.py"),
+                            "init", "--dir", eng], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", env=env)
+        self.assertEqual(r.returncode, 0, (r.stdout or "") + (r.stderr or ""))
+        return eng
+
     # ---- 运行 ----
 
     def _run(self, *args, env_extra=None):
@@ -252,6 +348,8 @@ class UpgradePathTest(unittest.TestCase):
         env["CLAUDE_CONFIG_DIR"] = os.path.join(self.home, ".claude")
         env["OPENCLAW_STATE_DIR"] = os.path.join(self.home, ".openclaw-autoclaw")
         env["AGENTGUARD_OPS_LOG"] = self.ops
+        # 同 _install_engine_a：引擎步会调 init→run_gate，探针记录一律落临时目录。
+        env["HARNESS_LOG_FILE"] = os.path.join(self.base, "gate_log.jsonl")
         for k in ("AGENTGUARD_DIR", "HARNESS_DIR"):
             env.pop(k, None)
         if env_extra:
@@ -301,7 +399,7 @@ class UpgradePathTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(ext, "only-B.md")), "B 的新文件没落地")
         self.assertTrue(os.path.isfile(os.path.join(ext, "only-A.md")),
                         "A 独有的文件被删了 —— 升级不做任何撤回（它只该列出来交给人判断）")
-        # 覆盖前那份 .mcp.json 是本机路径、新包里是占位符：fix_paths 必须先跑（[1/6]），
+        # 覆盖前那份 .mcp.json 是本机路径、新包里是占位符：fix_paths 必须先跑（[1/7]），
         # 否则这一格就是把 __PY__ 覆盖进去 —— 那正是"编辑期门禁整体无声失效"的现场。
         got = json.loads(_read(os.path.join(ext, ".mcp.json")))["mcpServers"]["agentguard"]
         self.assertNotIn("__", got["command"], "覆盖进去的 .mcp.json 还是占位符：%r" % got["command"])
@@ -423,6 +521,102 @@ class UpgradePathTest(unittest.TestCase):
                       "替身本该什么都没做 —— 那正是要复刻的 pip 行为")
         log = _read(self.ops)
         self.assertIn('"stale"', log, "没留痕说清「本机这份仍与包不同」：%s" % log)
+
+    # ================= 通道 ⑤：引擎副本（upgrade.py 解包轮子跑 init） =================
+
+    @_slow("真装 A 再升 B（[5/7] 引擎副本 + 归档回滚）")
+    def test_engine_copy_gets_b_content_and_the_old_one_is_archived(self):
+        """init 复制出来的引擎副本：A → B 之后，VERSION 与**正文**都必须是 B，旧副本可回滚。
+
+        判据三向，缺一条就有一种假成功能溜过去：
+          · VERSION 换了 —— 最容易被 `init` 的退出码冒充的那一条；
+          · 正文换了（engine_marker）—— 只换版本号不换内容时它不动；
+          · 旧目录归档且**里面还是 A** —— 没有归档就没有回退，等于升级夹带了删除。
+        """
+        pa = self._engine_pack("packA", "0.1.2.dev0", "AAA")
+        pb = self._engine_pack("packB", "0.1.3.dev0", "BBB")
+        eng = self._install_engine_a(pa)
+        self.assertEqual(_read(os.path.join(eng, "VERSION")).strip(), "0.1.2.dev0")
+        self.assertIn("'AAA'", _read(os.path.join(eng, "harness", "engine_marker.py")))
+        self.assertEqual(json.loads(_read(os.path.join(eng, ".agentguard-init.json"))).get("kind"),
+                         "agentguard-init")
+
+        r = self._run("--pack", pb, "--harness", eng, "--yes",
+                      "--skip", "claude,openclaw,pip,skills,shim")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("✅ 升级完成", r.stdout)
+        self.assertIn("与本包逐字节一致", r.stdout)
+        self.assertEqual(_read(os.path.join(eng, "VERSION")).strip(), "0.1.3.dev0",
+                         "引擎副本的 VERSION 没换成 B")
+        self.assertIn("'BBB'", _read(os.path.join(eng, "harness", "engine_marker.py")),
+                      "报成功了，但引擎正文还是 A —— 这条通道的判据是产物，不是 init 的 rc")
+        archives = glob.glob(eng + ".disabled-*")
+        self.assertEqual(len(archives), 1, "旧引擎没留下可回滚的归档：%s" % r.stdout)
+        self.assertEqual(_read(os.path.join(archives[0], "VERSION")).strip(), "0.1.2.dev0",
+                         "归档里不是升级前那份引擎（回滚会回错版本）")
+        self.assertIn("'AAA'", _read(os.path.join(archives[0], "harness", "engine_marker.py")))
+        marker = json.loads(_read(os.path.join(eng, ".agentguard-init.json")))
+        self.assertEqual(marker.get("version"), "0.1.3.dev0")
+        self.assertEqual(marker.get("source"), "wheel", "从轮子 init 出来的副本应标 source=wheel")
+        self.assertEqual(_read(os.path.join(self.home, ".agentguard", "harness.path")).strip(), eng,
+                         "指针没指回刷新后的引擎副本（find_root 会解析到别处）")
+        log = _read(self.ops)
+        self.assertIn('"step": "engine"', log)
+        self.assertIn('"result": "ok"', log)
+
+    @_slow("真跑 [5/7] 的「仓库不是靶」支路")
+    def test_engine_step_never_archives_a_repo(self):
+        """`--harness` 是引擎源（带 .git）：绝不归档、绝不写标记 —— 那是把源搬走。"""
+        repo = os.path.join(self.base, "engine-repo")
+        _write(os.path.join(repo, "agentguard", "mcp.py"), "#\n")
+        _write(os.path.join(repo, "harness", "run_gate.py"), "#\n")
+        os.makedirs(os.path.join(repo, ".git"))
+        pb = self._engine_pack("packB", "0.1.3.dev0", "BBB")
+
+        r = self._run("--pack", pb, "--harness", repo, "--yes",
+                      "--skip", "claude,openclaw,pip,skills,shim")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("引擎源（仓库）", r.stdout, "没认出 --harness 是仓库：\n%s" % r.stdout)
+        self.assertFalse(os.path.exists(os.path.join(repo, ".agentguard-init.json")),
+                         "给仓库写了 init 标记 —— 下次升级会把它当成可归档的副本")
+        self.assertFalse(glob.glob(repo + ".disabled-*"), "仓库被归档了（源被搬走）")
+        self.assertTrue(os.path.isfile(os.path.join(repo, "harness", "run_gate.py")))
+
+    @_slow("真跑 [5/7] 的「init rc=0 但没换内容」支路")
+    def test_engine_step_fails_when_init_reports_ok_but_copies_nothing(self):
+        """init 报 rc=0、产物没换 → 必须判失败（与 pip / 插件同一条纪律：rc 不是判据）。"""
+        pa = self._engine_pack("packA", "0.1.2.dev0", "AAA")
+        pb = self._engine_pack("packB", "0.1.3.dev0", "BBB")
+        eng = self._install_engine_a(pa)
+        py = _fake_noop_init_python(self.base)
+
+        r = self._run("--pack", pb, "--harness", eng, "--python", py, "--yes",
+                      "--skip", "claude,openclaw,pip,skills,shim")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("init --force → rc=0", r.stdout)
+        self.assertIn("仍不一致", r.stdout,
+                      "init 报成功但什么都没换，脚本没当场说破：\n%s" % r.stdout)
+        self.assertNotIn("✅ 升级完成", r.stdout, "内容没换却报成功（rc 已 1，文案更不许骗人）")
+        self.assertEqual(_read(os.path.join(eng, "VERSION")).strip(), "0.1.2.dev0",
+                         "替身本该什么都没做 —— 那正是要复刻的 init 假成功")
+        self.assertIn('"stale"', _read(self.ops), "没留痕说清「引擎副本仍与包不同」：%s" % _read(self.ops))
+
+    @_slow("真装 A 再预演 B（[5/7] 预演不改东西）")
+    def test_engine_rehearsal_prints_the_planned_init_and_changes_nothing(self):
+        """预演要说清「会解包轮子 + 对哪个目录跑 init --force」，且一个字节都不写。"""
+        pa = self._engine_pack("packA", "0.1.2.dev0", "AAA")
+        pb = self._engine_pack("packB", "0.1.3.dev0", "BBB")
+        eng = self._install_engine_a(pa)
+        before = _read(os.path.join(eng, "VERSION"))
+
+        r = self._run("--pack", pb, "--harness", eng,
+                      "--skip", "claude,openclaw,pip,skills,shim")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("将刷新", r.stdout)
+        self.assertIn("解包轮子", r.stdout)
+        self.assertIn("init --force --dir", r.stdout)
+        self.assertEqual(_read(os.path.join(eng, "VERSION")), before, "预演改了引擎副本")
+        self.assertFalse(glob.glob(eng + ".disabled-*"), "预演产生了归档")
 
     # ================= 通道 ④：Claude 插件（真搬运在宿主，只锁诊断） =================
 

@@ -322,10 +322,10 @@ def _client(name):
 
 
 def managed_repo_paths():
-    """受管仓的**本机**路径（来自本机覆盖层 `config/harness.local.yaml`）。
+    """受管仓的**本机**路径（来自本机覆盖层 `config/harness.local.toml`）。
 
     换台机器 / 同事 clone：本机覆盖层可能不存在或没配全 → 自动缩到 0 条，本节静默为空，
-    **不会**因为"我这儿没有客户仓"而报假红。这正是 `_config` 的设计（共享层只声明键名）。
+    **不会**因为"我这儿没有受管仓"而报假红。这正是 `_config` 的设计（共享层只声明键名）。
     """
     try:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -21,7 +21,7 @@
 
 - `.mcp.json` 里的 python / 引擎路径**要么是占位符、要么是打包机的**，取决于这个目录怎么来的：
   - `build_plugin.py` 默认**按机器打戳**（配置里是本机绝对路径）——本机自用、`--plugin-dir` 直接加载；
-  - 内部安装包走 `--keep-placeholders`，`.mcp.json` 里留 `__PY__` / `__MCP__` / `__HARNESS__`，
+  - 离线安装包走 `--keep-placeholders`，`.mcp.json` 里留 `__PY__` / `__MCP__` / `__HARNESS__`，
     装机时必须跑一次包内 `fix_paths.py` 填成本机路径（**不能跳**，见包内「安装说明.md」第 0 步）。
 - 所以：**这个目录不能整体拷给别人用**。换机器要重新构建或跑适配脚本。
 - 宿主内的安装/市场分发未在本轮验证——验证状态见主仓 `docs/packaging/COMPAT.md`。

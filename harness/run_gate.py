@@ -10,7 +10,7 @@ if hasattr(sys.stdout, "reconfigure"):
 """
 agentguard 统一门禁调度器（对标 Codex hooks / exec 接口）
 ===============================================================
-按 gate 名（客户_端）从 config 解析策略，调用对应 checks/ 脚本。
+# 按 gate 名（<仓>_<端> 的约定）从 config 解析策略，调用对应 checks/ 脚本。
 各端仓库的 pipeline / git hook 统一调本文件，不直接调 checks/ 下脚本。
 
 用法：
@@ -28,7 +28,9 @@ gate 名示例：example / harness_self（端仓库自定义的 gate 名同样�
 reports/gate_log-YYYY-MM.jsonl（git 忽略；旧单文件 gate_log.jsonl 若在仍被读侧认作最早一片），
 记录时间/gate/mode/文件数/结果/耗时，供 --summary 聚合与趋势排查。每行带行内链哈希 h
 （改/删任何一行，其后全部对不上），`gate log --verify` 与锚点（gate_log_anchor.jsonl，入库）
-对账 —— 防篡改三件套：分片有界 / 链抓中间改动 / 锚点抓截断与重写。
+对账 —— 篡改可发现三件套：分片有界 / 链抓中间改动 / 锚点抓截断与重写。
+它是 tamper-evident 而不是 tamper-proof：能写台账的人也能重算链；信任根在远端、
+分支保护与 CI 用干净 checkout 重跑。
 """
 import sys, os, json, time, glob, hashlib, subprocess, tempfile, threading, socket, getpass
 from contextlib import contextmanager
@@ -126,7 +128,7 @@ def _weaken_marks(gate_name):
 
     2026-09-16（评审 v13 复查遗留项②，用户拍板；实测见 reports/_localyaml_probe2.txt）：
     两条**被允许的**削弱路径原先在台账里与「真检查过且通过」不可区分 ——
-      · 本机把 gate 关掉（`config/harness.local.yaml` 的 `enabled: false`，设计上允许）：
+      · 本机把 gate 关掉（`config/harness.local.toml` 的 `enabled = false`，设计上允许）：
         台账只多一个 `skipped: true`，看不出是"本地关的"还是"配置里本来就关着"；
       · `HARNESS_ALLOW_POLICY_OVERRIDE=1` 放行策略覆盖：**一个字段都不多**，
         与真通过逐字相同（实测那一行的全部键就是 gate/rc）。
@@ -268,6 +270,51 @@ def _chain_h(prev_h, rec):
     return hashlib.sha256(((prev_h or "") + canon).encode("utf-8")).hexdigest()[:16]
 
 
+_ENGINE_SHA_CACHE = []
+
+
+def _engine_files():
+    """判定所用引擎的内容面：规则、调度、审计器与锁清单。"""
+    files = []
+    for sub in ("checks", "harness"):
+        base = os.path.join(ROOT, sub)
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+            for fn in sorted(filenames):
+                if fn.endswith(".py") or (sub == "checks" and fn in
+                                          ("components_allowlist.yaml", "components_allowlist_h5.yaml")):
+                    files.append(os.path.relpath(os.path.join(dirpath, fn), ROOT))
+    for rel in ("config/harness.toml", "config/harness.yaml", "sandbox/mutation_smoke.py",
+                "tests/test_lock_inventory.py", "tests/lock-inventory.json"):
+        if os.path.isfile(os.path.join(ROOT, rel)):
+            files.append(rel)
+    return sorted(set(f.replace("\\", "/") for f in files))
+
+
+def _engine_sha(files=None):
+    """引擎内容哈希（16 hex）：同一份判定代码必须得到同一个值。
+
+    与 ver 的区别：VERSION 只说明「哪一版」，本值说明「这次实际跑的是哪份内容」——
+    瞬时改弱规则再改回来，两条台账的 engine_sha 不同（2026-10-21 外部评审 5.7-A）。
+    读不到的文件按 `<missing>` 计入，让缺失本身也改变哈希，不静默跳过。
+    """
+    if files is None and _ENGINE_SHA_CACHE:
+        return _ENGINE_SHA_CACHE[0]
+    h = hashlib.sha256()
+    for rel in (files if files is not None else _engine_files()):
+        p = rel if os.path.isabs(rel) else os.path.join(ROOT, rel)
+        h.update(rel.replace("\\", "/").encode("utf-8") + b"\0")
+        try:
+            with open(p, "rb") as f:
+                h.update(hashlib.sha256(f.read()).digest())
+        except OSError:
+            h.update(b"<missing>")
+    out = h.hexdigest()[:16]
+    if files is None:
+        _ENGINE_SHA_CACHE.append(out)
+    return out
+
+
 def _log_run(gate_name, scope, n_files, rc, ms, rules=None, skipped=False, weakened=None,
              eol=None, mode_override=None):
     """追加一条运行记录（失败**出声**但不阻断——日志不能反过来挡门禁）。
@@ -322,6 +369,7 @@ def _log_run(gate_name, scope, n_files, rc, ms, rules=None, skipped=False, weake
         ver = _engine_version()                                   # 打包路线：规则版本（VERSION 单一来源）
         if ver:
             rec["ver"] = ver
+        rec["engine_sha"] = _engine_sha()   # 这次判定实际用的内容（5.7-A：抓瞬时改弱）
         if rules:            # 覆盖度（2026-09-12 第四轮）：规则级触发/豁免统计
             rec["rules"] = rules
         target = _log_file()
@@ -349,7 +397,7 @@ def _log_run(gate_name, scope, n_files, rc, ms, rules=None, skipped=False, weake
 
 
 # ---------- 拦截推送飞书（个人模式，2026-09-06） ----------
-# 配置来源：config/harness.local.yaml（个人）或共享 harness.yaml 的 notify 段。
+# 配置来源：config/harness.local.toml（个人）或共享 config/harness.toml 的 notify 段。
 # 未配置 = 完全关闭，零影响（不发请求、不打印、不报错）。
 # 原则与 _log_run 一致：通知绝不能反过来拖慢/阻断门禁——daemon 线程 + 短超时 + 全静默。
 
@@ -467,9 +515,9 @@ def _summary(limit=500):
         g["ms"] += r.get("ms", 0)
     # 2026-09-23 评审报告 L16（实测）：台账里混着**历史测试条目**（`t_pc` 18 / `test_pc` 7 /
     # `t_on` 6 / `t_off` 2 / `myproj_pc` 1 / `tmpc_pc` 1，都 ≤2026-09-16）—— 它们是夹具在临时
-    # 配置下**真跑出来的判定**（不是伪造），但当时用的不是这份配置；与客户 gate 平铺在一张表里，
+    # 配置下**真跑出来的判定**（不是伪造），但当时用的不是这份配置；与受管 gate 平铺在一张表里，
     # 读者会读成"这台机器有这么多 gate"。实测修复前 `--summary` 正是把 `test_pc`/`t_on`/`t_off`
-    # 当客户 gate 列了出来（评审报告点名的就是这个）。
+    # 当受管 gate 列了出来（评审报告点名的就是这个）。
     #
     # 处置取**标注**，不取删除：这是审计日志，**删历史行本身就是一次不可审计的动作**；
     # 错的不是那几行记录，是聚合时没区分来源。判据 = 当前配置里有没有这个名字
@@ -503,7 +551,7 @@ def _summary(limit=500):
               f"上方比例含它们）──")
         print("    这些名字**不在当前 config 里**：历史夹具记录（测试在临时配置下真跑出来的判定，"
               "不是伪造），")
-        print("    或已改名的旧 gate。审计日志不删历史行，故在此单列，不与客户 gate 混算。")
+        print("    或已改名的旧 gate。审计日志不删历史行，故在此单列，不与受管 gate 混算。")
         for k in sorted(unregistered, key=lambda x: -unregistered[x]["n"]):
             g = unregistered[k]
             print(f"  {k:<18}{g['n']:>6}{g['block']:>6}{g['ms']//max(g['n'],1):>9}")
@@ -608,17 +656,23 @@ def _script_config_keys(script_rel):
 
 
 def _rule_ids_for_script(script_rel):
-    """该端**全部规则 id**（含 loader 直接执行的伪规则 id，如 PC-EOL/PC-SFC/ENC）。
+    """该端**全部规则 id**（含 loader 直接执行的伪规则 id，如 EOL-UNIFIED）。
 
     数据源复用 harness/coverage.py 的 static_rules()（唯一一份规则清单，且已含
     「非 Rule 实例、由 loader 直接执行」那几条）——不在这里另维护第二份，
     否则清单会漂移，而漂移的后果是"合法 id 被误判成拼错"。
+    端标签取自 checks/registry.py 的 ENDPOINT_BY_SCRIPT（不在这里硬编码脚本名）。
 
     返回值：id 集合；拿不到（脚本非端脚本/coverage 加载失败）时返回 None = 不判。
     """
     base = os.path.basename(script_rel or "")
-    ep = {"pc_code_check.py": "pc", "h5_code_check.py": "h5",
-          "backend_layer_check.py": "backend", "example_code_check.py": "example"}.get(base)
+    try:
+        if CHECKS not in sys.path:
+            sys.path.insert(0, CHECKS)
+        from registry import ENDPOINT_BY_SCRIPT
+    except Exception:
+        return None
+    ep = ENDPOINT_BY_SCRIPT.get(base)
     if not ep:
         return None
     try:
@@ -635,7 +689,7 @@ def _rule_ids_for_script(script_rel):
 
 def _validate(structure_only=False):
     """配置体检（2026-09-12）：遍历全部 gate，逐项验证 repo 路径/脚本/ruleset 可导入。
-    改完 harness.yaml 当下跑一次，把配置错当场揪出来，不等提交时 rc=2 才暴露。
+    改完 config/harness.toml 当下跑一次，把配置错当场揪出来，不等提交时 rc=2 才暴露。
     退出码：0=全部健康；2=存在阻断项（路径/脚本缺失等）。
 
     structure_only（--structure-only，2026-09-12 加，为 CI 用）：端仓不在本机是常态
@@ -655,8 +709,8 @@ def _validate(structure_only=False):
     missing_repos = []
     zero_conf = []                     # 本机没填路径的 gate（见下，不阻断）
     # 2026-09-18（跨平台批次 7）：判据按**键**分，不再按「本机配了几条路径」分。
-    # `repos:` 段的**键名**是共享配置里的团队策略（33 个键、值一律留空），**路径**在各人
-    # gitignored 的 local.yaml。于是「repo 未配置」的三种含义各归各位：
+    # `[repos]` 段的**键名**是共享配置里的团队策略（33 个键、值一律留空），**路径**在各人
+    # gitignored 的 config/harness.local.toml。于是「repo 未配置」的三种含义各归各位：
     #   键不在 repos 段  → 真配置错（键名拼错 / 新 gate 忘了登记），阻断；
     #   键在、值留空     → 「本机没这个仓」，**常态**，⊘ 汇总、不阻断；
     #   键在、路径不存在 → structure_only 下不阻断（CI 干净容器正是这个形态），否则阻断。
@@ -684,8 +738,8 @@ def _validate(structure_only=False):
         repo_key = g.get("repo") or ""
         if repo_key and repo_key != "harness_self" and repo_key not in _repos:
             issues.append("repo 键未声明: %s（gates.%s.repo 引用的键不在 repos 段里 —— "
-                          "键名是共享 config/harness.yaml 的团队策略，"
-                          "路径才是各人 config/harness.local.yaml 的事）" % (repo_key, name))
+                          "键名是共享 config/harness.toml 的团队策略，"
+                          "路径才是各人 config/harness.local.toml 的事）" % (repo_key, name))
         elif not rp:
             norepo = True
         elif not os.path.isdir(rp):
@@ -805,15 +859,15 @@ def _validate(structure_only=False):
             if not _got:
                 _rs_fallback.append(_name)
                 continue
-            # 2026-09-16（剖析报告 N4）：此前 `_got` **只当布尔用**，从不和 yaml 的 `script:`
-            # 比对 —— 于是"改了 harness.yaml 的 script 却不生效"这件事全链路无声：run_gate 取
-            # 脚本时 registry 优先（见下方 `if not script: script = …g["script"]`），yaml 里
+            # 2026-09-16（剖析报告 N4）：此前 `_got` **只当布尔用**，从不和配置里的 `script`
+            # 比对 —— 于是"改了 harness.toml 的 script 却不生效"这件事全链路无声：run_gate 取
+            # 脚本时 registry 优先（见下方 `if not script: script = …g["script"]`），配置里
             # 那一行变成**写了等于没写的死配置**。改配置的人不会知道，只有哪天 registry 被删
             # 才突然生效（行为突变）。这里把"两处说法不一致"当配置错误报出来。
             _y = (gates[_name].get("script") or "").strip()
             _r = (_reg_rel.get(_name) or "").strip()
             if _y and _r and _norm_rel(_y) != _norm_rel(_r):
-                _rs_mismatch.append("%s: yaml=%s ≠ registry=%s" % (_name, _y, _r))
+                _rs_mismatch.append("%s: config=%s ≠ registry=%s" % (_name, _y, _r))
         if _rs_bad:
             print("  ✗ registry_loader 对 %d 个 gate 解析失败: %s" % (len(_rs_bad), "; ".join(_rs_bad[:5])))
             problems.extend([x.split(":")[0] for x in _rs_bad])
@@ -824,8 +878,8 @@ def _validate(structure_only=False):
         else:
             print("  ✅ registry_loader 可用（%d 个 gate 全部由 registry 命中）" % len(gates))
         if _rs_mismatch:
-            print("  ✗ harness.yaml 的 script 与 registry 登记值不一致 %d 处（registry 优先，"
-                  "yaml 那行实际不生效）:" % len(_rs_mismatch))
+            print("  ✗ harness.toml 的 script 与 registry 登记值不一致 %d 处（registry 优先，"
+                  "配置那行实际不生效）:" % len(_rs_mismatch))
             for _m in _rs_mismatch[:6]:
                 print("      " + _m)
             problems.extend([x.split(":")[0] for x in _rs_mismatch])
@@ -854,11 +908,11 @@ def _validate(structure_only=False):
               f"{', '.join(missing_repos)}")
     if zero_conf:
         print(f"  ℹ 本机没填仓库路径 —— 上述 {len(zero_conf)} 个 gate 因此一条检查都跑不了。"
-              f"这不是配置错：**键名**在共享 config/harness.yaml 里（团队策略），"
-              f"**路径**在各人 gitignored 的 config/harness.local.yaml 里（每机事实）。")
+              f"这不是配置错：**键名**在共享 config/harness.toml 里（团队策略），"
+              f"**路径**在各人 gitignored 的 config/harness.local.toml 里（每机事实）。")
         print(f"    只写你机器上确实存在的那几个仓即可，写几条生效几条。首次接入："
-              f"sh sandbox/setup_machine.sh（首次会提示你编辑 local.yaml 后重跑）；"
-              f"或照 config/harness.local.example.yaml 的「场景 A」抄一份 repos 段。")
+              f"sh sandbox/setup_machine.sh（首次会提示你编辑 local.toml 后重跑）；"
+              f"或照 config/harness.local.example.toml 的「场景 A」抄一份 [repos] 段。")
     if problems:
         print(f"\n=== 体检不通过：{len(problems)} 个启用 gate 有阻断项: {', '.join(problems)} ===")
         return 2
@@ -911,21 +965,21 @@ def _dispatch(argv):
         _missing = [k for k in _live
                     if gates[k].get("_repo_path") and not os.path.isdir(gates[k]["_repo_path"])]
         if _live and len(_nopath) == len(_live):
-            print(f"\nℹ 启用的 {len(_live)} 个客户 gate **全部**没有仓库路径 —— 本机此刻一个门禁也不生效。")
-            print("  这不是配置坏：共享 config/harness.yaml 里**不含**任何机器路径，")
-            print("  路径全在 gitignored 的 config/harness.local.yaml（各人一份）。首次接入：")
-            print("      sh sandbox/setup_machine.sh    # 首次会提示你编辑 local.yaml 后重跑")
+            print(f"\nℹ 启用的 {len(_live)} 个受管 gate **全部**没有仓库路径 —— 本机此刻一个门禁也不生效。")
+            print("  这不是配置坏：共享 config/harness.toml 里**不含**任何机器路径，")
+            print("  路径全在 gitignored 的 config/harness.local.toml（各人一份）。首次接入：")
+            print("      sh sandbox/setup_machine.sh    # 首次会提示你编辑 config/harness.local.toml 后重跑")
         elif _missing and not _nopath:
-            print(f"\nℹ 启用的 {len(_live)} 个客户 gate **全部**指向本机不存在的路径 —— 本机此刻一个门禁也不生效。")
-            print("  路径是**配好的**（来自 config/harness.local.yaml），但那些目录在这台机器上不存在。")
+            print(f"\nℹ 启用的 {len(_live)} 个受管 gate **全部**指向本机不存在的路径 —— 本机此刻一个门禁也不生效。")
+            print("  路径是**配好的**（来自 config/harness.local.toml），但那些目录在这台机器上不存在。")
             print("  常见成因：换了盘符 / 换了用户名，或在 WSL 里 clone（那里要写 WSL 视角的路径，如 /mnt/d/...）。")
             print("  核对：sh sandbox/setup_machine.sh")
         elif _nopath:
-            print(f"\nℹ {len(_nopath)}/{len(_live)} 个启用的客户 gate 没有仓库路径：{', '.join(_nopath[:6])}")
+            print(f"\nℹ {len(_nopath)}/{len(_live)} 个启用的受管 gate 没有仓库路径：{', '.join(_nopath[:6])}")
             if _missing:
                 print(f"  ℹ 另有 {len(_missing)}/{len(_live)} 个指向本机不存在的路径：{', '.join(_missing[:6])}")
         elif _missing:
-            print(f"\nℹ {len(_missing)}/{len(_live)} 个启用的客户 gate 指向本机不存在的路径：{', '.join(_missing[:6])}")
+            print(f"\nℹ {len(_missing)}/{len(_live)} 个启用的受管 gate 指向本机不存在的路径：{', '.join(_missing[:6])}")
         return 0
     return None
 
@@ -974,11 +1028,16 @@ def main():
         _rest.append(rest[_i]); _i += 1
     rest = _rest
     if repo_override:
+        # 相对路径按**调用方 cwd**解析后立刻绝对化：下面的子进程以 cwd=HARNESS 启动，
+        # 相对路径留在 argv 里会被解析到引擎仓（在受管仓里执行 `--repo .` 时尤其致命）。
+        repo_override = os.path.abspath(repo_override)
         if not os.path.isdir(repo_override):
             print(f"[run_gate] ✗ --repo 指定的路径不是目录: {repo_override} → 不放行（fail-closed）")
             return 2
         print(f"[run_gate] 检查基准=调用方指定仓 {repo_override}（策略归属: {g.get('_repo_path')}）")
     repo = repo_override or g.get("_repo_path")
+    if repo:
+        repo = os.path.abspath(repo)
     if not repo or not os.path.isdir(repo):
         print(f"[run_gate] gate {gate_name} 仓库路径无效: {repo}")
         return 2
@@ -994,8 +1053,8 @@ def main():
     if not script:
         script = os.path.join(ROOT, g["script"])
     # 中 14（评审 v13）：`os.path.join(ROOT, script)` 遇到**绝对路径**会直接丢弃 ROOT ——
-    # `script: D:/任意/x.py` 原样执行。触达面是本机能写 config/harness.local.yaml（在 .gitignore
-    # 内，恰好是本地覆盖层的典型用法）或能设 HARNESS_CONFIG 的人/agent；外部客户仓贡献者够不着，
+    # `script: D:/任意/x.py` 原样执行。触达面是本机能写 config/harness.local.toml（在 .gitignore
+    # 内，恰好是本地覆盖层的典型用法）或能设 HARNESS_CONFIG 的人/agent；外部受管仓贡献者够不着，
     # 但这是执行边界，应当收死：解析结果（含软链）必须落在工程根之内，越界即 rc=2。
     # 同一道闸也盖住 registry 那条路 —— 两条来源在下面汇合后统一判定，不各写一份。
     try:
@@ -1022,8 +1081,7 @@ def main():
     # 时 GATE_NAME 一直停在脚本里硬编码的端 gate 名，load_policy 读的是别家 gate 的
     # mode / disabled_rules / legacy_baseline / line_ending；而 rule_base.disabled_rules
     # 是"按名查到了就返回"，按 repo 反查的兜底分支因此永不执行（PC/H5 侧）。
-    # 实测后果：10 个其它 H5 gate 的 `disabled_rules: [H5-UPLOAD]` 静默失效（存量
-    # 51 处 uni.uploadFile 调用会被拦）；ntrx_pc 声明 mode: loose 却按 strict 拦存量组件引用。
+    # 实测后果：其它 gate 的 `disabled_rules` 静默失效、`mode: loose` 被按 strict 执行。
     # 端脚本集合取自 checks/registry.py 的 ENDPOINT_SCRIPTS（唯一数据源，不另维护一份清单）；
     # harness_self_check.py 这类非端脚本不受影响（它不解析 argv，塞 --gate 没有意义）。
     try:
@@ -1137,7 +1195,7 @@ def main():
     #     `--all` —— 同一件事不再被记成 targeted。
     #   · `--repo <目录>` 单独出现算"点了名"：两个既有夹具走的就是这个形态
     #     （test_repo_key_registry 的 `harness_self --repo ROOT`、test_review_v13_batch8 的
-    #     `hy_pc --repo <端仓>`），它们本意就是整仓扫描 ⇒ 拦掉它们是越界，已收窄。
+    #     `某个端 gate --repo <目标仓>`），它们本意就是整仓扫描 ⇒ 拦掉它们是越界，已收窄。
     _all_scan = "--all" in cmd
     if not files and not _all_scan and not repo_override:
         print(f"[run_gate] ✗ {gate_name}: 没有文件参数，也没有 --all，也没有 --repo <目标仓>。\n"

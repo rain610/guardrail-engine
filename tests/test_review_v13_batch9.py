@@ -29,7 +29,7 @@
      其余静默 —— 每提交一行永不改变的话换来的不是"知道"而是"不再读"；
   ⑥ **与 `sandbox/eol_text.py` 不漂移**：同一份 `git ls-files --eol` 输出，它取 **`i/`（存成什么）**、
      本模块取 **`w/`（躺在盘上是什么）**，两边必须各自与 git 的对应列**逐字相符**；
-  ⑦ **`config/harness.yaml` 里的 gate 键必须真的还在**（见下）。
+  ⑦ **`config/harness.toml` 里的 gate 键必须真的还在**（见下）。
 
 ⑦ 是施工中真出过的事故，值得单说
 ================================================================================
@@ -75,7 +75,7 @@ TESTS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TESTS)
 HARNESS_LIB = os.path.join(ROOT, "harness")
 SANDBOX = os.path.join(ROOT, "sandbox")
-CONFIG_YAML = os.path.join(ROOT, "config", "harness.yaml")
+CONFIG_TOML = os.path.join(ROOT, "config", "harness.toml")
 
 sys.path.insert(0, HARNESS_LIB)
 import _eol_policy as eol                                    # noqa: E402
@@ -216,11 +216,11 @@ class TestAutoMatchesWorktreeReality(_RepoCase):
     """`auto` 的判据是 **git 的检出配置**，不是 `os.name`。"""
 
     def test_counterexample_autocrlf_false_but_worktree_is_crlf(self):
-        """计划里"`autocrlf=false` → LF"的捷径，被本机 `eagle-rmc-mobile-net-hy` 证伪。
+        """计划里"`autocrlf=false` → LF"的捷径，被一个真实的跨端仓证伪。
 
         实测该仓 `core.autocrlf=false` 而工作树 1072 `w/crlf` / 0 `w/lf`。原因：`false` 的含义
         是"git 不做任何转换"，于是工作树 = 索引内容 —— 只有 `ls-files` 答得上来。落端默认
-        就正好是那个仓的假红（它的 22 个 H5 gate 里就有它）。
+        就正好是那个仓的假红。
         """
         d = self.repo(autocrlf="false", crlf=3)
         self.assertEqual(eol.resolve(d, {}, "LF", "t"), ("CRLF", "checkout-majority"))
@@ -429,41 +429,41 @@ class TestNoDriftWithSandboxEolText(_RepoCase):
 
 # ===================================================== ⑦ 配置与文档
 class TestConfigGateKeysAreIntact(unittest.TestCase):
-    """⑦ 那次事故的锁。**症状不报错，而是"看起来配好了"** —— 所以三条一起上。"""
+    """⑦ 那次事故的锁。**症状不报错，而是"看起来配好了"** —— 所以三条一起上。
 
-    #: 粘连签名：非注释行里，某个 `word:` 键被**接在别的内容之后**（正常 YAML 里不可能出现）
-    GLUE_RE = re.compile(r"^\s+\S.*?\s\s([a-z][a-z0-9_]*):\s*(#.*)?$")
+    2026-10-21 配置迁到 TOML 后，判据跟着格式走：gate 键 = `[gates.<name>]` 表头，
+    粘连 = 表头前面还挂着别的内容（那样的文件不是合法的 TOML，或整段被吃进了上一行）。
+    """
 
     def _lines(self):
-        with open(CONFIG_YAML, encoding="utf-8") as f:
+        with open(CONFIG_TOML, encoding="utf-8") as f:
             return f.read().split("\n")
 
     def test_no_gate_key_is_glued_onto_the_previous_line(self):
-        glued = [(i + 1, l) for i, l in enumerate(self._lines())
-                 if not l.lstrip().startswith("#") and self.GLUE_RE.match(l)]
-        self.assertEqual(glued, [], "gate 键被粘到上一行末尾（在 YAML 里等于该 gate 消失）：%r" % glued)
+        glued = []
+        for i, l in enumerate(self._lines()):
+            if l.lstrip().startswith("#"):
+                continue
+            m = re.search(r"\[gates\.[A-Za-z0-9_]+\]", l)
+            if m and l[:m.start()].strip():
+                glued.append((i + 1, l))
+        self.assertEqual(glued, [], "gate 表头被粘到别的内容后面：%r" % glued)
 
     def test_strict_line_scan_agrees_with_the_loaded_gate_set(self):
-        """严格行扫描（只认 `^  key:$`）与配置加载器必须数出**同一批** gate。
+        """严格行扫描（只认 `^[gates.key]`）与配置加载器必须数出**同一批** gate。
 
         两者不一致 = 文件里有键是加载器看不见的，而那正是粘连的后果。
         """
-        keys, in_gates = [], False
+        keys = []
         for l in self._lines():
-            if l.startswith("gates:"):
-                in_gates = True
-                continue
-            if in_gates and l and not l.startswith(" ") and not l.startswith("#"):
-                break                                   # 出了 gates 段
-            if in_gates:
-                m = re.match(r"^  ([A-Za-z0-9_]+):\s*$", l)
-                if m:
-                    keys.append(m.group(1))
+            m = re.match(r"^\[gates\.([A-Za-z0-9_]+)\]\s*$", l)
+            if m:
+                keys.append(m.group(1))
         self.assertGreaterEqual(len(keys), 2, "gate 数掉到这个量级，八成是整段被吃掉了")
 
         sys.path.insert(0, HARNESS_LIB)
         import _config
-        loaded = set((_config.load(CONFIG_YAML).get("gates") or {}))
+        loaded = set((_config.load(CONFIG_TOML).get("gates") or {}))
         self.assertEqual(set(keys), loaded,
                          "文件里的键与加载后的 gate 集不一致：只在文件里=%s；只在配置里=%s"
                          % (sorted(set(keys) - loaded), sorted(loaded - set(keys))))
@@ -474,9 +474,9 @@ class TestConfigGateKeysAreIntact(unittest.TestCase):
         事故现场就是某个 gate 的 `script` 显示成 `checks/backend_layer_check.py` ——
         因为它的 `repo:`/`script:` 两行在解析里并到了前一个 gate 身上。
         """
-        sys.path.insert(0, HARNESS_LIB)
-        import _config
-        gates = _config.load(CONFIG_YAML).get("gates") or {}
+        import tomllib
+        with open(CONFIG_TOML, "rb") as f:
+            gates = tomllib.load(f).get("gates") or {}
         want = {"example": "example_code_check.py"}
         seen = 0
         for name, g in gates.items():
@@ -492,11 +492,11 @@ class TestConfigGateKeysAreIntact(unittest.TestCase):
         """那 22 行是**维护机当年检出的快照**，删掉是目的本身 —— 别加回来。
 
         真要锁死某个值，显式写 `CRLF` / `LF` 仍然有效（见 `TestDeclaredWins`），
-        但前提是**仓里确实如此**；本机五个客户仓实测：`autocrlf=true` 的四个检出 CRLF、
+        但前提是**仓里确实如此**；本机五个业务仓实测：`autocrlf=true` 的四个检出 CRLF、
         `autocrlf=false` 的 `hy_h5` 也是 CRLF（1094/1096），而它们的端默认并不都是 CRLF。
         """
         hits = [(i + 1, l) for i, l in enumerate(self._lines())
-                if re.match(r"^\s+line_ending:", l)]
+                if re.match(r"^\s*line_ending\s*=", l)]
         self.assertEqual(hits, [], "共享配置里不该再出现 line_ending（机器事实不进共享文件）：%r" % hits)
 
     def test_validate_rejects_a_bogus_line_ending_value(self):
@@ -550,7 +550,8 @@ class TestConfigGateKeysAreIntact(unittest.TestCase):
             readme = f.read()
         self.assertIn("line_ending", readme,
                       "README 必须保留 line_ending 这个键（键仍在，只是默认变了）")
-        row = [l for l in readme.split("\n") if l.strip().startswith("line_ending:")]
+        # 2026-10-21 配置迁到 TOML 后，示例行的形态从 `line_ending:` 变成 `line_ending =`。
+        row = [l for l in readme.split("\n") if re.match(r"^\s*line_ending\s*=", l)]
         self.assertEqual(len(row), 1, "配置示例里该键应恰好一行")
         self.assertIn("auto", row[0])
         self.assertIn("CRLF", row[0])

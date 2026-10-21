@@ -33,7 +33,7 @@ jobs:
           python -m pip install --upgrade build
           python sandbox/pack_release.py
           # 只数出货目录里那一个 wheel（_wheel/ 是构建缓存，递归 find 会多数一份）。
-          STAGE="dist/install-package/agentguard-内部安装包-v$(tr -d '[:space:]' < VERSION)"
+          STAGE="dist/install-package/agentguard-package-v$(tr -d '[:space:]' < VERSION)"
           N=$(find "$STAGE" -maxdepth 1 -name "*.whl" | wc -l)
           if [ "$N" -ne 1 ]; then
             echo "期望出货目录恰好一个 wheel，实际 $N 个（$STAGE）" >&2
@@ -49,7 +49,7 @@ jobs:
       - name: 干净 venv 安装冒烟
         run: |
           python -m venv /tmp/ag-venv
-          STAGE="dist/install-package/agentguard-内部安装包-v$(tr -d '[:space:]' < VERSION)"
+          STAGE="dist/install-package/agentguard-package-v$(tr -d '[:space:]' < VERSION)"
           set -- "$STAGE"/*.whl
           if [ "$#" -ne 1 ]; then
             echo "出货目录里的 wheel 不是恰好一个（$# 个）：$STAGE" >&2

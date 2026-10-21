@@ -10,7 +10,7 @@
 
 行为：
   - 从 hook 的 stdin JSON 取 cwd（拿不到就用进程 cwd）
-  - 跑 `harness/agents/auto-gate.py`（按目录自动识别客户/端 gate）
+  - 跑 `harness/agents/auto-gate.py`（按目录自动识别受管仓/端 gate）
   - rc=0 通过 / rc=3 非受管仓库 → 静默 exit 0
   - 拦截 → Claude Code: stderr + exit 2（Claude 会把 stderr 当反馈紧接着改）
             Codex: 输出 {"hookSpecificOutput":{...additionalContext...}} 并 exit 0

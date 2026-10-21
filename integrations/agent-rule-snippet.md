@@ -10,7 +10,7 @@
 
 本机装了统一代码门禁 harness（工程根见 `AGENTGUARD_DIR`，旧名 `HARNESS_DIR` 兼容；或 `~/.agentguard/harness.path`）。
 
-改完任意 AgentGuard 客户×三端仓库（PC / H5 / .NET 后端）的代码后，**在改动仓库根目录**执行：
+改完任意 AgentGuard 受管仓（含 PC / H5 / .NET 后端等多种端）的代码后，**在改动仓库根目录**执行：
 
 ```sh
 python <HARNESS>/harness/agents/auto-gate.py

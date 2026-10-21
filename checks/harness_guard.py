@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-harness/checks/harness_guard.py —— 保护循环（防篡改哨兵）
+harness/checks/harness_guard.py —— 保护循环（篡改可发现哨兵）
 ============================================================
 「保护 hook」核心：修代码的 agent 不能弱化验证它的检查。
 
 职责（2026-09-03 Plan A 改造）：
   检查 harness 工程仓库自身是否存在「未提交」的受保护文件改动
-  （checks/*.py / components_allowlist.yaml / config/harness.yaml）。
+  （checks/*.py / components_allowlist.yaml / config/harness.toml）。
   有 → 拦截当前提交。
 
   旧版端仓库模式检查「端仓库 diff 里是否出现 checks/... 路径」——但受保护文件
@@ -56,15 +56,21 @@ MAINT_TAGS = ["[harness]", "harness-maintenance", "HARNESS:"]
 def _in_protected(rel):
     """相对工程根的路径是否属于受保护文件。checks/ 下任何 .py 都受保护（新增检查脚本也算）。
     2026-09-12 扩展（外部评审 P0-2）：原清单只覆盖门禁"内容"，未覆盖"调度层"——
-    run_gate.py/hooks/agents/_config.py 改弱不提交时 guard 零反应，是防篡改模型唯一漏档。"""
+    run_gate.py/hooks/agents/_config.py 改弱不提交时 guard 零反应，是篡改可发现模型唯一漏档。"""
     r = rel.replace("\\", "/")
     if r.startswith("checks/") and r.endswith(".py"):
         return True
     # 调度层（hooks-dir 分发器也保护——它是全部接入仓 pre-commit 的实体）
+    # 2026-10-21（外部评审 5.7-C）：审计器与锁清单同属「让证据好看」的入口 ——
+    # 改弱它们同样能冒充通过，不能只在 checks/ 里设防。
     if r in ("harness/run_gate.py", "harness/_config.py",
+             "harness/coverage.py", "harness/_eol_policy.py",
              "harness/hooks-dir/pre-commit",
              # N5 修复（第二轮评审）：commit-msg 同属共享分发器实体，漏保护=可被静默改弱
-             "harness/hooks-dir/commit-msg"):
+             "harness/hooks-dir/commit-msg",
+             "sandbox/mutation_smoke.py",
+             "tests/test_lock_inventory.py",
+             "tests/lock-inventory.json"):
         return True
     if r.startswith("harness/hooks/") and r.endswith(".py"):
         return True
@@ -76,6 +82,7 @@ def _in_protected(rel):
         return True
     return r in ("checks/components_allowlist.yaml",
                  "checks/components_allowlist_h5.yaml",
+                 "config/harness.toml",
                  "config/harness.yaml")
 
 
@@ -220,7 +227,7 @@ def main():
     # 那个函数自己在 harness/_config.py 里写着「查不了时返回 []，需要 fail-closed 语义的调用方
     # 请用 changed_files_ex()」—— 而这里恰恰是最需要 fail-closed 的调用方：查不了 → 空清单 →
     # 下面 touched 为空 → return 0。**工程仓 git 一坏（.git 被清理 / git 不可用 / 查询超时 /
-    # 权限不足），防篡改哨兵静默失效，且输出里一个字都不说**；同一时刻分发器、pre-commit
+    # 权限不足），篡改可发现哨兵静默失效，且输出里一个字都不说**；同一时刻分发器、pre-commit
     # 读暂存区各处却都是 fail-closed（rc=2），只有这一处相反 —— 与本项目反复强调的
     # 「宁可报错、不可假装查过」正好背道而驰。
     # 代价已知并接受（先例：2026-09-15 分发器先跑 harness_self_check，坏了就拦全部 33 个端仓）：

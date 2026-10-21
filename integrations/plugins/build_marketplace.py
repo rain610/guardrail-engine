@@ -10,7 +10,7 @@
   plugins/agentguard/…           由 build_plugin.py 按机器打戳生成（同源复制 + 技能）
   README.md                         市场说明
 
-`--keep-placeholders` 原样透传给 build_plugin.py：出货件（内部安装包）走这条，
+`--keep-placeholders` 原样透传给 build_plugin.py：出货件（离线安装包）走这条，
 `.mcp.json` 里留 `__PY__`/`__MCP__`/`__HARNESS__` 由装机时的 `fix_paths.py` 现场填。
 理由与代价写在 build_plugin.py 的模块 docstring 里。
 

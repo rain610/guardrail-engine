@@ -1,0 +1,238 @@
+# -*- coding: utf-8 -*-
+"""`agentguard init` 与「wheel 自带引擎」的契约锁（评审 2026-10-21 §5.2）。
+
+三个问题分开锁：
+  ① **清单单一来源**：`setup.py` 与 `agentguard/_shell.py` 各有一份打包清单（构建脚本不能
+     import 包），两处必须逐字相同 —— 只打一半的引擎，装完会在第一次 `run` 时才炸。
+  ② **init 真的能用**：引擎落到可写目录、本机配置不进包、指针写得回去、幂等、--force 可逆。
+  ③ **未初始化时说得清**：轮子形态（无引擎根）跑普通命令，要明确指向 `init`，
+     而不是一句"root not found"让人去猜。
+"""
+import ast
+import glob
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _tmpclean import rmtree_force as _rmtree_force  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLI = os.path.join(ROOT, "agentguard", "cli.py")
+SHELL = os.path.join(ROOT, "agentguard", "_shell.py")
+SETUP = os.path.join(ROOT, "setup.py")
+PY = sys.executable
+
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
+def _consts(path, names):
+    """从模块顶层 `NAME = (...)` 里取常量（只认字面量，AST 不执行代码）。"""
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=path)
+    out = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        tgt = node.targets[0]
+        if isinstance(tgt, ast.Name) and tgt.id in names:
+            out[tgt.id] = ast.literal_eval(node.value)
+    return out
+
+
+def _run(args, env, cwd=None):
+    r = subprocess.run(args, cwd=cwd or ROOT, env=env, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=300)
+    return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+class TestBundleManifestIsSingleSource(unittest.TestCase):
+    """① `setup.py` 与 `_shell.py` 的引擎清单必须一致 —— 漂移一半就会出半成品包。"""
+
+    def test_manifests_match(self):
+        shell = _consts(SHELL, {"ENGINE_DIRS", "ENGINE_FILES", "ENGINE_EXCLUDE"})
+        setup = _consts(SETUP, {"ENGINE_DIRS", "ENGINE_FILES", "ENGINE_EXCLUDE"})
+        self.assertEqual(sorted(shell), ["ENGINE_DIRS", "ENGINE_EXCLUDE", "ENGINE_FILES"],
+                         "壳层的清单常量被改名/删掉了，本锁会空转")
+        for k in ("ENGINE_DIRS", "ENGINE_FILES", "ENGINE_EXCLUDE"):
+            self.assertEqual(setup.get(k), shell.get(k),
+                             "setup.py 与 _shell.py 的 %s 不一致：打出来的包与 init 复制的内容"
+                             "会分叉（一处加了新目录、另一处没加）" % k)
+
+    def test_local_config_is_never_bundled(self):
+        shell = _consts(SHELL, {"ENGINE_EXCLUDE"})
+        for name in ("config/harness.local.toml", "config/harness.local.yaml"):
+            self.assertIn(name, shell["ENGINE_EXCLUDE"],
+                          "本机配置 %s 没被排除：打包/init 会把打包机的仓库路径发给所有人" % name)
+
+    def test_setup_py_fails_loudly_on_missing_engine(self):
+        with open(SETUP, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("raise RuntimeError", src,
+                      "引擎源缺失时 setup.py 必须失败，而不是产出一个没有引擎的 wheel")
+        self.assertIn('"agentguard", "_engine"', src, "setup.py 没把引擎铺进 agentguard/_engine/")
+
+
+class _InitBase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="init-lock-")
+        self.addCleanup(_rmtree_force, self.tmp)
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home)
+        self.dest = os.path.join(self.tmp, "engine")
+        self.env = dict(os.environ)
+        for k in ("AGENTGUARD_DIR", "HARNESS_DIR", "PYTHONPATH",
+                  "HARNESS_LOG_FILE", "HARNESS_LOG_DIR"):
+            self.env.pop(k, None)
+        self.env["HOME"] = self.home
+        self.env["USERPROFILE"] = self.home
+        self.env["PYTHONDONTWRITEBYTECODE"] = "1"   # 否则 self-check 会在副本里留 __pycache__
+
+    def init(self, *extra, dest=None):
+        return _run([PY, CLI, "init", "--dir", dest or self.dest] + list(extra),
+                    self.env, cwd=self.tmp)
+
+    def pointer(self):
+        return os.path.join(self.home, ".agentguard", "harness.path")
+
+
+class TestInitCopiesEngine(_InitBase):
+    """② init 的正面契约：文件齐 / 本机配置不进去 / 指针正确 / 幂等。"""
+
+    def test_copies_a_runnable_engine_and_writes_pointer(self):
+        rc, out = self.init()
+        self.assertEqual(rc, 0, out)
+        self.assertTrue(os.path.isfile(os.path.join(self.dest, "harness", "run_gate.py")), out)
+        self.assertTrue(os.path.isfile(os.path.join(self.dest, "checks", "example_code_check.py")))
+        self.assertTrue(os.path.isfile(os.path.join(self.dest, "VERSION")))
+        # 插件/fix_paths 认的布局：`<HARNESS>/agentguard/mcp.py` 必须在
+        mcp_copy = os.path.join(self.dest, "agentguard", "mcp.py")
+        self.assertTrue(os.path.isfile(mcp_copy),
+                        "引擎根缺 agentguard/mcp.py —— MCP 注册会指向空文件")
+        with open(mcp_copy, "rb") as f:
+            got = f.read()
+        with open(os.path.join(ROOT, "agentguard", "mcp.py"), "rb") as f:
+            self.assertEqual(got, f.read(), "init 复制出来的 mcp.py 与包内那份不是同一份")
+        for name in ("harness.local.toml", "harness.local.yaml"):
+            self.assertFalse(os.path.exists(os.path.join(self.dest, "config", name)),
+                             "本机配置 %s 被复制进引擎了 —— 那是打包机的仓库路径" % name)
+        self.assertFalse(glob.glob(os.path.join(self.dest, "**", "__pycache__"), recursive=True),
+                         "缓存目录被复制进引擎了")
+        with open(self.pointer(), encoding="utf-8") as f:
+            self.assertEqual(f.read().strip(), self.dest)
+        self.assertIn("self-check   : list-gates rc=0", out)
+        # 所有权标记：upgrade.py 只刷新带它的目录（指针也会被写成仓库路径，光看指针分不清）
+        mk = self._marker()
+        self.assertEqual(mk.get("kind"), "agentguard-init")
+        self.assertEqual(mk.get("source"), "repo", "从工程树 init 出来的副本应标 source=repo")
+        with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
+            self.assertEqual(mk.get("version"), f.read().strip())
+
+    def _marker(self, dest=None):
+        p = os.path.join(dest or self.dest, ".agentguard-init.json")
+        self.assertTrue(os.path.isfile(p),
+                        "init 没写所有权标记 —— upgrade.py 会把这份副本当成来历不明的目录拒绝刷新")
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_second_run_is_idempotent(self):
+        rc, out = self.init()
+        self.assertEqual(rc, 0, out)
+        rc2, out2 = self.init()
+        self.assertEqual(rc2, 0, out2)
+        self.assertIn("引擎已是最新", out2, out2)
+        self.assertFalse(glob.glob(self.dest + ".disabled-*"),
+                         "幂等重跑不该产生归档目录")
+        # 旧版 init 装出来的副本没有标记：幂等重跑必须顺手补上（否则 upgrade.py 认不出它）
+        os.remove(os.path.join(self.dest, ".agentguard-init.json"))
+        rc3, out3 = self.init()
+        self.assertEqual(rc3, 0, out3)
+        with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
+            self.assertEqual(self._marker().get("version"), f.read().strip())
+
+    def test_existing_foreign_dir_requires_force_and_archives(self):
+        os.makedirs(self.dest)
+        marker = os.path.join(self.dest, "someone-elses-work.txt")
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write("不要删我\n")
+        rc, out = self.init()
+        self.assertEqual(rc, 2, "已有目录且内容不同却没拦住：\n%s" % out)
+        self.assertIn("--force", out)
+        self.assertTrue(os.path.isfile(marker), "被拒绝时不该动目标目录")
+
+        rc2, out2 = self.init("--force")
+        self.assertEqual(rc2, 0, out2)
+        archives = glob.glob(self.dest + ".disabled-*")
+        self.assertEqual(len(archives), 1, "--force 没有留下可回滚的归档：%s" % out2)
+        self.assertTrue(os.path.isfile(os.path.join(archives[0], "someone-elses-work.txt")),
+                        "归档里丢了原目录的内容（这不是可逆归档）")
+        self.assertTrue(os.path.isfile(os.path.join(self.dest, "harness", "run_gate.py")))
+        # 标记只贴在**新的** init 副本上：归档里那份外来目录不是 init 管的，不该被冒认
+        self._marker()
+        self.assertFalse(os.path.exists(os.path.join(archives[0], ".agentguard-init.json")),
+                         "归档里的外来目录被写了 init 标记 —— 下次有人对归档目录跑 init 会被误认")
+
+    def test_refuses_to_copy_into_itself(self):
+        rc, out = self.init(dest=ROOT)
+        self.assertEqual(rc, 2, "把工程根当目标目录却没拦住（归档会搬走源本身）：\n%s" % out)
+        self.assertIn("重叠", out)
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "harness", "run_gate.py")),
+                        "拒绝重叠时误动了源目录")
+
+
+class TestPointerResolvesAfterInit(_InitBase):
+    """② 续：指针写完后，`_shell.find_root()` 在「包不在引擎树内」的形态下必须找到它。"""
+
+    def _shell_form(self):
+        """把四个壳模块复制成独立包（模拟 pip 安装形态：没有 VERSION / 没有 harness/）。"""
+        pkg = os.path.join(self.tmp, "pkg", "agentguard")
+        os.makedirs(pkg)
+        src = os.path.join(ROOT, "agentguard")
+        for n in os.listdir(src):
+            if n.endswith(".py"):
+                shutil.copyfile(os.path.join(src, n), os.path.join(pkg, n))
+        return os.path.dirname(pkg)
+
+    def _root(self, pkg_parent):
+        code = ("import sys; sys.path.insert(0, %r);"
+                " import json, agentguard._shell as s;"
+                " json.dump(s.find_root(), sys.stdout)" % pkg_parent)
+        rc, out = _run([PY, "-c", code], self.env, cwd=self.tmp)
+        self.assertEqual(rc, 0, out)
+        return json.loads(out.splitlines()[-1])
+
+    def test_uninitialized_wheel_form_has_no_root(self):
+        self.assertIsNone(self._root(self._shell_form()),
+                          "夹具没造对：复制出来的壳仍能定位到引擎根")
+
+    def test_pointer_written_by_init_is_resolved(self):
+        rc, out = self.init()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self._root(self._shell_form()), self.dest,
+                         "init 写了指针，但 find_root() 没解析它（装完不能用）")
+
+    def test_uninitialized_wheel_tells_user_to_init(self):
+        """③ 轮子形态跑普通命令：必须指向 init，而不是让人去猜 AGENTGUARD_DIR。"""
+        pkg_parent = self._shell_form()
+        pkg = os.path.join(pkg_parent, "agentguard")
+        os.makedirs(os.path.join(pkg, "_engine", "harness"))
+        with open(os.path.join(pkg, "_engine", "harness", "run_gate.py"),
+                  "w", encoding="utf-8") as f:
+            f.write("# 只为让 packaged_engine() 认出来\n")
+        code = ("import sys; sys.path.insert(0, %r);"
+                " from agentguard.cli import main; sys.exit(main(['list']))" % pkg_parent)
+        rc, out = _run([PY, "-c", code], self.env, cwd=self.tmp)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("init", out, "未初始化时没告诉用户怎么继续：\n%s" % out)
+
+
+if __name__ == "__main__":
+    unittest.main()

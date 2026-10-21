@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""P2-2 下半段：对「从未运行」的 gate 逐个客户仓跑 acceptance 并留档。
+"""P2-2 下半段：对「从未运行」的 gate 逐个受管仓跑 acceptance 并留档。
 
 判据与留档口径（与评审 v9 一致）：四项证据（hook / probe / clean / syntax）+ 台账留档才算"上线"。
-本脚本只跑 acceptance_check 并落一份本机报告（`reports/` 已 gitignore），不修改任何客户仓。
+本脚本只跑 acceptance_check 并落一份本机报告（`reports/` 已 gitignore），不修改任何受管仓。
 """
 import datetime
 import io
@@ -24,8 +24,8 @@ for _s in (sys.stdout, sys.stderr):
 R = pathlib.Path(__file__).resolve().parent.parent
 
 # 仓→路径改从**生效配置**读（2026-09-18 批次 5，修批次 2 的连带遗漏）：
-# 原先是用正则从 `config/harness.yaml` 里刮 `repos:` 段。批次 2 把 repos 段整体下沉到
-# gitignored 的 `config/harness.local.yaml` 之后，共享文件里那一段只剩注释 —— 正则刮出 0 条，
+# 原先是用正则从 `config/harness.toml` 里刮 `repos:` 段。批次 2 把 repos 段整体下沉到
+# gitignored 的 `config/harness.local.toml` 之后，共享文件里那一段只剩注释 —— 正则刮出 0 条，
 # 紧接着的 `assert >= 10` 当场炸。而且"刮 YAML"这件事本身就与本仓「键与读者相邻」的纪律相悖：
 # `_config.all_gates()` 已经把 local 覆盖层合并好了，每个 gate 都带 `_repo_path`。
 sys.path.insert(0, str(R / "harness"))
@@ -54,10 +54,10 @@ with io.open(R / "reports/gate_log.jsonl", encoding="utf-8", errors="replace") a
 ran = {r.get("gate") for r in rows[-1000:]}
 never = sorted(g for g in gates if g not in ran)
 
-out = ["# 逐客户 acceptance 留档（2026-09-15 · 评审 v9 P2-2 下半段）\n",
+out = ["# 逐仓 acceptance 留档（2026-09-15 · 评审 v9 P2-2 下半段）\n",
        "\n> 对象：覆盖率报告里**从未运行**的 %d 个 gate\n" % len(never),
-       "> 方式：`sandbox/acceptance_check.py <gate>`（cwd=客户仓），捕获五项证据\n",
-       "> 说明：本文件由脚本生成；「仓不在本机」= 该客户仓未 checkout 到本机，需在有仓的机器上补跑\n"]
+       "> 方式：`sandbox/acceptance_check.py <gate>`（cwd=受管仓），捕获五项证据\n",
+       "> 说明：本文件由脚本生成；「仓不在本机」= 该受管仓未 checkout 到本机，需在有仓的机器上补跑\n"]
 summary = []
 for g in never:
     repo = gates[g].replace("\\", "/")

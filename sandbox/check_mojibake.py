@@ -24,7 +24,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 TOKENS = ["\ufffd", "锟斤拷", "锛", "銆", "鈥", "ï¿½", "â€", "ã€"]
-EXTS = {".md", ".txt", ".json", ".jsonl", ".html", ".yaml", ".yml"}
+EXTS = {".md", ".txt", ".json", ".jsonl", ".html", ".toml", ".yaml", ".yml"}
 
 
 def suspicious(ch):

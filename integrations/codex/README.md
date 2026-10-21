@@ -13,7 +13,7 @@ Codex 读 `AGENTS.md`（全局 `~/.codex/AGENTS.md` 会注入，仓库根 AGENTS
 
 ```md
 ## 门禁
-改 AgentGuard 任意客户×三端仓库代码后，必须在仓库根跑：
+改 AgentGuard 任意受管仓代码后，必须在仓库根跑：
 python <HARNESS>/harness/agents/auto-gate.py
 退出码 0=通过，1=拦截（修复后重跑，不要 --no-verify 绕过），3=非受管仓库跳过。
 ```

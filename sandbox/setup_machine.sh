@@ -2,7 +2,7 @@
 # agentguard/sandbox/setup_machine.sh —— 新机器一键接入（2026-09-06）
 # ============================================================
 # 做三件事：
-#   1. 检测 config/harness.local.yaml 缺失 → 从 example 复制生成，提示编辑后重跑
+#   1. 检测 config/harness.local.toml 缺失 → 从 example 复制生成，提示编辑后重跑
 #   2. 枚举所有「启用 且 仓库路径存在」的 gate，逐仓安装 pre-commit hook（复用 install_hooks.sh，带自检）
 #   3. 汇总报告：成功/跳过明细 + 手动补装命令
 # 用法（任意目录）：
@@ -53,14 +53,19 @@ fi
 DRY_RUN=0
 [ "$1" = "--dry-run" ] && DRY_RUN=1
 
-LOCAL="$HARNESS/config/harness.local.yaml"
+LOCAL="$HARNESS/config/harness.local.toml"
+LEGACY_LOCAL="$HARNESS/config/harness.local.yaml"
 
 # ---------- 第 1 步：local 覆盖层 ----------
+# 旧版 YAML 已存在时沿用它（不强行改名，升级当天不打断现有机器）；否则生成 TOML。
+if [ ! -f "$LOCAL" ] && [ -f "$LEGACY_LOCAL" ]; then
+    LOCAL="$LEGACY_LOCAL"
+fi
 if [ ! -f "$LOCAL" ]; then
-    cp "$HARNESS/config/harness.local.example.yaml" "$LOCAL"
-    echo "✅ 已生成 config/harness.local.yaml（从模板复制）"
+    cp "$HARNESS/config/harness.local.example.toml" "$LOCAL"
+    echo "✅ 已生成 config/harness.local.toml（从模板复制）"
     echo ""
-    echo "⚠ 下一步（必做）：用编辑器打开该文件，把 repos 段改成你机器的实际仓库路径。"
+    echo "⚠ 下一步（必做）：用编辑器打开该文件，把 [repos] 段改成你机器的实际仓库路径。"
     echo "   · **只写你机器上确实存在的那几个仓**；没 clone 的留着空值（= 本机不受管，不报错、不影响别人）"
     echo "   · **别动键名**：漏写 / 拼错 = 真配置错，会阻断（模板里有一节专门讲这两种的区别）"
     echo "   然后重新运行本脚本完成 hook 安装："
@@ -69,33 +74,57 @@ if [ ! -f "$LOCAL" ]; then
     exit 0
 fi
 
+case "$LOCAL" in
+    *.toml) LOCAL_FMT="toml" ;;
+    *)      LOCAL_FMT="yaml" ;;
+esac
+LOCAL_REL="${LOCAL#$HARNESS/}"
+
 echo "=== agentguard 新机器接入（harness=$HARNESS_WIN）==="
 echo ""
 
-# ---------- 第 1.5 步：确保 harness.local.yaml 里有 harness: 键 ----------
+# ---------- 第 1.5 步：确保 local 覆盖层里有 harness 键 ----------
 # 统一解析链第 ② 环：让各 AI 客户端（GLOBAL_AGENTS.md、仓级 AGENTS.md 渲染）都能从这取路径。
 # 幂等：键已存在且值对就不改；值不对或没键就补/修。
-if ! grep -q "^harness:" "$LOCAL" 2>/dev/null; then
-    # 键不存在：在 repos: 之前插入
-    if grep -q "^repos:" "$LOCAL" 2>/dev/null; then
-        # 用 sed 在 repos: 前插入（跨平台：先备份再改）
+if [ "$LOCAL_FMT" = "toml" ]; then
+    KEY_RE='^harness[[:space:]]*='
+    if ! grep -q "$KEY_RE" "$LOCAL" 2>/dev/null; then
         cp "$LOCAL" "$LOCAL.bak-$(date +%Y%m%d)"
-        awk '/^repos:/{print "harness: '"$HARNESS_WIN"'"}1' "$LOCAL.bak-$(date +%Y%m%d)" > "$LOCAL"
+        if grep -q '^\[repos\]' "$LOCAL.bak-$(date +%Y%m%d)" 2>/dev/null; then
+            awk '/^\[repos\]/{print "harness = \"'"$HARNESS_WIN"'\""}1' \
+                "$LOCAL.bak-$(date +%Y%m%d)" > "$LOCAL"
+        else
+            { printf 'harness = "%s"\n\n' "$HARNESS_WIN"; cat "$LOCAL.bak-$(date +%Y%m%d)"; } > "$LOCAL"
+        fi
         rm "$LOCAL.bak-$(date +%Y%m%d)"
-        echo "✅ 已在 harness.local.yaml 添加 harness: 键"
+        echo "✅ 已在 $LOCAL_REL 添加 harness 键"
     else
-        # 连 repos: 都没有（异常）：追加到文件末尾
-        echo "" >> "$LOCAL"
-        echo "harness: $HARNESS_WIN" >> "$LOCAL"
-        echo " harness.local.yaml 格式异常（缺 repos: 段），已追加 harness: 键到末尾"
+        CURRENT=$(grep "$KEY_RE" "$LOCAL" | head -1 | sed 's/^harness[[:space:]]*=[[:space:]]*//' | sed 's/^"//; s/"$//')
+        if [ "$CURRENT" != "$HARNESS_WIN" ]; then
+            cp "$LOCAL" "$LOCAL.bak-$(date +%Y%m%d)"
+            sed -i "s|^harness[[:space:]]*=.*|harness = \"$HARNESS_WIN\"|" "$LOCAL"
+            echo "✅ 已更新 $LOCAL_REL 的 harness 键（$CURRENT → $HARNESS_WIN）"
+        fi
     fi
 else
-    # 键已存在：检查值对不对
-    CURRENT=$(grep "^harness:" "$LOCAL" | head -1 | sed 's/^harness:[[:space:]]*//')
-    if [ "$CURRENT" != "$HARNESS_WIN" ]; then
-        cp "$LOCAL" "$LOCAL.bak-$(date +%Y%m%d)"
-        sed -i "s|^harness:.*|harness: $HARNESS_WIN|" "$LOCAL"
-        echo "✅ 已更新 harness.local.yaml 的 harness: 键（$CURRENT → $HARNESS_WIN）"
+    if ! grep -q "^harness:" "$LOCAL" 2>/dev/null; then
+        if grep -q "^repos:" "$LOCAL" 2>/dev/null; then
+            cp "$LOCAL" "$LOCAL.bak-$(date +%Y%m%d)"
+            awk '/^repos:/{print "harness: '"$HARNESS_WIN"'"}1' "$LOCAL.bak-$(date +%Y%m%d)" > "$LOCAL"
+            rm "$LOCAL.bak-$(date +%Y%m%d)"
+            echo "✅ 已在 $LOCAL_REL 添加 harness: 键（旧版 YAML）"
+        else
+            echo "" >> "$LOCAL"
+            echo "harness: $HARNESS_WIN" >> "$LOCAL"
+            echo " $LOCAL_REL 格式异常（缺 repos: 段），已追加 harness: 键到末尾"
+        fi
+    else
+        CURRENT=$(grep "^harness:" "$LOCAL" | head -1 | sed 's/^harness:[[:space:]]*//')
+        if [ "$CURRENT" != "$HARNESS_WIN" ]; then
+            cp "$LOCAL" "$LOCAL.bak-$(date +%Y%m%d)"
+            sed -i "s|^harness:.*|harness: $HARNESS_WIN|" "$LOCAL"
+            echo "✅ 已更新 $LOCAL_REL 的 harness: 键（$CURRENT → $HARNESS_WIN）"
+        fi
     fi
 fi
 
@@ -105,14 +134,14 @@ fi
 # （指针写法就白注入了）。此前只有 install_shim.py / bootstrap_agent_env.sh 写它，
 # 而标准三步接入只跑本脚本 —— 缺口就在这。
 # 幂等：内容已是当前工程根就不重写。
-EAGLE_DIR="$HOME/.agentguard"
-if [ ! -f "$EAGLE_DIR/harness.path" ] || [ "$(cat "$EAGLE_DIR/harness.path" 2>/dev/null)" != "$HARNESS_WIN" ]; then
+AGENTGUARD_HOME="$HOME/.agentguard"
+if [ ! -f "$AGENTGUARD_HOME/harness.path" ] || [ "$(cat "$AGENTGUARD_HOME/harness.path" 2>/dev/null)" != "$HARNESS_WIN" ]; then
     if [ "$DRY_RUN" = "1" ]; then
         # dry-run 只预览：不建目录、不落文件，否则"预览"就有了副作用
         echo "⏭️  [dry-run] 将写 ~/.agentguard/harness.path → $HARNESS_WIN"
     else
-        mkdir -p "$EAGLE_DIR"
-        printf '%s\n' "$HARNESS_WIN" > "$EAGLE_DIR/harness.path"
+        mkdir -p "$AGENTGUARD_HOME"
+        printf '%s\n' "$HARNESS_WIN" > "$AGENTGUARD_HOME/harness.path"
         echo "✅ 已写 ~/.agentguard/harness.path → $HARNESS_WIN"
     fi
 else
@@ -132,7 +161,7 @@ for name, g in sorted(all_gates().items()):
     rp = g.get("_repo_path") or ""
     print(f"{name}\t{rp}\t{'OK' if os.path.isdir(rp) else 'MISSING'}")
 PYEOF
-) || { echo "✗ 读取 config 失败（检查 harness.local.yaml 语法）"; exit 1; }
+) || { echo "✗ 读取 config 失败（检查 $LOCAL_REL 语法：python -c 'import tomllib,sys;tomllib.load(open(sys.argv[1],\"rb\"))' $LOCAL 可自验）"; exit 1; }
 
 echo "--- 逐仓安装 pre-commit hook ---"
 # L2（评审 v7）：本循环在**管道子壳**里 —— 禁止在其中用 `+=1` 累加计数（子壳里的变量改不到外面，
@@ -142,7 +171,7 @@ echo "$GATES" | while IFS="$(printf '\t')" read -r GATE REPO STATUS; do
     # 评审 C-1：Python 输出在 Windows 上以 \r\n 结尾，命令替换后比较恒假 → 先裁 \r。
     STATUS=${STATUS%$'\r'}
     if [ "$STATUS" = "MISSING" ]; then
-        echo "  ⊘ $GATE: 仓库路径不存在（$REPO）——先在 harness.local.yaml 改成你机器的路径"
+        echo "  ⊘ $GATE: 仓库路径不存在（$REPO）——先在 $LOCAL_REL 改成你机器的路径"
     else
         if [ "$DRY_RUN" = "1" ]; then
             echo "  [dry-run] $GATE -> $REPO"

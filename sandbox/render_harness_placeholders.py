@@ -45,7 +45,18 @@ except ImportError:
 
 
 def read_repos(harness_root):
-    """从 config/harness.local.yaml 读 repos 段。"""
+    """从 config/harness.local.toml 读 [repos]；旧版 YAML 只作兼容。"""
+    toml = os.path.join(harness_root, "config", "harness.local.toml")
+    if os.path.isfile(toml):
+        import tomllib
+        try:
+            with open(toml, "rb") as f:
+                data = tomllib.load(f)
+        except Exception:
+            return {}
+        repos = data.get("repos") or {}
+        return {k: v for k, v in repos.items() if isinstance(v, str) and v.strip()}
+
     cfg = os.path.join(harness_root, "config", "harness.local.yaml")
     if not os.path.isfile(cfg):
         return {}
@@ -163,12 +174,12 @@ def main():
     repos = read_repos(harness)
 
     if not repos:
-        print("  config/harness.local.yaml 里没有 repos 段", file=sys.stderr)
+        print("  config/harness.local.toml 里没有 repos 段", file=sys.stderr)
         return 2
 
     print("=== 渲染仓级 AGENTS.md 的 `<HARNESS>` 占位符 ===")
     print("harness 路径：", harness_path)
-    print("客户仓数量：", len(repos))
+    print("受管仓数量：", len(repos))
     print()
 
     changed = []

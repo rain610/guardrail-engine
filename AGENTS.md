@@ -12,9 +12,9 @@ AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交�
 
 ## 仓库结构速览
 
-- `config/harness.yaml` —— gate 清单与策略：enabled / strict|loose / run_on / 行尾。
-  `repos:` 段**只声明键名、值一律留空**（受管仓库名单是团队策略，与机器无关；键名不许动）。
-- `config/harness.local.yaml` —— **本机事实**：各仓库在自己磁盘上的路径（git 忽略）。
+- `config/harness.toml` —— gate 清单与策略：enabled / strict|loose / run_on / 行尾。
+  `[repos]` 段**只声明键名、值一律留空**（受管仓库名单是团队策略，与机器无关；键名不许动）。
+- `config/harness.local.toml` —— **本机事实**：各仓库在自己磁盘上的路径（git 忽略）。
   键值留空 = 这台机器没配该仓，逐条 `⊘` 提示但不阻断；键名不在共享配置里才是真配置错。
   改策略不碰脚本。
 - `checks/*.py` —— 各端门禁脚本与规则集。
@@ -77,7 +77,7 @@ if (DEBUG) console.log("debug info")
 
 ## 保护循环（防 AI 改门禁敷衍了事）
 
-- 改 `checks/*.py` 或 `config/harness.yaml` 属于 harness 维护，需 commit 消息带 `[harness]`。
+- 改 `checks/*.py` 或 `config/harness.toml` 属于 harness 维护，需 commit 消息带 `[harness]`。
 - 规则对齐真实架构，别照搬教条。
 
 ## 快速命令
@@ -145,7 +145,7 @@ python checks/example_code_check.py --repo <仓库路径> --all
 # ① 环境变量
 echo "$AGENTGUARD_DIR"
 
-# ② 本机配置文件（config/harness.local.yaml → harness: 键）
+# ② 本机配置文件（config/harness.local.toml → harness 键）
 # ③ 指针文件（~/.agentguard/harness.path）
 # ④ 从 cwd 向上找（兜底）
 

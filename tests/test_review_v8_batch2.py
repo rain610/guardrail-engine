@@ -214,7 +214,7 @@ class TestB2PolicyOverrides(unittest.TestCase):
         return cfg, buf.getvalue()
 
     def _base_value(self, gate, key):
-        """共享层 config/harness.yaml 里某 gate 的某策略字段值（**不含**任何本机覆盖层）。
+        """共享层 config/harness.toml 里某 gate 的某策略字段值（**不含**任何本机覆盖层）。
 
         做法：把 HARNESS_CONFIG 指到一个**空的**本地层 —— `load()` 读到空覆盖层时
         `if override:` 为假，直接返回 base（见 _config.load）。刻意**不**用"把这个环境变量
@@ -287,7 +287,7 @@ class TestB2PolicyOverrides(unittest.TestCase):
         """路径映射是本地覆盖层的正当用途（必须允许），但**必须出声** —— 否则把某个 gate
         指到一个空目录就等于静默关掉它。
 
-        2026-09-18（跨平台批次 2）：共享 config/harness.yaml 的 repos 段已清空，于是
+        2026-09-18（跨平台批次 2）：共享 config/harness.toml 的 repos 段已清空，于是
         「覆盖」退化成「**全部来自覆盖层**」。逐条 diff 在这种形态下退化为打一整屏
         「(base 无) → …」，引擎改报一条汇总（`[config-policy] 本机 repos 全部来自本地覆盖层
         （N 条）… 文件：<path>`）。两种形态都留痕，所以这里接受任一 —— 但**都不许没有**。
@@ -315,20 +315,20 @@ class TestB2PolicyOverrides(unittest.TestCase):
                       "新增 gate 属于本守卫范围之外（工具/夹具需要）")
 
     def test_shared_config_carries_no_machine_paths(self):
-        """共享 config/harness.yaml **不得**含本机路径（2026-09-18，跨平台批次 2）。
+        """共享 config/harness.toml **不得**含本机路径（2026-09-18，跨平台批次 2）。
 
         为什么值得单独立锁：这类硬编码**一个症状都没有**。维护者本机那 33 条
         `D:/MyProject/aiauto/agentguard_*` 原先写在共享文件里，同事换盘符/用户名、或在 WSL 上
         clone 之后，配置**看起来是配好的**，实际条条指空 —— 一台新机器开箱就是「零受管」，
         而门禁一声不吭（本批的起因正是这个）。已改成：共享文件只放团队策略（gates 段），
-        路径全部下沉到 gitignored 的 `config/harness.local.yaml`（各人一份）。
+        路径全部下沉到 gitignored 的 `config/harness.local.toml`（各人一份）。
 
         判据刻意**只看生效行**（拿掉 `#` 注释后的行）：注释里举例 `D:/...`、`/mnt/d/...`
         是正当的教学材料（本文件顶部那段"为什么空着"就在讲它），锁它们等于逼人删掉解释；
         真正会生效的路径才是隐患。顺带两条同源的断言，防的是同一个病的另外两个形态：
-          · `config/harness.local.yaml` 必须在 `.gitignore` 里 —— 它是**机器专属**文件，
+          · `config/harness.local.toml` 必须在 `.gitignore` 里 —— 它是**机器专属**文件，
             一旦入库，下沉下去的路径就原样回到了共享面（换个地方复发）；
-          · 模板 `harness.local.example.yaml` 的生效行同样不许有机器路径 ——
+          · 模板 `harness.local.example.toml` 的生效行同样不许有机器路径 ——
             模板是"给人抄的"，抄完却不改就成了新的硬编码源头。
         """
         import re
@@ -336,7 +336,7 @@ class TestB2PolicyOverrides(unittest.TestCase):
         # 这种黑名单 —— 换个名字就漏，而盘符与挂载点是形态本身。
         machine = re.compile(r"(?:^|[^\w])(?:[A-Za-z]:[\\/]|/mnt/[a-z]/)")
         bad = []
-        for rel in ("config/harness.yaml", "config/harness.local.example.yaml"):
+        for rel in ("config/harness.toml", "config/harness.local.example.toml"):
             for i, line in enumerate(_read(rel).split("\n"), 1):
                 if line.lstrip().startswith("#"):
                     continue                       # 注释：教学举例，正当
@@ -346,11 +346,13 @@ class TestB2PolicyOverrides(unittest.TestCase):
         self.assertEqual([], bad,
                          "共享面里出现了机器路径 —— 那是**每机事实**，写到共享文件里对别人就是错的，"
                          "而且没有任何症状（配置看起来配好了，实际全指空）：\n  %s\n"
-                         "路径请放进 gitignored 的 config/harness.local.yaml。" % "\n  ".join(bad))
+                         "路径请放进 gitignored 的 config/harness.local.toml。" % "\n  ".join(bad))
         ignored = _read(".gitignore")
-        self.assertIn("config/harness.local.yaml", ignored,
-                      "config/harness.local.yaml 必须在 .gitignore 里 —— 不然下沉下去的机器路径"
+        self.assertIn("config/harness.local.toml", ignored,
+                      "config/harness.local.toml 必须在 .gitignore 里 —— 不然下沉下去的机器路径"
                       "会随提交进仓库，等于换个地方复发同一个病。")
+        self.assertIn("config/harness.local.yaml", ignored,
+                      "旧版 config/harness.local.yaml 同样要继续忽略（还没迁移的机器还在用）。")
 
     def test_escape_hatch_reports_what_it_let_through(self):
         """放行开关必须说清**放行了哪几条**，且两个信号互斥、不许说反（2026-09-16）。

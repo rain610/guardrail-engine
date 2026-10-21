@@ -14,7 +14,7 @@ r"""外部评审 v13（2026-09-16）第三批落地回归锁 —— 静默通过
   中 16   台账 entry 字段：两个入口 setdefault（外层值永远胜出）、两个入口压根不设。
   中 20   `_config` 对 git 文件名 `.strip()` → 首尾带空格的合法文件名被改成不存在的路径。
 
-开源裁剪（2026-10-20）：pc / h5 / backend 三个业务门禁脚本随客户仓一起删除，高 7 中
+开源裁剪（2026-10-20）：pc / h5 / backend 三个业务门禁脚本随业务仓一起删除，高 7 中
 直接驱动它们的 7 个用例随之失效（对应的 fail-closed 实现也已不存在）。仍然保留的是与
 具体端点无关的**收集器语义**（暂存后删除、真删除两条边界），以及其余四项缺陷 ——
 它们的反向对照统一改用 `checks/example_code_check.py`（开源版唯一可执行的规则脚本）。
@@ -266,7 +266,7 @@ class TestChangedFilesCollection(_Fixture):
     """高 7 在开源裁剪后的存活部分：与端点无关的「什么算存在」边界。
 
     原先还锁 pc / h5 / backend 三个脚本的 fail-closed（不存在或非目标的入参 rc=2、
-    不得退化成全量扫描、暂存后删除的文件仍要检查）；三个脚本随客户仓删除，
+    不得退化成全量扫描、暂存后删除的文件仍要检查）；三个脚本随业务仓删除，
     对应的实现与用例一起移除。剩下这条锁的是收集器本身，任何端点都要遵守。
     """
 
@@ -292,7 +292,7 @@ class TestZhong14ScriptMustStayInsideRoot(_Fixture):
     """中 14：`os.path.join(ROOT, script)` 遇到绝对路径会**丢弃 ROOT** —— 根外脚本原样执行。
 
     触达面是本机能写 config/harness.local.yaml（该文件在 .gitignore 内）或能设
-    HARNESS_CONFIG 的人/agent。客户仓贡献者够不着，但这是执行边界，该收死。
+    HARNESS_CONFIG 的人/agent。业务仓贡献者够不着，但这是执行边界，该收死。
     """
 
     def test_absolute_script_outside_root_is_refused(self):

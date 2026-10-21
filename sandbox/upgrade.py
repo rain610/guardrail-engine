@@ -18,17 +18,19 @@
   · 与目录布局无关：无论同事把包解压到"每版一个新目录"还是"固定目录"，本脚本都走
     `marketplace add <本包>/marketplace`（实测：同名市场会被**静默改指**到新路径，无需先 remove）。
 
-升级六步（前一步不过，后面不做）
+升级七步（前一步不过，后面不做）
 ================================
-  [1/6] 路径适配（**必须第一步**，且不可跳过）
+  [1/7] 路径适配（**必须第一步**，且不可跳过）
         新包里的 `.mcp.json` 是占位符（`__PY__` / `__MCP__` / `__HARNESS__`），
         由包内 `fix_paths.py` 现场填本机路径。**每一步通道刷新都建立在它之上**：
         漏跑 = 装出来的副本指向不存在的解释器，MCP 起不来、编辑期门禁整体无声失效。
-  [2/6] Claude Code 插件：`marketplace add <本包>/marketplace` → `plugin update`
-  [3/6] OpenClaw 扩展：就地把新 bundle 覆盖进 `extensions/agentguard`（重启桌面端生效）
-  [4/6] 人用 CLI（pip 包）：**只在装过时** `pip install -U <新轮子>`，装完对账产物是否真的换了
-  [5/6] 技能副本：转发 `<HARNESS>/agentguard/cli.py skill install --dir <宿主技能目录>`
-  [6/6] 编辑期 shim：**只在装过时**刷新（`<HARNESS>/sandbox/install_shim.py`）
+  [2/7] Claude Code 插件：`marketplace add <本包>/marketplace` → `plugin update`
+  [3/7] OpenClaw 扩展：就地把新 bundle 覆盖进 `extensions/agentguard`（重启桌面端生效）
+  [4/7] 人用 CLI（pip 包）：**只在装过时** `pip install -U <新轮子>`，装完对账产物是否真的换了
+  [5/7] 引擎副本：**只刷新 init 复制出来的那份**（默认 `~/.agentguard/engine`），
+        源是本包轮子自带的引擎；仓库（引擎源）一律不碰
+  [6/7] 技能副本：转发 `<HARNESS>/agentguard/cli.py skill install --dir <宿主技能目录>`
+  [7/7] 编辑期 shim：**只在装过时**刷新（`<HARNESS>/sandbox/install_shim.py`）
 
 用法（默认只预演，不改任何东西；确认无误后加 --yes 执行）
 ==========================================================
@@ -48,6 +50,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 
@@ -67,7 +70,11 @@ SKILL_PRESETS = {
     "opencode": os.path.join(os.path.expanduser("~"), ".config", "opencode", "skills"),
     "codebuddy": os.path.join(os.path.expanduser("~"), ".codebuddy", "skills"),
 }
-SKIP_KEYS = ("claude", "openclaw", "pip", "skills", "shim")
+SKIP_KEYS = ("claude", "openclaw", "pip", "engine", "skills", "shim")
+# 与 agentguard/cli.py 的 INIT_MARKER / INIT_MARKER_KIND 逐字相同（壳层常量镜像，别单边改）。
+# 本脚本随包分发、可能在没有装 agentguard 的机器上跑，不能 import 那个包。
+INIT_MARKER = ".agentguard-init.json"
+INIT_MARKER_KIND = "agentguard-init"
 # 装机时由 fix_paths.py 现场填充的三个字段（与安装说明、verify_release.py 同一份定义）
 FILLED_FIELDS = (("command", "__PY__"), ("args[0]", "__MCP__"),
                  ("env.AGENTGUARD_DIR", "__HARNESS__"))
@@ -152,7 +159,7 @@ def read_matrix(a):
     return run_cmd([a.python, a.harness_cli, "installed"])
 
 
-# ---- [2/6] Claude Code 插件 ---------------------------------------------------------
+# ---- [2/7] Claude Code 插件 ---------------------------------------------------------
 
 def _claude_home():
     return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
@@ -257,7 +264,7 @@ def check_installed_mcp(plugin_dir, harness, python):
 
 
 def step_claude(a):
-    """[2/6] Claude 插件：marketplace add（同名会静默改指到新路径）→ plugin update。"""
+    """[2/7] Claude 插件：marketplace add（同名会静默改指到新路径）→ plugin update。"""
     fails = []
     mkt = os.path.join(a.pack, "marketplace")
     bundle = os.path.join(mkt, "plugins", PLUGIN_NAME)
@@ -318,10 +325,10 @@ def step_claude(a):
     return fails
 
 
-# ---- [3/6] OpenClaw 扩展 ------------------------------------------------------------
+# ---- [3/7] OpenClaw 扩展 ------------------------------------------------------------
 
 def step_openclaw(a):
-    """[3/6] 就地覆盖 `extensions/agentguard`（**不删**；旧文件只列出来给人判断）。"""
+    """[3/7] 就地覆盖 `extensions/agentguard`（**不删**；旧文件只列出来给人判断）。"""
     fails = []
     state = os.path.abspath(a.openclaw_state or os.environ.get("OPENCLAW_STATE_DIR")
                             or os.path.join(os.path.expanduser("~"), ".openclaw-autoclaw"))
@@ -382,7 +389,7 @@ def step_openclaw(a):
     return fails
 
 
-# ---- [4/6] 人用 CLI（pip 包）---------------------------------------------------------
+# ---- [4/7] 人用 CLI（pip 包）---------------------------------------------------------
 # 为什么这一格的判据是"装完对账产物"而不是"看 pip 的退出码"（2026-09-17 实测，隔离 venv）：
 #   `pip install -U <轮子>` 在**同版本号**下是 rc=0 + **一个字节都不换** —— pip 的原话是
 #   「is already installed with the same version as the provided wheel. Use --force-reinstall
@@ -460,6 +467,20 @@ def pip_show_fields(text):
     return ver, loc
 
 
+def pack_wheel(a):
+    """包内唯一的轮子 → (路径, 错误说明)。pip 与引擎副本两格共用同一个来源。
+
+    引擎副本的刷新源**不能**是 site-packages 里已装的那份：`--skip pip`（或本机没装过 pip）
+    时它还是旧版，会把旧引擎原样再铺一遍。轮子是本包的出货件，与 `pip install` 搬运的是
+    同一批字节。
+    """
+    wheels = sorted(glob.glob(os.path.join(a.pack, "*.whl")))
+    if len(wheels) != 1:
+        return None, "包内轮子数量异常（%d 个）：%s" % (
+            len(wheels), [os.path.basename(w) for w in wheels])
+    return wheels[0], ""
+
+
 def pip_install(a, wheel, flag):
     """跑一次 pip 装包 → (rc, 合并输出, 结尾两行摘要)。`-U` 与 `--force-reinstall` 共用。
 
@@ -473,7 +494,7 @@ def pip_install(a, wheel, flag):
 
 
 def step_pip(a):
-    """[4/6] pip 包：**只在装过时** `pip install -U <新轮子>`，装完对账产物是否真的换了。
+    """[4/7] pip 包：**只在装过时** `pip install -U <新轮子>`，装完对账产物是否真的换了。
 
     退出语义与插件通道同源：**只有"产物与本包逐字节一致"才算刷新成功**。
     rc=0 不是判据（同版本号时 pip 就是 rc=0 且什么都不做）。
@@ -488,12 +509,11 @@ def step_pip(a):
         print("  · pip 未见 agentguard（未装过 → 升级不动它；只装 CLI 见《安装说明》一）")
         return fails
     ver, loc = pip_show_fields(out)
-    wheels = sorted(glob.glob(os.path.join(a.pack, "*.whl")))
-    if len(wheels) != 1:
-        print("  · ✗ 包内轮子数量异常（%d 个）：%s" % (len(wheels), [os.path.basename(w) for w in wheels]))
+    wheel, err = pack_wheel(a)
+    if not wheel:
+        print("  · ✗ %s" % err)
         fails.append("包内轮子数量异常（期望 1 个）")
         return fails
-    wheel = wheels[0]
     want = wheel_pkg_files(wheel)
     if want is None:
         print("  · ✗ 读不出轮子内容（包坏了？）：%s" % norm(wheel))
@@ -576,7 +596,266 @@ def step_pip(a):
     return fails
 
 
-# ---- [5/6] 技能副本 ----------------------------------------------------------------
+# ---- [5/7] 引擎副本（agentguard init 复制出来的引擎根）-------------------------------
+# 为什么这一格必须存在：`agentguard init` 把引擎复制到可写目录（默认 ~/.agentguard/engine），
+# MCP / 钩子 / shim 全指向它。pip 那一路刷新的是 site-packages 里的壳，**不会**动这份副本；
+# 漏刷的表现是「CLI 是新的、门禁跑的还是旧规则」—— 没有任何一步会报错。
+#
+# 为什么不直接对 --harness 跑 init：--harness 也可能是用户自己的仓库（引擎源）。对仓库跑
+# `init --force` 会把它改名归档再复制一份 —— 那是把源搬走，不是升级。所以只认 init 写下的
+# 所有权标记（`.agentguard-init.json`）；旧版 init 没有标记，只对默认路径且**没有 .git**
+# 的目录做兼容识别。宁可不刷，也不猜。
+
+def engine_version(root):
+    try:
+        with io.open(os.path.join(root, "VERSION"), encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def init_marker(root):
+    """读 init 的所有权标记 → dict；不是 init 副本返回 None。"""
+    try:
+        with io.open(os.path.join(root, INIT_MARKER), encoding="utf-8", errors="replace") as f:
+            data = json.loads(f.read())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get("kind") == INIT_MARKER_KIND else None
+
+
+def looks_like_engine(root):
+    return os.path.isfile(os.path.join(root, "harness", "run_gate.py"))
+
+
+def engine_pointer():
+    """`~/.agentguard/harness.path` 的内容（也可能指向仓库；所有权由调用方再判）。"""
+    p = os.path.join(os.path.expanduser("~"), ".agentguard", "harness.path")
+    try:
+        with io.open(p, encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def engine_copy_targets(a):
+    """要刷新的 init 副本 → [(路径, 来源说明, 识别依据)]；仓库与无法确认的目录一律不碰。
+
+    候选只有三个**有出处**的位置：--harness、指针文件、默认路径。判据是 init 写下的标记；
+    旧版 init 没有标记，只对默认路径且没有 `.git` 的目录做兼容识别 —— 这三条都是"宁可
+    少刷一份"的方向：`init --force` 会把目标目录改名归档，对用户自己的仓库就是搬走源。
+    """
+    default = os.path.abspath(os.path.join(os.path.expanduser("~"), ".agentguard", "engine"))
+    cands = []
+
+    def add(p, label):
+        if not p:
+            return
+        p = os.path.abspath(os.path.expanduser(p))
+        if all(norm(p) != norm(q) for q, _ in cands):
+            cands.append((p, label))
+
+    add(a.harness_norm, "--harness 指向的引擎")
+    add(engine_pointer(), "指针指向的引擎")
+    add(default, "默认引擎目录")
+
+    out = []
+    for path, label in cands:
+        if not os.path.isdir(path) or not looks_like_engine(path):
+            continue
+        if init_marker(path):
+            out.append((path, label, ""))
+        elif norm(path) == norm(default) and not os.path.exists(os.path.join(path, ".git")):
+            out.append((path, label,
+                        "旧版 init 没有标记；按「默认路径 + 没有 .git」识别"))
+    return out
+
+
+def _inside(path, root):
+    p = os.path.normcase(os.path.abspath(path)).rstrip(os.sep)
+    r = os.path.normcase(os.path.abspath(root)).rstrip(os.sep)
+    return p == r or p.startswith(r + os.sep)
+
+
+def extract_wheel_cli(wheel, root):
+    """把轮子里的 `agentguard/` 解到 root → (init 用的 cli.py, 错误说明)。
+
+    为什么解压而不是 `python -m agentguard.cli`：后者用的是**已装**的那份；`--skip pip`
+    或本机没装过 pip 时它是旧版，会把旧引擎再铺一遍。解压的是本包这只轮子 —— 与
+    `pip install` 搬运的是同一批字节，来源不随本机的安装状态而变。
+    """
+    try:
+        with zipfile.ZipFile(wheel) as z:
+            for n in z.namelist():
+                if not n.startswith("agentguard/") or n.endswith("/"):
+                    continue
+                target = os.path.join(root, n.replace("/", os.sep))
+                if not _inside(target, root):
+                    return None, "轮子条目越界：%s" % n
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with z.open(n) as src, open(target, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    except Exception as ex:
+        return None, "解压轮子失败：%r" % (ex,)
+    cli = os.path.join(root, "agentguard", "cli.py")
+    if not os.path.isfile(cli):
+        return None, "轮子里没有 agentguard/cli.py"
+    if not os.path.isfile(os.path.join(root, "agentguard", "_engine", "harness", "run_gate.py")):
+        return None, "轮子未自带引擎（旧版包？）—— 无法刷新引擎副本"
+    return cli, ""
+
+
+def wheel_has_engine(wheel):
+    """轮子是否自带 `agentguard/_engine/`（旧包没有；那种包刷不了引擎副本）。"""
+    try:
+        with zipfile.ZipFile(wheel) as z:
+            return "agentguard/_engine/harness/run_gate.py" in z.namelist()
+    except Exception:
+        return False
+
+
+def wheel_engine_files(wheel):
+    """轮子 → 引擎副本应有的 {相对路径: sha1}；读不出来返回 None（不是空字典）。
+
+    两段来源正是 init 的复制清单：`agentguard/_engine/**`（铺到引擎根）与
+    `agentguard/*.py`（壳文件，铺到 `<root>/agentguard/`）。
+    """
+    out = {}
+    try:
+        with zipfile.ZipFile(wheel) as z:
+            for n in z.namelist():
+                if n.endswith("/"):
+                    continue
+                if n.startswith("agentguard/_engine/"):
+                    rel = n[len("agentguard/_engine/"):]
+                elif n.startswith("agentguard/") and n.count("/") == 1 and n.endswith(".py"):
+                    rel = n
+                else:
+                    continue
+                out[rel] = hashlib.sha1(z.read(n)).hexdigest()
+    except Exception:
+        return None
+    return out
+
+
+def engine_copy_diff(want, root):
+    """引擎副本与本包轮子的逐文件对账 → (缺失/读不到, 内容不同, 对上的文件数)。
+
+    判据是**产物字节**，不是 init 的退出码 —— 与 pip / 插件两格同一条纪律。
+    """
+    missing, differ, ok = [], [], 0
+    for rel, h in sorted(want.items()):
+        sha = hashlib.sha1()
+        try:
+            with open(os.path.join(root, rel), "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    sha.update(chunk)
+        except OSError:
+            missing.append(rel)
+            continue
+        if sha.hexdigest() == h:
+            ok += 1
+        else:
+            differ.append(rel)
+    return missing, differ, ok
+
+
+def step_engine(a):
+    """[5/7] 引擎副本：只刷新 init 复制出来的那份，源是本包轮子自带的引擎。"""
+    fails = []
+    targets = engine_copy_targets(a)
+    if not targets:
+        h = a.harness_norm
+        if h and looks_like_engine(h) and os.path.exists(os.path.join(h, ".git")):
+            print("  · %s 是引擎源（仓库），不是 init 副本 —— 不刷新（仓库更新即生效）" % norm(h))
+        elif h and looks_like_engine(h):
+            print("  · %s 没有 init 所有权标记，无法确认是可归档的副本 → 不自动刷新" % norm(h))
+            print("      确认它是 init 副本时，装好新 wheel 后手动跑一次：")
+            print("      agentguard init --force --dir \"%s\"" % norm(h))
+        else:
+            print("  · 未发现 agentguard init 复制出来的引擎副本（升级不替你新增通道）")
+        return fails
+
+    wheel, err = pack_wheel(a)
+    if not wheel:
+        print("  · ✗ %s" % err)
+        fails.append("引擎副本刷新失败：包内轮子数量异常（期望 1 个）")
+        record(a, "engine", "fail", err)
+        return fails
+    want = wheel_engine_files(wheel)
+    if want is None:
+        print("  · ✗ 读不出轮子内容（包坏了？）：%s" % norm(wheel))
+        fails.append("引擎副本刷新失败：轮子读不出来")
+        record(a, "engine", "fail", "wheel unreadable")
+        return fails
+    if not wheel_has_engine(wheel):
+        print("  · ✗ 本包轮子未自带引擎（旧版包？）—— 无法刷新引擎副本")
+        fails.append("引擎副本刷新失败：轮子未自带引擎")
+        record(a, "engine", "fail", "wheel has no _engine")
+        return fails
+
+    if not a.yes:
+        for dest, label, note in targets:
+            print("  · %s：将刷新 %s" % (label, norm(dest)))
+            if note:
+                print("      识别依据：%s" % note)
+            print("      现有 version %s；源：本包轮子 %s（version %s）"
+                  % (engine_version(dest) or "?", os.path.basename(wheel),
+                     wheel_version(wheel) or "?"))
+            print("      将执行：解包轮子 → %s <轮子内 cli.py> init --force --dir \"%s\""
+                  % (a.python, norm(dest)))
+            missing, differ, _ok = engine_copy_diff(want, dest)
+            if not missing and not differ:
+                print("      预判：内容与本包一致 —— init 会幂等返回「引擎已是最新」")
+        return fails
+
+    with tempfile.TemporaryDirectory(prefix="agentguard-engine-") as tmp:
+        cli, err = extract_wheel_cli(wheel, tmp)
+        if not cli:
+            print("  · ✗ %s" % err)
+            fails.append("引擎副本刷新失败：%s" % err)
+            record(a, "engine", "fail", err)
+            return fails
+        for dest, label, note in targets:
+            print("  · %s：刷新 %s" % (label, norm(dest)))
+            if note:
+                print("      识别依据：%s" % note)
+            before = engine_version(dest) or "?"
+            rc, out = run_cmd([a.python, cli, "init", "--force", "--dir", dest], timeout=600)
+            print("      init --force → rc=%s" % rc)
+            if out.strip():
+                print(indented(out, "        "))
+            if rc != 0:
+                fails.append("引擎副本刷新失败（init rc=%s）：%s" % (rc, norm(dest)))
+                record(a, "engine", "fail", "rc=%s" % rc)
+                continue
+            # 升级**之后**这份对账才算数 —— 与 pip / 插件同一条纪律：rc 不是判据。
+            missing, differ, ok = engine_copy_diff(want, dest)
+            if missing or differ:
+                print("      ✗ init 报成功，但产物与本包轮子**仍不一致** —— 判失败：")
+                if missing:
+                    print("        缺失/读不到 %d 个：%s%s"
+                          % (len(missing), ", ".join(missing[:5]), " …" if len(missing) > 5 else ""))
+                if differ:
+                    print("        内容不同 %d 个：%s%s"
+                          % (len(differ), ", ".join(differ[:5]), " …" if len(differ) > 5 else ""))
+                print("        现在这台机器上跑的仍是旧引擎（version %s）。" % before)
+                fails.append("引擎副本未刷新（init rc=0，但产物与本包不一致）：%s" % norm(dest))
+                record(a, "engine", "stale",
+                       "missing=%d differ=%d" % (len(missing), len(differ)))
+                continue
+            if not init_marker(dest):
+                print("      ✗ 产物已刷新，但 init 没写所有权标记 %s → 下一次升级认不出它。" % INIT_MARKER)
+                fails.append("引擎副本缺少 init 所有权标记：%s" % norm(dest))
+                record(a, "engine", "stale", "marker missing")
+                continue
+            print("      ✓ 与本包逐字节一致（%d 个文件）→ version %s"
+                  % (ok, engine_version(dest) or "?"))
+            record(a, "engine", "ok", norm(dest))
+    return fails
+
+
+# ---- [6/7] 技能副本 ----------------------------------------------------------------
 
 def skill_targets(a):
     """已存在的宿主技能副本 → [(宿主名, 技能目录)]（没装过的不列：升级 ≠ 新增通道）。"""
@@ -594,7 +873,7 @@ def skill_targets(a):
 
 
 def step_skills(a):
-    """[5/6] 技能副本：转发 cli.py（单一实现 + 台账）；无 cli 时打印现成命令。"""
+    """[6/7] 技能副本：转发 cli.py（单一实现 + 台账）；无 cli 时打印现成命令。"""
     fails = []
     targets = skill_targets(a)
     if not targets:
@@ -618,10 +897,10 @@ def step_skills(a):
     return fails
 
 
-# ---- [6/6] 编辑期 shim -------------------------------------------------------------
+# ---- [7/7] 编辑期 shim -------------------------------------------------------------
 
 def step_shim(a):
-    """[6/6] 编辑期 shim：**只在装过时**刷新（它指向仓库，所以多半不用动；换过路径才需要）。"""
+    """[7/7] 编辑期 shim：**只在装过时**刷新（它指向仓库，所以多半不用动；换过路径才需要）。"""
     fails = []
     shim = os.path.join(os.path.expanduser("~"), ".agentguard", "hooks",
                         "agentguard-gate.py")
@@ -670,7 +949,8 @@ def main(argv=None):
                     help="安装包目录（默认：本脚本所在目录 —— 解压出来的包里就有本脚本）")
     ap.add_argument("--yes", action="store_true", help="确认执行（缺省只预演，不改任何东西）")
     ap.add_argument("--dry-run", action="store_true", help="与缺省相同的显式预演开关")
-    ap.add_argument("--skip", default="", help="跳过通道：claude,openclaw,pip,skills,shim（逗号分隔）")
+    ap.add_argument("--skip", default="",
+                    help="跳过通道：claude,openclaw,pip,engine,skills,shim（逗号分隔）")
     ap.add_argument("--claude", default=None, help="claude CLI 路径（默认从 PATH 找）")
     ap.add_argument("--openclaw-state", default=None, help="OpenClaw 状态目录（默认 ~/.openclaw-autoclaw）")
     ap.add_argument("--skill-dir", action="append", default=[], metavar="DIR",
@@ -715,8 +995,8 @@ def main(argv=None):
         print(indented(before))
         print("")
 
-    # [1/6] 路径适配：**永远第一步、不可跳过**（跳过的后果是"装完不报错、门禁整体失效"）
-    print("[1/6] 路径适配（fix_paths.py；这一步不能跳）")
+    # [1/7] 路径适配：**永远第一步、不可跳过**（跳过的后果是"装完不报错、门禁整体失效"）
+    print("[1/7] 路径适配（fix_paths.py；这一步不能跳）")
     fixer = os.path.join(a.pack, "fix_paths.py")
     fails = []
     if not os.path.isfile(fixer):
@@ -737,11 +1017,12 @@ def main(argv=None):
     print("")
 
     steps = (
-        ("claude", "[2/6] Claude Code 插件（marketplace add + plugin update）", step_claude),
-        ("openclaw", "[3/6] OpenClaw 扩展（就地覆盖 bundle，重启桌面端生效）", step_openclaw),
-        ("pip", "[4/6] 人用 CLI（pip 包）", step_pip),
-        ("skills", "[5/6] 技能副本", step_skills),
-        ("shim", "[6/6] 编辑期 shim", step_shim),
+        ("claude", "[2/7] Claude Code 插件（marketplace add + plugin update）", step_claude),
+        ("openclaw", "[3/7] OpenClaw 扩展（就地覆盖 bundle，重启桌面端生效）", step_openclaw),
+        ("pip", "[4/7] 人用 CLI（pip 包）", step_pip),
+        ("engine", "[5/7] 引擎副本（只刷新 init 复制出来的那份）", step_engine),
+        ("skills", "[6/7] 技能副本", step_skills),
+        ("shim", "[7/7] 编辑期 shim", step_shim),
     )
     for key, title, fn in steps:
         if key in skip:

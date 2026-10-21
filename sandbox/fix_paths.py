@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""路径适配：把「内部安装包」里按打包机打戳的 marketplace 配置改到你自己的机器。
+"""路径适配：把「离线安装包」里按打包机打戳的 marketplace 配置改到你自己的机器。
 
 背景：包内 marketplace/plugins/agentguard/.mcp.json 在打包时写入了打包机的
 python 解释器路径与 agentguard 引擎路径（插件机制要求绝对路径）；换机器

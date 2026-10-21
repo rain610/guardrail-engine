@@ -62,7 +62,7 @@ def _init(path):
     _git(path, "config", "user.email", "t@t")
     _git(path, "config", "user.name", "t")
     with open(os.path.join(path, "a.vue"), "w", encoding="utf-8", newline="") as f:
-        f.write("<template><eagle-tag /></template>\r\n<script>const a = 1</script>\r\n")
+        f.write("<template><demo-tag /></template>\r\n<script>const a = 1</script>\r\n")
     _git(path, "add", "a.vue")
     _git(path, "commit", "-qm", "init")
 

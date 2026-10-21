@@ -703,7 +703,7 @@ class TestVersionSingleSourceInWheelForm(unittest.TestCase):
         env = dict(os.environ)
         # 兜底（2026-09-23 评审报告 M1 第 1 例）：老写法只靠 `env["PYTHONPATH"] = d` 让子进程
         # 找到包目录 —— 而**隔离形态的解释器按设计忽略 PYTHONPATH**（embeddable python 的
-        # `python3xx._pth`、`ignore_environment=1`；AutoClaw 内置 python 就是这种），于是这条锁
+        # `python3xx._pth`、`ignore_environment=1`；某些桌面端内置 python 就是这种），于是这条锁
         # 在那种环境下以 ModuleNotFoundError **假红**，它要验的「三个入口版本一致」跟"包怎么被
         # 找到"毫无关系。改成让**夹具自己把目录写进子进程的 sys.path**（见下面 code 的第一句）：
         # 与解释器是否读环境变量无关，夹具自足。PYTHONPATH 一并撤掉 —— 留着会掩盖
@@ -744,13 +744,13 @@ class TestLogGateFilter(unittest.TestCase):
         try:
             log = os.path.join(d, "gate_log.jsonl")
             with io.open(log, "w", encoding="utf-8", newline="") as f:
-                f.write(json.dumps({"ts": "2026-10-15T10:00:00", "gate": "hy_pc",
+                f.write(json.dumps({"ts": "2026-10-15T10:00:00", "gate": "old_pc",
                                     "rc": 0, "entry": "auto-gate", "ver": "0.1.7-dev"}) + "\n")
                 f.write(json.dumps({"ts": "2026-10-15T10:01:00", "gate": "demo_pc",
                                     "rc": 1, "entry": "cli", "ver": "0.1.7-dev"}) + "\n")
-            rc, out, err = _run([PY, CLI, "log", "--log", log, "--gate", "hy_pc", "--last", "10"])
+            rc, out, err = _run([PY, CLI, "log", "--log", log, "--gate", "old_pc", "--last", "10"])
             self.assertEqual(rc, 0, out + err)
-            self.assertIn("hy_pc", out)
+            self.assertIn("old_pc", out)
             self.assertNotIn("demo_pc", out, "--gate 过滤后别的 gate 的记录不得出现")
             rc2, out2, _ = _run([PY, CLI, "log", "--log", log, "--gate", "nope_pc", "--last", "10"])
             self.assertEqual(rc2, 1, "窗口内无该 gate 记录必须 rc=1：自查靠退出码区分「没查到」与「没跑过」")

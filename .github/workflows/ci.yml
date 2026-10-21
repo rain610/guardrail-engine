@@ -63,9 +63,9 @@ jobs:
           print("OK: all imports are stdlib or in-project modules")
           PY
 
-      - name: Validate config structure
+      - name: Validate config
         run: |
-          python harness/run_gate.py --validate --structure-only || true
+          python harness/run_gate.py --validate
 
       - name: Run fast tests
         run: |
@@ -79,6 +79,22 @@ jobs:
             echo "发现未关闭的句柄泄漏（见上方日志）" >&2
             exit 1
           fi
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate config
+        run: python harness/run_gate.py --validate
+
+      - name: Run fast tests
+        run: python sandbox/run_tests.py --fast
 
   lint:
     runs-on: ubuntu-latest
@@ -102,7 +118,7 @@ jobs:
               if '.git' in root or '__pycache__' in root:
                   continue
               for f in files:
-                  if f.endswith('.py') or f.endswith('.md') or f.endswith('.yaml'):
+                  if f.endswith('.py') or f.endswith('.md') or f.endswith('.toml') or f.endswith('.yaml'):
                       path = os.path.join(root, f)
                       try:
                           with open(path, encoding='utf-8') as fh:

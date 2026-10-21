@@ -161,7 +161,7 @@ class _Fixture(unittest.TestCase):
         """带 `--structure-only`（2026-09-18 加，与 ci.yml:77 同源）。
 
         `HARNESS_CONFIG` 是**覆盖层不是替换**：`_config.load()` 把这份临时配置
-        `_deep_merge` 到 `config/harness.yaml` **之上**，于是真配置里那 33 个客户 gate
+        `_deep_merge` 到 `config/harness.toml` **之上**，于是真配置里那 33 个业务 gate
         一个不少地留在场上（CI 那行 `=== 配置体检：35 个 gate ===` = 34 真 + probe_gate）。
         而不带 `--structure-only` 时「端仓路径不存在」是**阻断项**，该模式正是
         `run_gate.py._validate()` 为 CI 加的（干净容器里 clone 不到内网端仓）。
@@ -263,7 +263,7 @@ class TestMidEConfigPromise(_Fixture):
         self.assertEqual(r.returncode, 0, "真配置体检必须通过；输出=%s" % out[-600:])
 
         import _config
-        cfg = _config.load(os.path.join(ROOT, "config", "harness.yaml"))
+        cfg = _config.load(os.path.join(ROOT, "config", "harness.toml"))
         seen = 0
         for name, g in (cfg.get("gates") or {}).items():
             if os.path.basename(g.get("script") or "") != "example_code_check.py":

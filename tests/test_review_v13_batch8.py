@@ -50,7 +50,7 @@ sys.path.insert(0, TESTS)
 sys.path.insert(0, HARNESS_LIB)
 from _engine_copy import EngineCopy            # noqa: E402
 
-BASE_YAML = os.path.join(ROOT, "config", "harness.yaml")
+BASE_TOML = os.path.join(ROOT, "config", "harness.toml")
 GATE = "example"                               # base 里 enabled: true 的示例 gate
 # 快跑（HARNESS_FAST=1）：本文件的慢在**链路集成**（现建工程副本 + 真跑 run_gate 子进程），
 # 纯逻辑那几类（信号复位 / 标记作用域 / mark 列）是文件读取与函数调用，快跑档照跑。
@@ -96,7 +96,7 @@ class _Engine(unittest.TestCase):
         self.end = tempfile.mkdtemp(prefix="b8-end-")
         subprocess.run(["git", "-C", self.end, "init", "-q"], capture_output=True, timeout=180)
         self.ledger = os.path.join(self.eng.path, "reports", "gate_log.jsonl")
-        self.local = self.eng.p("config/harness.local.yaml")
+        self.local = self.eng.p("config/harness.local.toml")
 
     def tearDown(self):
         self.eng.cleanup()
@@ -132,7 +132,7 @@ class _Engine(unittest.TestCase):
 class TestWeakenedRecordedInLedger(_Engine):
     def test_local_disabled_is_marked_as_weakened(self):
         """① 本机把 gate 关掉 → 台账必须说得出"是本地关的"（旧版只有一个 skipped）。"""
-        self._write_local("gates:\n  %s:\n    enabled: false\n" % GATE)
+        self._write_local("[gates.%s]\nenabled = false\n" % GATE)
         rc, out, rows = self._run()
         self.assertEqual(rc, 0, "本地关 gate 是允许的动作（rc=0），只是必须留痕：\n%s" % out)
         self.assertEqual(len(rows), 1, "跳过也要落一条：%s" % rows)
@@ -145,7 +145,7 @@ class TestWeakenedRecordedInLedger(_Engine):
 
     def test_policy_override_is_marked_as_weakened(self):
         """① 放行后门 → 台账那一行必须带上"哪条策略被放行了"（旧版与真通过逐字相同）。"""
-        self._write_local("gates:\n  %s:\n    mode: loose\n" % GATE)
+        self._write_local("[gates.%s]\nmode = \"loose\"\n" % GATE)
         rc, out, rows = self._run({"HARNESS_ALLOW_POLICY_OVERRIDE": "1"})
         self.assertEqual(len(rows), 1, "放行后门下的判定同样要落台账：%s\n%s" % (rows, out))
         self.assertEqual(rows[-1].get("weakened"),
@@ -156,7 +156,7 @@ class TestWeakenedRecordedInLedger(_Engine):
 
     def test_rejected_override_is_not_marked_as_weakened(self):
         """② 阴性对照：覆盖**被退回**（没生效）不算削弱 —— 记进去就是假话。"""
-        self._write_local("gates:\n  %s:\n    mode: loose\n" % GATE)
+        self._write_local("[gates.%s]\nmode = \"loose\"\n" % GATE)
         rc, out, rows = self._run()
         self.assertEqual(len(rows), 1, "%s\n%s" % (rows, out))
         self.assertNotIn("weakened", rows[-1],
@@ -174,7 +174,7 @@ class TestWeakenedRecordedInLedger(_Engine):
     def test_other_gates_override_is_not_marked(self):
         """③ 只标自己：别的 gate 的覆盖不能标到这一行头上（那等于说假话）。"""
         other = "harness_self"
-        self._write_local("gates:\n  %s:\n    mode: loose\n" % other)
+        self._write_local("[gates.%s]\nmode = \"loose\"\n" % other)
         rc, out, rows = self._run({"HARNESS_ALLOW_POLICY_OVERRIDE": "1"})
         self.assertEqual(len(rows), 1, "%s\n%s" % (rows, out))
         self.assertNotIn("weakened", rows[-1],
@@ -195,19 +195,19 @@ class TestWeakenMarks(_EnvGuard):
         _rmtree_force(self.tmp)
 
     def _cfg_file(self, body):
-        p = os.path.join(self.tmp, "harness.local.yaml")
+        p = os.path.join(self.tmp, "harness.local.toml")
         with io.open(p, "w", encoding="utf-8") as f:
             f.write(body)
         return p
 
     def test_local_disabled_returns_mark(self):
         os.environ["HARNESS_CONFIG"] = self._cfg_file(
-            "gates:\n  %s:\n    enabled: false\n" % GATE)
+            "[gates.%s]\nenabled = false\n" % GATE)
         self._config.load()
         self.assertEqual(self.run_gate._weaken_marks(GATE), ["local_disabled"])
 
     def test_override_scoped_to_its_own_gate(self):
-        os.environ["HARNESS_CONFIG"] = self._cfg_file("gates:\n  %s:\n    mode: loose\n" % GATE)
+        os.environ["HARNESS_CONFIG"] = self._cfg_file("[gates.%s]\nmode = \"loose\"\n" % GATE)
         os.environ["HARNESS_ALLOW_POLICY_OVERRIDE"] = "1"
         self._config.load()
         self.assertEqual(self.run_gate._weaken_marks(GATE),
@@ -218,17 +218,17 @@ class TestWeakenMarks(_EnvGuard):
     def test_clean_config_returns_empty(self):
         """没有覆盖层（HARNESS_CONFIG 指向不存在的文件）→ 一个标记都没有。
 
-        刻意**不读本机真实的** `config/harness.local.yaml`：那会让结果取决于跑测试的人
+        刻意**不读本机真实的** `config/harness.local.toml`：那会让结果取决于跑测试的人
         本机配置（v13 反复提的那一类"对着偶然状态断言"）。
         """
-        os.environ["HARNESS_CONFIG"] = os.path.join(self.tmp, "nope.yaml")
+        os.environ["HARNESS_CONFIG"] = os.path.join(self.tmp, "nope.toml")
         self._config.load()
         self.assertEqual(self.run_gate._weaken_marks(GATE), [])
 
     def test_marks_are_deduplicated(self):
         """同一条事实只出现一次（重复标记会让台账看起来像出了多件事）。"""
         os.environ["HARNESS_CONFIG"] = self._cfg_file(
-            "gates:\n  %s:\n    enabled: false\n    mode: loose\n" % GATE)
+            "[gates.%s]\nenabled = false\nmode = \"loose\"\n" % GATE)
         os.environ["HARNESS_ALLOW_POLICY_OVERRIDE"] = "1"
         self._config.load()
         marks = self.run_gate._weaken_marks(GATE)
@@ -272,38 +272,38 @@ class TestSignalsAreFreshPerLoad(_EnvGuard):
         _rmtree_force(self.tmp)
 
     def _cfg_file(self, body):
-        p = os.path.join(self.tmp, "harness.local.yaml")
+        p = os.path.join(self.tmp, "harness.local.toml")
         with io.open(p, "w", encoding="utf-8") as f:
             f.write(body)
         return p
 
     def test_local_disable_visible_after_production_load(self):
-        os.environ["HARNESS_CONFIG"] = self._cfg_file("gates:\n  %s:\n    enabled: false\n" % GATE)
+        os.environ["HARNESS_CONFIG"] = self._cfg_file("[gates.%s]\nenabled = false\n" % GATE)
         self._config.load()
         self.assertEqual(self._config.last_local_disabled(), [GATE])
 
     def test_explicit_path_load_clears_stale_signal(self):
         """显式 `load(path=…)` 是早退路径：旧实现**不清信号**，于是它报的是上一次的答案。"""
-        os.environ["HARNESS_CONFIG"] = self._cfg_file("gates:\n  %s:\n    enabled: false\n" % GATE)
+        os.environ["HARNESS_CONFIG"] = self._cfg_file("[gates.%s]\nenabled = false\n" % GATE)
         self._config.load()
         self.assertEqual(self._config.last_local_disabled(), [GATE], "前提：先造出残留信号")
-        self._config.load(BASE_YAML)            # 只读该文件，与本地覆盖层无关
+        self._config.load(BASE_TOML)            # 只读该文件，与本地覆盖层无关
         self.assertEqual(self._config.last_local_disabled(), [],
                          "显式文件加载后，信号必须是这次的结果（不得残留上一次）")
 
     def test_missing_config_file_clears_stale_signal(self):
         """`HARNESS_CONFIG` 指的文件不存在也是早退路径 —— 同样不许留着上一次的答案。"""
-        os.environ["HARNESS_CONFIG"] = self._cfg_file("gates:\n  %s:\n    enabled: false\n" % GATE)
+        os.environ["HARNESS_CONFIG"] = self._cfg_file("[gates.%s]\nenabled = false\n" % GATE)
         self._config.load()
         self.assertEqual(self._config.last_local_disabled(), [GATE], "前提：先造出残留信号")
-        os.environ["HARNESS_CONFIG"] = os.path.join(self.tmp, "不存在.yaml")
+        os.environ["HARNESS_CONFIG"] = os.path.join(self.tmp, "不存在.toml")
         self._config.load()
         self.assertEqual(self._config.last_local_disabled(), [],
                          "覆盖层文件不存在时信号必须清空（否则报的是上一次的答案）")
 
     def test_notice_printed_once_per_process(self):
         """去重（同一进程）。3 次 load 实测旧版打 3~4 行，读者于是不再读它。"""
-        os.environ["HARNESS_CONFIG"] = self._cfg_file("gates:\n  %s:\n    mode: loose\n" % GATE)
+        os.environ["HARNESS_CONFIG"] = self._cfg_file("[gates.%s]\nmode = \"loose\"\n" % GATE)
         os.environ["HARNESS_ALLOW_POLICY_OVERRIDE"] = "1"
         buf = io.StringIO()
         old = sys.stderr
@@ -323,8 +323,8 @@ class TestSignalsAreFreshPerLoad(_EnvGuard):
         old = sys.stderr
         try:
             sys.stderr = buf
-            for body in ("gates:\n  %s:\n    mode: loose\n" % GATE,
-                         "gates:\n  %s:\n    legacy_baseline: true\n" % GATE):
+            for body in ("[gates.%s]\nmode = \"loose\"\n" % GATE,
+                         "[gates.%s]\nlegacy_baseline = true\n" % GATE):
                 os.environ["HARNESS_CONFIG"] = self._cfg_file(body)
                 self._config.load()
         finally:
@@ -333,26 +333,30 @@ class TestSignalsAreFreshPerLoad(_EnvGuard):
                          "两条不同的覆盖各报一次：\n%s" % buf.getvalue())
 
 
-class TestEngineCopyDropsMachineLocalYaml(unittest.TestCase):
-    """工程副本不得继承**跑测试那台机器**的 `config/harness.local.yaml`。
+class TestEngineCopyDropsMachineLocalConfig(unittest.TestCase):
+    """工程副本不得继承**跑测试那台机器**的 `config/harness.local.*`。
 
     施工中发现（2026-09-17）：`tests/_engine_copy.py` 整棵复制 `config/`，而 `harness.local.yaml`
     恰恰是「本机把某个 gate 关了 / 把 mode 降了」的载体（`_guard_policy` 明确允许本地关 gate）
     —— 于是副本会把**跑测试者的机器状态**带进用例，正是本文件刻意避开的"对着偶然状态断言"。
-    用临时工程根来验：源里有 local.yaml，副本里必须没有。
+    2026-10-21 起主格式是 TOML，两种格式都必须剔除。
+    用临时工程根来验：源里有 local，副本里必须没有。
     """
 
-    def test_copy_has_no_inherited_local_yaml(self):
+    def test_copy_has_no_inherited_local_config(self):
         import _engine_copy
         src_root = tempfile.mkdtemp(prefix="b8-src-")
         try:
             os.makedirs(os.path.join(src_root, "config"))
+            with io.open(os.path.join(src_root, "config", "harness.local.toml"),
+                         "w", encoding="utf-8") as f:
+                f.write("[gates.%s]\nenabled = false\n" % GATE)
             with io.open(os.path.join(src_root, "config", "harness.local.yaml"),
                          "w", encoding="utf-8") as f:
                 f.write("gates:\n  %s:\n    enabled: false\n" % GATE)
-            with io.open(os.path.join(src_root, "config", "harness.yaml"),
+            with io.open(os.path.join(src_root, "config", "harness.toml"),
                          "w", encoding="utf-8") as f:
-                f.write("gates:\n")
+                f.write("[gates]\n")
             old = _engine_copy.ROOT
             _engine_copy.ROOT = src_root
             try:
@@ -360,11 +364,12 @@ class TestEngineCopyDropsMachineLocalYaml(unittest.TestCase):
             finally:
                 _engine_copy.ROOT = old
             try:
-                self.assertFalse(
-                    os.path.exists(eng.p("config/harness.local.yaml")),
-                    "副本继承了跑测试那台机器的本地覆盖层 → 用例结果会因人而异")
-                self.assertTrue(os.path.exists(eng.p("config/harness.yaml")),
-                                "只剔 local.yaml，别的配置照常复制")
+                for name in ("harness.local.toml", "harness.local.yaml"):
+                    self.assertFalse(
+                        os.path.exists(eng.p("config/" + name)),
+                        "副本继承了跑测试那台机器的 %s → 用例结果会因人而异" % name)
+                self.assertTrue(os.path.exists(eng.p("config/harness.toml")),
+                                "只剔 local，别的配置照常复制")
             finally:
                 eng.cleanup()
         finally:

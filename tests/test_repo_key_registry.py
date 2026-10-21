@@ -3,21 +3,21 @@
 
 缺陷原文（2026-09-18 实测，见 `reports/_batch6_partial_local_finding.txt`）
 ================================================================================
-批次 2 把 33 条机器路径从共享 `config/harness.yaml` 下沉到各人的
+批次 2 把 33 条机器路径从共享 `config/harness.toml` 下沉到各人的
 `config/harness.local.yaml` —— 方向是对的，但它**顺手把键名一起删了**。
 于是「这个键在配置里根本没声明过」与「我这台机器没有这个仓」塌成了同一件事
 （都是「键不在 repos 段里」）。而剩下的那根判据 `_machine`（本机有没有机器路径）
 是按**维护机形态**校准的：那里 33 个键全在，所以「有未定义的键」一旦成立就真是拼错。
 
 同事机上是另一个形态，而且是**最常见**的那一个 —— `docs/packaging/INSTALL.md` 明写
-「编辑时只写你机器上**确实存在**的那几个仓即可」，`config/harness.local.example.yaml`
+「编辑时只写你机器上**确实存在**的那几个仓即可」，`config/harness.local.example.toml`
 的「场景 A」模板也只给 3 个键。实测（只填 1 条）：
 
     harness_self → 32 行 `❌ ⑤ gate <X> 引用未定义的 repo` → rc=1
     提交期钩子再把它转成 fail-closed rc=2 → **该同事每次提交都被拦，而他自己的
     代码一个字节都没被检查过**（拦在自检这一步，根本走不到他的 .vue）。
 
-同一次输出里还自相矛盾：`⚠ gate hy_pc 的 repo 路径本机不存在 —— 不阻断` 就打在
+同一次输出里还自相矛盾：`⚠ gate empty_pc 的 repo 路径本机不存在 —— 不阻断` 就打在
 `❌ ⑤ gate zhongdj_pc 引用未定义的 repo` 上面 —— 现实里这两句说的是同一件事。
 维护机上看不到这一切（那里 33 个键全在），所以它在批次 2~6 之间一直没人发现；
 是批次 6 的 WSL 复验第一次造出「配了 1 条」这个中间形态才当场红的
@@ -89,7 +89,7 @@ def _run_gate(args, config_path=None):
 
 
 class _FixtureCase(unittest.TestCase):
-    """一个临时目录：放夹具 local.yaml 与被指过去的「端仓」目录。"""
+    """一个临时目录：放夹具 local 配置与被指过去的「端仓」目录。"""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="repo-key-fix-")
@@ -109,23 +109,24 @@ class _FixtureCase(unittest.TestCase):
         路径指向一个真存在的目录 —— 否则会在 `--validate` 的第三档
         （「键在、路径不存在」）上阻断，那就测不出本文件要测的那两支了。
         """
-        return self._write("local.yaml", "repos:\n  hy_pc: %s\n" % self.repo.replace("\\", "/"))
+        return self._write("local.toml", "[repos]\nempty_pc = \"%s\"\n"
+                           % self.repo.replace("\\", "/"))
 
 
 class TestSharedConfigDeclaresEveryRepoKey(unittest.TestCase):
     """① 键名表必须在共享配置里 —— 事故的根因就是它被清空了。"""
 
     def _base_cfg(self):
-        """只读 **base**（`config/harness.yaml`），不经 local 覆盖层 —— 判据是团队策略。"""
+        """只读 **base**（`config/harness.toml`），不经 local 覆盖层 —— 判据是团队策略。"""
         sys.path.insert(0, HARNESS)
         import _config
-        return _config.load(os.path.join(ROOT, "config", "harness.yaml"))
+        return _config.load(os.path.join(ROOT, "config", "harness.toml"))
 
     def test_every_gate_repo_key_is_declared(self):
         cfg = self._base_cfg()
         repos = cfg.get("repos") or {}
         gates = cfg.get("gates") or {}
-        self.assertTrue(repos, "共享 config/harness.yaml 的 repos 段空了 —— 键名表是**团队策略**"
+        self.assertTrue(repos, "共享 config/harness.toml 的 repos 段空了 —— 键名表是**团队策略**"
                                "（哪些仓受管），清空它会让「键没声明」与「本机没配」塌成一件事，"
                                "同事机上表现为提交链 fail-closed 全拦（见本文件 docstring）。")
         missing = sorted({(g or {}).get("repo") for g in gates.values()} - {None, "harness_self"}
@@ -171,16 +172,15 @@ class TestUndeclaredRepoKeyStillBlocks(_FixtureCase):
         """新 gate 引用一个 repos 段里没有的键。
 
         刻意用**新** gate（不在 base 的 gates 段里）：`_guard_policy` 只退回「已注册 gate
-        的策略字段覆盖」，本地新增的 gate 是允许的（那是「场景 B：做新客户」的正当用法）——
+        的策略字段覆盖」，本地新增的 gate 是允许的（那是「场景 B：接新仓」的正当用法）——
         正好也顺带证明这条路仍然通。
         """
-        return self._write("typo.yaml", (
-            "gates:\n"
-            "  zzz_typo_pc:\n"
-            "    enabled: true\n"
-            "    repo: no_such_key\n"
-            "    script: checks/pc_code_check.py\n"
-            "    run_on: [pre_commit]\n"))
+        return self._write("typo.toml", (
+            "[gates.zzz_typo_pc]\n"
+            "enabled = true\n"
+            "repo = \"no_such_key\"\n"
+            "script = \"checks/pc_code_check.py\"\n"
+            "run_on = [\"pre_commit\"]\n"))
 
     def test_self_check_reports_it(self):
         rc, out = _run_gate(["harness_self", "--repo", ROOT], config_path=self._typo_cfg())
@@ -192,6 +192,38 @@ class TestUndeclaredRepoKeyStillBlocks(_FixtureCase):
         rc, out = _run_gate(["--validate"], config_path=self._typo_cfg())
         self.assertIn("repo 键未声明", out, "体检不再报「键未声明」：\n%s" % out[-1500:])
         self.assertEqual(2, rc, "拼错的键必须让 --validate rc=2：\n%s" % out[-1500:])
+
+    def test_structure_only_reports_it_too(self):
+        """CI 曾用 `--validate --structure-only || true` —— 结构错被整条吞掉。
+
+        删掉 `|| true` 之后，`--structure-only` 这支必须照样对坏键 rc=2；
+        否则「CI 跑了体检」只是看起来跑了。
+        """
+        rc, out = _run_gate(["--validate", "--structure-only"], config_path=self._typo_cfg())
+        self.assertIn("repo 键未声明", out, "structure-only 下不再报「键未声明」：\n%s" % out[-1500:])
+        self.assertEqual(2, rc, "--structure-only 也必须对坏配置 rc=2：\n%s" % out[-1500:])
+
+
+class TestCiRunsValidateHonestly(unittest.TestCase):
+    """CI 不许再把体检失败吞掉，也不许退回只测 Linux。"""
+
+    def _ci(self):
+        p = os.path.join(ROOT, ".github", "workflows", "ci.yml")
+        with io.open(p, encoding="utf-8") as f:
+            return f.read()
+
+    def test_validate_failure_is_not_swallowed(self):
+        src = self._ci()
+        self.assertNotRegex(src, r"run_gate\.py\s+--validate[^\n]*\|\|\s*true",
+                            "CI 用 `|| true` 吞了 --validate 的失败：配置体检变成摆设，"
+                            "坏键 / 坏值域永远不会让 CI 红")
+        self.assertIn("run_gate.py --validate", src, "CI 不再跑配置体检了")
+
+    def test_windows_runner_is_covered(self):
+        src = self._ci()
+        self.assertIn("windows-latest", src,
+                      "CI 只有 Linux runner —— 路径分隔符、编码、行尾、解释器解析这些"
+                      "Windows 特有坑不会被任何一次 push 覆盖")
 
 
 class TestMachineKeysCountsOnlyFilledKeys(unittest.TestCase):
@@ -240,9 +272,9 @@ class TestWarningsAreAggregated(unittest.TestCase):
 
     def _cfg(self):
         """两个已启用 gate：一个填了真路径、一个留空（+ 引擎注入的 harness_self）。"""
-        return {"repos": {"harness_self": ROOT, "demo_pc": ROOT, "hy_pc": ""},
+        return {"repos": {"harness_self": ROOT, "demo_pc": ROOT, "empty_pc": ""},
                 "gates": {"demo_pc": {"enabled": True, "repo": "demo_pc"},
-                          "hy_pc": {"enabled": True, "repo": "hy_pc"}}}
+                          "empty_pc": {"enabled": True, "repo": "empty_pc"}}}
 
     def test_one_line_not_one_per_gate(self):
         out = self._capture(self._cfg())
@@ -257,7 +289,7 @@ class TestWarningsAreAggregated(unittest.TestCase):
     def test_undeclared_and_unconfigured_say_different_things(self):
         """两种「跑不了」必须指向**不同**的修法：一个改共享配置，一个改自己的 local.yaml。"""
         cfg = self._cfg()
-        cfg["gates"]["ntrx_pc"] = {"enabled": True, "repo": "no_such_key"}
+        cfg["gates"]["ghost_pc"] = {"enabled": True, "repo": "no_such_key"}
         out = self._capture(cfg)
         self.assertIn("没有声明", out, "「键没声明」那支不说了：\n%s" % out)
         self.assertIn("没配仓库路径", out, "「本机没配路径」那支不说了：\n%s" % out)

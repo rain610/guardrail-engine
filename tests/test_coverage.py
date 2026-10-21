@@ -2,7 +2,7 @@
 """覆盖度自评的回归锁（2026-09-12 第四轮）。
 
 锁三件事：
-1. 聚合/分类学正确——「没响」必须被拆成可行动的分类（活跃 / 从未触发 / 按客户禁用 / 该端无运行），
+1. 聚合/分类学正确——「没响」必须被拆成可行动的分类（活跃 / 从未触发 / 按 gate 禁用 / 该端无运行），
    并且**没有规则级数据时不许判定**（数据缺失 ≠ 从未触发，这条最容易被写成假结论）。
 2. 埋点真的在工作——跑一次真实门禁能把规则级统计带回 gate_log（传感器自己也要被监考）。
 3. 埋点对直跑脚本零影响——不设 HARNESS_STATS_FILE 时不产生任何文件、输出不变。
@@ -37,8 +37,28 @@ def _code_calls_run_gate(src):
 
     `TestIsolationAndScripts.test_tests_set_harness_log_file` 的判据本体。单独提出来是为了
     能被直接喂合成文本做两向证伪（同批 `test_lock_inventory._anchor_problem` 的写法）。
+
+    路径字符串只在**调用表达式里**才算调用（2026-10-21 收窄）：数据表里的成员名不是命令。
+    现场：`test_release_artifact.py` 的 `ENGINE_PROBE` 是"轮子里应当出现哪些文件"的期望
+    成员名单，其中一项恰好是 `agentguard/_engine/harness/run_gate.py` —— 该文件一行都没
+    调过 run_gate，却被判成"会调却没设 HARNESS_LOG_FILE"。与 2026-09-24 那次假警同源：
+    判据比它声称的"会**调**"宽了一档。真调用一定落在 `os.path.join(...)` / `subprocess.run(...)`
+    这类调用参数里（`import run_gate` 两条分支照旧覆盖模块形态）。
     """
-    for node in ast.walk(ast.parse(src)):
+    tree = ast.parse(src)
+    parent = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parent[child] = node
+
+    def _inside_call(node):
+        while node in parent:
+            node = parent[node]
+            if isinstance(node, ast.Call):
+                return True
+        return False
+
+    for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id == "run_gate":
             return True                       # run_gate(...) / run_gate.LOG_DIR = ...
         if isinstance(node, ast.Attribute) and node.attr == "run_gate":
@@ -51,7 +71,7 @@ def _code_calls_run_gate(src):
             if any(m == "run_gate" or m.endswith(".run_gate") for m in mods):
                 return True
         if isinstance(node, ast.Constant) and isinstance(node.value, str) \
-                and _RUN_GATE_PATH.match(node.value):
+                and _RUN_GATE_PATH.match(node.value) and _inside_call(node):
             return True                       # os.path.join(..., "run_gate.py") / "harness/run_gate.py"
     return False
 
@@ -122,7 +142,7 @@ class TestAggregateAndClassify(unittest.TestCase):
     def test_status_taxonomy(self):
         rep = COV.build_report(self.records, self.cfg, self.rules)
         rows = {r["rule"]: r["status"] for r in rep["rules"]}
-        # PC-IP 只在 pcB 被禁用，而 pcA 并未禁用 → 不算"按客户禁用"；pcA/pcB 都跑过且它一次没响
+        # PC-IP 只在 pcB 被禁用，而 pcA 并未禁用 → 不算"按 gate 禁用"；pcA/pcB 都跑过且它一次没响
         self.assertEqual(rows["PC-IP"], "从未触发（需确认：不适用 or 失效）")
         # h5 端窗口内一次没跑过 → 不能对 H5 的规则下任何结论
         self.assertEqual(rows["H5-CONSOLE"], "该端窗口内无运行")
@@ -132,7 +152,7 @@ class TestAggregateAndClassify(unittest.TestCase):
         cfg["pcA"] = dict(cfg["pcA"], disabled=["PC-IP"])
         rep = COV.build_report(self.records, cfg, self.rules)
         rows = {r["rule"]: r["status"] for r in rep["rules"]}
-        self.assertEqual(rows["PC-IP"], "按客户禁用")
+        self.assertEqual(rows["PC-IP"], "按 gate 禁用")
 
     def test_never_fired_when_endpoint_ran(self):
         rep = COV.build_report(self.records, self.cfg, self.rules)
@@ -358,6 +378,37 @@ class TestStaticCatalog(unittest.TestCase):
         for rid in ("NO-CONSOLE", "NO-HARDIP", "EOL-UNIFIED"):
             self.assertIn(rid, rules)
 
+    def test_catalog_follows_registry_registration(self):
+        """新增端只登记 registry，不许再改 coverage —— 反推链断了这里就红。"""
+        import registry
+        expect = {os.path.basename(s): ep for ep, s in registry.ENDPOINT_SCRIPTS.items()}
+        self.assertEqual(COV.ENDPOINT_BY_SCRIPT, expect,
+                         "coverage 的端标签必须从 registry.ENDPOINT_SCRIPTS 反推")
+        self.assertEqual(COV.RULESETS, registry.RULESETS,
+                         "coverage 的规则集来源必须直接取 registry.RULESETS")
+
+    def test_newly_registered_ruleset_becomes_visible(self):
+        """模拟新增一个 gate：只登记 ruleset + 端标签，static_rules 必须自动看到它的规则。"""
+        tmpdir = tempfile.mkdtemp(prefix="cov-ruleset-")
+        self.addCleanup(_rmtree_force, tmpdir)
+        mod_name = "_tmp_new_gate_ruleset"
+        with open(os.path.join(tmpdir, mod_name + ".py"), "w", encoding="utf-8") as f:
+            f.write("class _R:\n"
+                    "    id = 'NEW-GATE-ONE'\n"
+                    "    message = 'new gate rule'\n"
+                    "NEW_GATE_RULES = [_R()]\n")
+        sys.path.insert(0, tmpdir)
+        old_rules, old_eps = COV.RULESETS, COV.ENDPOINT_BY_SCRIPT
+        COV.RULESETS = {"new_gate_check.py": mod_name}
+        COV.ENDPOINT_BY_SCRIPT = {"new_gate_check.py": "newgate"}
+        try:
+            rules = COV.static_rules()
+        finally:
+            COV.RULESETS, COV.ENDPOINT_BY_SCRIPT = old_rules, old_eps
+            sys.path.remove(tmpdir)
+        self.assertIn("NEW-GATE-ONE", rules, "新登记的规则集没有进入自评清单（覆盖度会瞎）")
+        self.assertEqual(rules["NEW-GATE-ONE"]["endpoint"], "newgate")
+
     def test_loader_level_checks_included(self):
         """loader 级检查（非 Rule 实例）也必须在册，否则在报告里隐身。"""
         rules = COV.static_rules()
@@ -373,16 +424,19 @@ class TestStaticCatalog(unittest.TestCase):
         """
         import re as _re
         checkdir = os.path.join(ROOT, "checks")
+        literal = _re.compile(r'bump\(\s*"([^"]+)"')
+        # 扫描器自检：统一 Rule API 后 loader 已没有字面量埋点，空集是合法结果；
+        # 用合成文本证明正则没坏，否则"扫不到"会被误读成"没问题"。
+        self.assertEqual(literal.findall('bump("SYNTHETIC", "error")'), ["SYNTHETIC"])
         ids, where = {}, {}
         for name in sorted(os.listdir(checkdir)):
             if not name.endswith(".py"):
                 continue
             with open(os.path.join(checkdir, name), encoding="utf-8") as f:
                 src = f.read()
-            for m in _re.finditer(r'bump\(\s*"([^"]+)"', src):
+            for m in literal.finditer(src):
                 ids[m.group(1)] = True
                 where.setdefault(m.group(1), name)
-        self.assertTrue(ids, "没扫到任何 bump(\"字面量\") 埋点 —— 正则或埋点写法变了，锁失效了")
         catalog = set(COV.static_rules())
         missing = sorted(set(ids) - catalog)
         self.assertEqual(missing, [],
@@ -437,11 +491,14 @@ class TestIsolationAndScripts(unittest.TestCase):
         本机与 Linux 同时红，release 的「全量自检」正是死在这条假警上。
 
         ★ 收窄只会**少报假警**，不会漏掉真调用：真调用一定落在语法树里
-        （`import run_gate` / `run_gate.xxx` / 字符串里那条模块路径），
+        （`import run_gate` / `run_gate.xxx` / **调用参数里**那条模块路径），
         而"两种形态都不在语法树里"的调用不存在。
         ⚠ 判据边界（有意留的，写在这里免得后人以为它没洞）：写成**带参数的整串**命令行
         （`"…/run_gate.py --all"`）不在判据内 —— 本仓现有写法都是把路径单独成串
         （`os.path.join(..., "run_gate.py")`），若将来出现整串写法，这里要跟着放宽。
+        ⚠ 第二条边界（2026-10-21 补）：**数据里的路径字符串不算调用**——期望成员名、
+        文件名常量放在元组/列表里赋值，不会执行任何东西。现场是 `test_release_artifact.py`
+        的 `ENGINE_PROBE`。真正的命令行写法仍会被抓（路径必然出现在调用参数里）。
         """
         tdir = os.path.join(ROOT, "tests")
         for name in sorted(os.listdir(tdir)):
@@ -459,8 +516,8 @@ class TestIsolationAndScripts(unittest.TestCase):
         """上面那条的判据本体两向都验：拿**合成文本**喂 `_code_calls_run_gate`。
 
         少了这一条，"没有违规文件"可能只是因为判据永远返回 False —— 那就又成了一条空锁。
-        四个"算调用"的形态各验一遍（真调用就长这样），三个"不算调用"的散文形态也各验一遍
-        （**第三个正是当天那条假警的原样**，它必须不再触发）。
+        四个"算调用"的形态各验一遍（真调用就长这样），四个"不算调用"的形态也各验一遍
+        （"散文假警原样"与"数据表里的期望成员名"都必须不再触发）。
         """
         yes = [
             'import run_gate\n',                                            # 直接 import
@@ -476,6 +533,7 @@ class TestIsolationAndScripts(unittest.TestCase):
             'def t():\n    """提到 run_gate 的 docstring"""\n    pass\n',     # 本文件自己的 docstring
             'def t():\n    """M44：H1 把 `harness/run_gate.py` 的 `_log_run` 调用点拆成多行"""\n    pass\n',
             'msg = "run_gate 应把子进程统计并入运行记录"\n',                   # 断言消息（散文）
+            'ENGINE_PROBE = ("agentguard/_engine/harness/run_gate.py",)\n',  # 数据表：期望成员名
         ]
         for src in no:
             self.assertFalse(_code_calls_run_gate(src),
