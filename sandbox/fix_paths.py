@@ -90,7 +90,7 @@ def main(argv=None):
         # 两种报同一句话的话，拿到包的人会去反复核对拼写，而问题根本不在拼写上。
         if not os.path.isdir(harness):
             print("  · 这个目录还不存在 —— 安装包内**不含**门禁引擎，需要先 clone 一次：")
-            print("      git clone https://resources.ehsway.com:8929/developer/agentguard.git")
+            print("      git clone https://github.com/rain610/agentguard.git")
             print("  · 详见包内《安装说明.md》「零、先 clone 引擎仓」")
         return 1
     mcp_py = harness + "/agentguard/mcp.py"

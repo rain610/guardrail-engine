@@ -49,7 +49,7 @@ def _slow(reason):
 
 # 测试隔离（第四轮 N-2）：把 run_gate 的运行日志钉到临时文件。
 # 原先只有 test_coverage.py 设了 HARNESS_LOG_FILE，其余用例调 run_gate 时会把探针记录
-# （gate=t_pc 等）写进真实的 reports/gate_log.jsonl —— 实测污染过 124 条，覆盖度自评的
+# （gate=t_gate 等）写进真实的 reports/gate_log.jsonl —— 实测污染过 124 条，覆盖度自评的
 # 窗口数据（运行次数、gate 概览）被混入测试噪声。模块导入时就设好，子进程
 # env=dict(os.environ, ...) 会继承；tests/test_coverage.py 里有源码级锁防止将来漏设。
 # 2026-09-21：退出时那次 `shutil.rmtree` **删不掉**这个目录（里面有 run_gate 真写出来的
@@ -61,19 +61,15 @@ os.environ["HARNESS_LOG_FILE"] = os.path.join(_LOG_TMPDIR, "gate_log.jsonl")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
 
-# 端到端"坏语法"样本：SFC 结构完整、只语法错，确保拦下来的是语法规则本身
-BAD_VUE = ('<template><div /></template>\r\n'
+# 端到端"命中"样本：示例 gate 的 NO-CONSOLE 是 block 级，退出码能反映判定
+BAD_FILE = ('<template><div /></template>\r\n'
+            '<script setup>\r\n'
+            'console.log("debug");\r\n'
+            '</script>\r\n')
+OK_FILE = ('<template><div /></template>\r\n'
            '<script setup>\r\n'
-           'const x = ;\r\n'
+           'const x = 1;\r\n'
            '</script>\r\n')
-OK_VUE = ('<template><div /></template>\r\n'
-          '<script setup>\r\n'
-          'const x = 1;\r\n'
-          '</script>\r\n')
-
-
-def _has_node():
-    return shutil.which("node") is not None
 
 
 def _find_sh():
@@ -128,22 +124,22 @@ def _read(*parts):
 
 
 class _Fixture:
-    """临时端仓 + 指向它的最小配置（gate t_pc），走 HARNESS_CONFIG 覆盖层。"""
+    """临时端仓 + 指向它的最小配置（gate t_gate），走 HARNESS_CONFIG 覆盖层。"""
 
     def __init__(self):
         self.dir = tempfile.mkdtemp(prefix="entrylvl_")
-        self.repo = os.path.join(self.dir, "repo_pc")
+        self.repo = os.path.join(self.dir, "repo_gate")
         os.makedirs(os.path.join(self.repo, "src"), exist_ok=True)
         subprocess.run(["git", "init", "-q"], cwd=self.repo, capture_output=True)
         self.cfg = os.path.join(self.dir, "cfg.yaml")
         with open(self.cfg, "w", encoding="utf-8", newline="") as f:
             f.write("repos:\n"
-                    f"  t_pc: {self.repo.replace(chr(92), '/')}\n"
+                    f"  t_gate: {self.repo.replace(chr(92), '/')}\n"
                     "gates:\n"
-                    "  t_pc:\n"
+                    "  t_gate:\n"
                     "    enabled: true\n"
-                    "    repo: t_pc\n"
-                    "    script: checks/pc_code_check.py\n")
+                    "    repo: t_gate\n"
+                    "    script: checks/example_code_check.py\n")
         self.env = dict(os.environ, HARNESS_CONFIG=self.cfg)
 
     def write(self, rel, text):
@@ -157,9 +153,9 @@ class _Fixture:
         _rmtree_force(self.dir)
 
 
-@_slow("PC 语法入口链路（起子进程/node）")
-class TestPcSyntaxReachesRealEntry(unittest.TestCase):
-    """N1 回归锁：坏语法必须在**真实入口**被拦（函数级测过不算数）。"""
+@_slow("示例 gate 入口链路（起子进程）")
+class TestExampleRuleReachesRealEntry(unittest.TestCase):
+    """入口级回归锁：规则命中必须在**真实入口**被拦（函数级测过不算数）。"""
 
     def setUp(self):
         self.fx = _Fixture()
@@ -167,41 +163,39 @@ class TestPcSyntaxReachesRealEntry(unittest.TestCase):
     def tearDown(self):
         self.fx.cleanup()
 
-    @unittest.skipUnless(_has_node(), "无 node，PC 语法检查按设计跳过")
     def test_blocks_via_check_script_cli(self):
-        bad = self.fx.write("src/bad.vue", BAD_VUE)
-        r = _run([PY, os.path.join(ROOT, "checks", "pc_code_check.py"),
-                  "--gate", "t_pc", "--repo", self.fx.repo, bad], env=self.fx.env)
+        bad = self.fx.write("src/bad.vue", BAD_FILE)
+        r = _run([PY, os.path.join(ROOT, "checks", "example_code_check.py"),
+                  "--gate", "t_gate", "--repo", self.fx.repo, bad], env=self.fx.env)
         self.assertEqual(r.returncode, 1,
-                         f"坏语法经 check 脚本 CLI 应 rc=1，实际 {r.returncode}\n{r.stdout[-600:]}")
-        self.assertIn("语法错误", r.stdout + r.stderr,
-                      "拦截理由必须是真实语法错误（不是崩溃/路径错）")
+                         f"命中经 check 脚本 CLI 应 rc=1，实际 {r.returncode}\n{r.stdout[-600:]}")
+        self.assertIn("NO-CONSOLE", r.stdout + r.stderr,
+                      "拦截理由必须是规则命中（不是崩溃/路径错）")
 
-    @unittest.skipUnless(_has_node(), "无 node，PC 语法检查按设计跳过")
     def test_blocks_via_run_gate(self):
-        """run_gate 是提交/编辑期真正走的入口——这里才是 N1 的现场。"""
-        bad = self.fx.write("src/bad.vue", BAD_VUE)
-        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_pc", bad],
+        """run_gate 是提交/编辑期真正走的入口——这里才是回归锁的现场。"""
+        bad = self.fx.write("src/bad.vue", BAD_FILE)
+        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_gate", bad],
                  env=self.fx.env)
         self.assertEqual(r.returncode, 1,
-                         f"坏语法经 run_gate 应 rc=1，实际 {r.returncode}\n{r.stdout[-600:]}")
-        self.assertIn("语法错误", r.stdout + r.stderr)
+                         f"命中经 run_gate 应 rc=1，实际 {r.returncode}\n{r.stdout[-600:]}")
+        self.assertIn("NO-CONSOLE", r.stdout + r.stderr)
 
     def test_clean_file_passes(self):
-        """反向锁：语法正确不得被误拦（避免"改狠了"）。"""
-        ok = self.fx.write("src/ok.vue", OK_VUE)
-        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_pc", ok],
+        """反向锁：合规文件不得被误拦（避免"改狠了"）。"""
+        ok = self.fx.write("src/ok.vue", OK_FILE)
+        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_gate", ok],
                  env=self.fx.env)
         self.assertEqual(r.returncode, 0, f"合规文件应放行\n{r.stdout[-600:]}")
 
-    @unittest.skipUnless(_has_node(), "无 node")
-    def test_full_scan_still_skips_node_by_design(self):
-        """skip_node_in_full 的**设计语义**：只有全量扫描跳过语法（为全仓速度），
-        定向/提交/编辑期必须校验。防止有人"修"成全局都跑（慢）或全局都不跑（漏）。"""
-        self.fx.write("src/bad.vue", BAD_VUE)
-        r = _run([PY, os.path.join(ROOT, "checks", "pc_code_check.py"),
-                  "--gate", "t_pc", "--repo", self.fx.repo, "--all"], env=self.fx.env)
-        self.assertIn("全量扫描", r.stdout)
+    def test_full_scan_reports_violation(self):
+        """全量入口（`--all`）必须扫到仓内违规，而不是只认位置参数。"""
+        self.fx.write("src/bad.vue", BAD_FILE)
+        r = _run([PY, os.path.join(ROOT, "checks", "example_code_check.py"),
+                  "--gate", "t_gate", "--repo", self.fx.repo, "--all"], env=self.fx.env)
+        self.assertEqual(r.returncode, 1,
+                         f"全量扫描应报出违规\n{r.stdout[-600:]}")
+        self.assertIn("NO-CONSOLE", r.stdout)
 
 
 @_slow("run_gate 参数链路（起子进程）")
@@ -215,48 +209,27 @@ class TestRunGateModeValue(unittest.TestCase):
         self.fx.cleanup()
 
     def test_mode_value_and_file_both_reach_command(self):
-        f = self.fx.write("src/ok.vue", OK_VUE)
+        f = self.fx.write("src/ok.vue", OK_FILE)
         r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"),
-                  "t_pc", "--mode", "loose", f], env=self.fx.env)
+                  "t_gate", "--mode", "loose", f], env=self.fx.env)
         out = r.stdout + r.stderr
         self.assertIn("--mode loose", out,
                       "mode 的值必须出现在真正执行的命令里（旧实现被丢弃）")
         self.assertIn(os.path.basename(f), out, "文件参数不能丢失")
-        self.assertIn("[loose]", out, "check 脚本收到的 mode 应是 loose（不是默认 strict）")
 
 
-# 严重 1 回归锁的样本（行尾显式写死：PC 默认 CRLF，H5 要求 LF，别让行尾规则抢戏）
-PC_CONSOLE_VUE = ('<template><div /></template>\r\n'
-                  '<script setup>\r\n'
-                  'console.log("x");\r\n'
-                  '</script>\r\n')
-LF_VUE = ('<template><div /></template>\n'
-          '<script setup>\n'
-          'const x = 1;\n'
-          '</script>\n')
-H5_CONSOLE_VUE = ('<template><div /></template>\n'
-                  '<script setup>\n'
-                  'console.log("x");\n'
-                  '</script>\n')
-
-# 后端 R3 样本（2026-10-08）：实体目录里的 `using Eagle.Repository;` —— R3 的 using 通道。
-# 夹具的 write() 只落盘、不 `git add` ⇒ 门禁按**新建文件**口径（整文件判），命中不会被
-# "本次改动行"过滤掉。`[Table]` 是刻意的：否则 `Entities/Table/` 下的类会被 R12 再拦一次，
-# 那样 `rc=1` 就说不出是谁拦的（本条要对比的是**R3 有没有被关**）。
-BACKEND_R3_CS = ('using Eagle.Repository;\n'
-                 'using System.ComponentModel.DataAnnotations.Schema;\n'
-                 'namespace Eagle.RMC.Entities\n'
-                 '{\n'
-                 '    [Table("Foo")]\n'
-                 '    public class FooEntity { }\n'
-                 '}\n')
+# 示例 gate 的命中样本（行尾统一 CRLF，避免 EOL 规则抢先）
+CONSOLE_VUE = ('<template><div /></template>\r\n'
+               '<script setup>\r\n'
+               'console.log("x");\r\n'
+               '</script>\r\n')
 
 
 class _TwoGateFixture(_Fixture):
-    """在 _Fixture 的临时仓上，把配置改写成「同一仓、两个策略不同的 gate（同一脚本）」。
+    """同一临时仓上注册两个 gate（同一脚本），用来验证 gate 名按位置参数转发。
 
-    刻意**不定义 gxgk_pc / gxgk_h5**：夹具里一旦存在默认 gate，"run_gate 没转发 --gate"
-    与"转发了"的行为就完全一致，缺陷不可观测 —— 这正是本文件原有 25 例漏掉严重 1 的原因。
+    刻意**不定义默认 gate**：夹具里一旦存在同名默认 gate，"没转发 --gate"与"转发了"
+    的行为就完全一致，缺陷不可观测。
     """
 
     def __init__(self, script, pairs):
@@ -279,17 +252,12 @@ class _TwoGateFixture(_Fixture):
 
 @_slow("run_gate gate 名转发链路（起子进程）")
 class TestGateNameReachesEndpointScript(unittest.TestCase):
-    """评审 v13 严重 1 的回归锁：run_gate 必须把**命令行上的 gate 名**转发给端脚本。
+    """run_gate 必须把**命令行上的 gate 名**转发给端脚本。
 
-    缺陷形状（2026-09-16 修复前）：`--gate` 的注入条件里写死了 `backend_layer_check.py`，
-    PC/H5 于是停在脚本里硬编码的 GXGK_PC/GXGK_H5 上，load_policy 读的是别家 gate 的
-    mode / disabled_rules / legacy_baseline / line_ending。危害不是"某个检查变松"，而是
-    **策略配置整体错位**：10 个非 gxgk H5 gate 的 `disabled_rules: [H5-UPLOAD]` 静默失效，
-    ntrx_pc 声明 mode: loose 却按 strict 拦存量组件引用。
-
-    断言方式为**双向对拍**：同一个文件在两个策略不同的 gate 下必须得到不同判定。
-    若 gate 名没被转发，两个 gate 会一起退化成同一份默认策略，对拍必然失败 ——
-    这正是"夹具里塞一个默认 gate 就能骗过测试"的反面写法。
+    缺陷形状（2026-09-16 修复前）：`--gate` 的注入条件里写死了
+    `backend_layer_check.py`，其余端于是停在脚本里硬编码的 gate 名上，
+    `load_policy` 读的是别家 gate 的策略 —— 配置整体错位，且台账里看不出来。
+    现在注入集合取自 `registry.ENDPOINT_SCRIPTS`（唯一数据源），示例 gate 也在册。
     """
 
     def tearDown(self):
@@ -299,116 +267,33 @@ class TestGateNameReachesEndpointScript(unittest.TestCase):
         return _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), gate, path],
                     env=self.fx.env)
 
-    def test_pc_disabled_rules_follow_gate_name(self):
-        self.fx = _TwoGateFixture("checks/pc_code_check.py",
-                                  [("t_on", []), ("t_off", ["disabled_rules: [PC-CONSOLE]"])])
-        f = self.fx.write("src/log.vue", PC_CONSOLE_VUE)
-        off = self._run_gate("t_off", f)
-        on = self._run_gate("t_on", f)
-        self.assertIn("--gate t_off", off.stdout,
-                      "命令行上的 gate 名必须注入子进程命令\n" + off.stdout[-600:])
-        self.assertEqual(off.returncode, 0,
-                         f"该 gate 配了 disabled_rules: [PC-CONSOLE]，应放行，实际 {off.returncode}\n"
-                         + off.stdout[-600:])
-        self.assertEqual(on.returncode, 1,
-                         f"未关该规则的 gate 应拦下 console.log，实际 {on.returncode}\n"
-                         + on.stdout[-600:])
+    def test_gate_name_is_injected_for_each_gate(self):
+        self.fx = _TwoGateFixture("checks/example_code_check.py",
+                                  [("t_on", []), ("t_off", [])])
+        f = self.fx.write("src/log.vue", CONSOLE_VUE)
+        for gate in ("t_on", "t_off"):
+            r = self._run_gate(gate, f)
+            self.assertIn(f"--gate {gate}", r.stdout,
+                          f"命令行上的 gate 名 {gate} 没被注入子进程命令\n" + r.stdout[-600:])
+            self.assertEqual(r.returncode, 1,
+                             f"示例规则应拦下 console.log，实际 {r.returncode}\n"
+                             + r.stdout[-600:])
 
-    def test_pc_line_ending_follows_gate_name(self):
-        """同一份纯 LF 文件：line_ending: LF 的 gate 放行、CRLF 的 gate 拦下。
-        这条同时覆盖"策略整体错位"——行尾期望值也只从 gate 配置来。"""
-        self.fx = _TwoGateFixture("checks/pc_code_check.py",
-                                  [("t_lf", ["line_ending: LF"]),
-                                   ("t_crlf", ["line_ending: CRLF"])])
-        f = self.fx.write("src/lf.vue", LF_VUE)
-        r_lf = self._run_gate("t_lf", f)
-        r_crlf = self._run_gate("t_crlf", f)
-        self.assertEqual(r_lf.returncode, 0,
-                         "line_ending: LF 的 gate 不该把纯 LF 文件判成行尾异常\n" + r_lf.stdout[-600:])
-        self.assertEqual(r_crlf.returncode, 1,
-                         "line_ending: CRLF 的 gate 应拦纯 LF 文件\n" + r_crlf.stdout[-600:])
-
-    def test_h5_disabled_rules_follow_gate_name(self):
-        self.fx = _TwoGateFixture("checks/h5_code_check.py",
-                                  [("t_on", []), ("t_off", ["disabled_rules: [H5-CONSOLE]"])])
-        f = self.fx.write("src/log.vue", H5_CONSOLE_VUE)
-        off = self._run_gate("t_off", f)
-        on = self._run_gate("t_on", f)
-        self.assertEqual(off.returncode, 0,
-                         f"该 gate 配了 disabled_rules: [H5-CONSOLE]，应放行，实际 {off.returncode}\n"
-                         + off.stdout[-600:])
-        self.assertEqual(on.returncode, 1,
-                         f"未关该规则的 gate 应拦下 console.log，实际 {on.returncode}\n"
-                         + on.stdout[-600:])
-
-    def test_backend_disabled_rules_follow_gate_name(self):
-        """后端版（2026-10-08 补）：PC/H5 各有一条同款锁，**后端一直没有**。
-
-        为什么后端这条非补不可：后端的 `disabled_rules` 消费链路比另两端晚一轮才接上
-        —— 评审 v13 中 11 记录的原状是「后端**完全不消费**这个键，运维写
-        `disabled_rules: [R9]` 会被静默忽略」（见 `checks/backend_layer_check.py:198`）。
-        静默失效是这里最坏的一类缺陷：配置写着、台账里看不出、行为照旧。
-
-        现实动机：R3 自 2026-10-08 起改由配置层关闭（12 个 backend gate，
-        见 `config/harness.yaml`），整套方案的**唯一支点**就是这条开关真的生效 ——
-        本类原有的 gate 名转发锁只覆盖 PC/H5，支点落在这里就没人守。
-        """
-        self.fx = _TwoGateFixture("checks/backend_layer_check.py",
-                                  [("t_on", ["encoding: utf-8"]),
-                                   ("t_off", ["encoding: utf-8",
-                                              "disabled_rules: [R3]"])])
-        f = self.fx.write("RMC/Eagle.RMC.Entities/Table/Foo/FooEntity.cs", BACKEND_R3_CS)
-        on = self._run_gate("t_on", f)
-        off = self._run_gate("t_off", f)
-        self.assertIn("--gate t_off", off.stdout,
-                      "命令行上的 gate 名必须注入子进程命令\n" + off.stdout[-600:])
-        self.assertEqual(on.returncode, 1,
-                         "未关 R3 的 gate 应拦下实体层的 using Eagle.Repository，"
-                         f"实际 {on.returncode}\n" + on.stdout[-600:])
-        self.assertIn("R3", on.stdout, "拦截理由必须是 R3（不是崩溃/路径错）")
-        self.assertEqual(off.returncode, 0,
-                         f"该 gate 配了 disabled_rules: [R3]，应放行，实际 {off.returncode}\n"
-                         + off.stdout[-600:])
-
-    def test_backend_disabled_rules_are_specific_to_the_named_rule(self):
-        """反向锁：开关必须**按规则名**生效，不能一颗开关静默整族。
-
-        判据方向刻意选「关别条 → R3 必须照拦」：把消费处写成 `if _off:`（而不是
-        `if rule.id in _off`）时，上面那条仍然全绿（R3 确实被放行了），只有本方向能抓到。
-        2026-10-08 起 12 个 backend gate 都挂着 `disabled_rules: [R3]`，一旦退化成
-        "有开关就全关"，等于连同 R1/R2/R5/R6/R7/R9/R10/R11/R12 一起关掉而后端毫无症状。
-        """
-        self.fx = _TwoGateFixture("checks/backend_layer_check.py",
-                                  [("t_other", ["encoding: utf-8",
-                                                "disabled_rules: [R9]"])])
-        f = self.fx.write("RMC/Eagle.RMC.Entities/Table/Foo/FooEntity.cs", BACKEND_R3_CS)
-        r = self._run_gate("t_other", f)
-        self.assertEqual(r.returncode, 1,
-                         "只关了 R9，R3 必须照拦，"
-                         f"实际 {r.returncode}\n" + r.stdout[-600:])
-        self.assertIn("R3", r.stdout, "拦截理由必须是 R3")
-
-    def test_caller_supplied_gate_flag_cannot_rewrite_policy(self):
-        """严重 1 补丁的配套锁：调用方**不能**用 `--gate` 改写策略归属。
-
-        为什么这条必须锁：端脚本是从 argv 认 gate 的，而入口把用户给的"文件名"原样拼进
-        argv（MCP 的 `files` 只 str() 不校验、CLI 同理）→ 一个长得像旗标的"文件名"就能把
-        严 gate 降级成松 gate，且台账里记的还是严 gate 的 PASS（审计线索被伪造）。
-        双向对拍：先证明 t_off 真能放行该文件（松策略存在），再要求 t_on 必须仍拦下。
-        """
-        self.fx = _TwoGateFixture("checks/pc_code_check.py",
-                                  [("t_on", []), ("t_off", ["disabled_rules: [PC-CONSOLE]"])])
-        f = self.fx.write("src/log.vue", PC_CONSOLE_VUE)
+    def test_caller_supplied_gate_flag_is_ignored(self):
+        """调用方**不能**用 `--gate` 改写策略归属（只认位置参数）。"""
+        self.fx = _TwoGateFixture("checks/example_code_check.py",
+                                  [("t_on", []), ("t_off", [])])
+        f = self.fx.write("src/log.vue", CONSOLE_VUE)
         rg = os.path.join(ROOT, "harness", "run_gate.py")
-        off = self._run_gate("t_off", f)
-        self.assertEqual(off.returncode, 0,
-                         "夹具前提不成立：t_off 配了 disabled_rules 本就该放行\n" + off.stdout[-600:])
         for label, argv in (("旗标在文件后", ["t_on", f, "--gate", "t_off"]),
                             ("旗标在文件前", ["t_on", "--gate", "t_off", f])):
             r = _run([PY, rg] + argv, env=self.fx.env)
-            self.assertEqual(r.returncode, 1,
-                             f"{label}：t_on 的策略被 --gate 降级成了 t_off（rc={r.returncode}）\n"
-                             + r.stdout[-600:])
+            self.assertIn("忽略调用方 --gate", r.stdout,
+                          f"{label}：调用方 --gate 没被忽略\n" + r.stdout[-600:])
+            self.assertIn("--gate t_on", r.stdout,
+                          f"{label}：策略归属应仍是 t_on\n" + r.stdout[-600:])
+            self.assertNotIn("--gate t_off", r.stdout,
+                             f"{label}：t_off 混进了真正执行的命令\n" + r.stdout[-600:])
 
 
 @_slow("commit-msg 链路（真 git 提交）")
@@ -523,9 +408,8 @@ class TestEntryUtf8Fallback(unittest.TestCase):
 
 
 @_slow("行内豁免入口链路")
-class TestPcInlineWaiver(unittest.TestCase):
-    """N4 回归锁：PC 也要认 `harness-ok: <规则ID>` 行内豁免（H5 早有，PC 原先缺失 →
-    推广文档承诺的"行内豁免覆盖三端"在 PC 端不成立）。"""
+class TestExampleInlineWaiver(unittest.TestCase):
+    """N4 回归锁：示例 gate 必须认 `harness-ok: <规则ID> <理由>` 行内豁免。"""
 
     def setUp(self):
         self.fx = _Fixture()
@@ -535,7 +419,7 @@ class TestPcInlineWaiver(unittest.TestCase):
 
     MARKED = ('<template><div /></template>\r\n'
               '<script setup>\r\n'
-              'console.log("debug")  // harness-ok: PC-CONSOLE 演示必须临时打印\r\n'
+              'console.log("debug")  // harness-ok: NO-CONSOLE 演示必须临时打印\r\n'
               '</script>\r\n')
     PLAIN = ('<template><div /></template>\r\n'
              '<script setup>\r\n'
@@ -544,38 +428,36 @@ class TestPcInlineWaiver(unittest.TestCase):
 
     def test_marked_line_is_waived(self):
         f = self.fx.write("src/marked.vue", self.MARKED)
-        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_pc", f], env=self.fx.env)
+        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_gate", f], env=self.fx.env)
         self.assertEqual(r.returncode, 0, f"带 harness-ok 的行应放行\n{r.stdout[-400:]}")
 
     def test_unmarked_line_still_blocks(self):
         """反向锁：没写豁免标记就必须照拦（否则豁免等于默认全开）。"""
         f = self.fx.write("src/plain.vue", self.PLAIN)
-        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_pc", f], env=self.fx.env)
+        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_gate", f], env=self.fx.env)
         self.assertEqual(r.returncode, 1, f"未标记的 console.log 必须拦\n{r.stdout[-400:]}")
 
     def test_reasonless_waiver_still_blocks(self):
         """P0-2 item 1: harness-ok: <ID> without reason must NOT waive.
 
-        Review found: old regex did not require a reason, so `harness-ok: PC-CONSOLE`
+        Review found: old regex did not require a reason, so `harness-ok: NO-CONSOLE`
         without explanation was accepted -- an unaudited backdoor.
         New: `harness-ok: <ID> <reason>` required.
         """
         no_reason = ('<template><div /></template>\r\n'
                      '<script setup>\r\n'
-                     'console.log("debug")  // harness-ok: PC-CONSOLE\r\n'
+                     'console.log("debug")  // harness-ok: NO-CONSOLE\r\n'
                      '</script>\r\n')
         f = self.fx.write("src/no_reason.vue", no_reason)
-        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_pc", f], env=self.fx.env)
+        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_gate", f], env=self.fx.env)
         self.assertEqual(r.returncode, 1,
                          f"reasonless harness-ok must block\n{r.stdout[-400:]}")
 
-    def test_waivers_used_are_reported_on_pc(self):
-        """N7 回归锁：PC 端必须**打印**本次用掉的豁免（H5 早打了，PC 只入账不显示）。
+    def test_waivers_used_are_reported(self):
+        """N7 回归锁：用掉豁免时必须**打印**审计行。
 
         为什么较真：豁免是唯一合法的绕过出口，越看不见越危险 —— 提交输出里不列出来，
-        复核的人就不知道这次是「真合规」还是「打了标记放行」。此前
-        reports/review-2026-09-15.html 声称「在提交输出里列出本次用掉的全部豁免」，
-        该承诺在 PC 端**不成立**（H5 成立），属三端口径不一致。
+        复核的人就不知道这次是「真合规」还是「打了标记放行」。
 
         与上面 test_marked_line_is_waived 分开命名，是为了失败信息能直接指出
         「是没打印」而不是「没放行」—— 两者是不同的事故。
@@ -585,19 +467,18 @@ class TestPcInlineWaiver(unittest.TestCase):
         理由是从源文件注释里逐字抄来的自由文本，而 gate stdout 就是 hook 回灌给模型的
         注入通道 ⇒ 那句断言等于**要求**通道搬运不可信文本（与 ③ 里 `test_checks.py`
         那处同款：把缺陷锁成了要求）。现改为 `assertNotIn` **并**补一句正面断言
-        「`PC-CONSOLE L3` 必须还在」（L3 是 `MARKED` 样本里那个 `console.log` 的行号）——
+        「`NO-CONSOLE L3` 必须还在」（L3 是 `MARKED` 样本里那个 `console.log` 的行号）——
         免得反转过头，把本条退化成"什么都别打印"。
         判到**注入正文**那一层的锁在下面
         `TestHookPathExtraction::test_injected_context_carries_no_waiver_reason_text`；
         护盾 `M116`。
         """
         f = self.fx.write("src/marked.vue", self.MARKED)
-        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_pc", f], env=self.fx.env)
+        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_gate", f], env=self.fx.env)
         self.assertEqual(r.returncode, 0, f"前置：带豁免标记应放行\n{r.stdout[-400:]}")
         self.assertIn("本次用掉", r.stdout,
-                      "PC 端没有打印本次用掉的豁免（H5 会打印；三端口径必须一致）\n"
-                      + r.stdout[-600:])
-        self.assertIn("PC-CONSOLE", r.stdout, "豁免汇总里必须点名规则 ID")
+                      "没有打印本次用掉的豁免（审计行缺失）\n" + r.stdout[-600:])
+        self.assertIn("NO-CONSOLE", r.stdout, "豁免汇总里必须点名规则 ID")
         # ★ 2026-09-30：这一句原先写的是 assertIn("演示必须临时打印", r.stdout)，理由是
         # 「豁免汇总必须带上理由 —— 理由才是复核的依据」。**它把缺陷锁成了要求。**
         # 理由是从源文件注释里逐字抄来的**自由文本**，而 gate stdout 正是 hook 回灌给
@@ -612,52 +493,9 @@ class TestPcInlineWaiver(unittest.TestCase):
                          "豁免的理由原文被回显进了 gate stdout —— 那正是 hook 回灌给模型的"
                          "注入通道：注释里的任意文字都会原样进模型上下文。理由留在 diff 里，"
                          "不在这里（见 waiver_summary() 的说明与 M116）\n" + r.stdout[-400:])
-        self.assertIn("PC-CONSOLE L3", r.stdout,
+        self.assertIn("NO-CONSOLE L3", r.stdout,
                       "反转之后必须**仍然**点名「规则 ID + 行号」—— 否则这条锁就从"
                       "「别回显理由」退化成了「什么都别打印」，反向的假绿\n" + r.stdout[-400:])
-
-
-@_slow("H5 观察项入口链路")
-class TestH5ObserveItemsVisible(unittest.TestCase):
-    """N6 回归锁：legacy 仓的整文件口径命中要"可见但不拦"（原先 H5 直接丢弃 →
-    存量状态完全不可见；PC 会转 warns 展示）。"""
-
-    def setUp(self):
-        self.dir = tempfile.mkdtemp(prefix="observe_")
-        self.repo = os.path.join(self.dir, "repo_h5")
-        os.makedirs(os.path.join(self.repo, "src"), exist_ok=True)
-        subprocess.run(["git", "init", "-q"], cwd=self.repo, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "t@t"], cwd=self.repo, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "t"], cwd=self.repo, capture_output=True)
-        # 已提交 + LF：改行集为空 → 走 legacy 观察项分支（这正是"存量"的场景）
-        self.vue = os.path.join(self.repo, "src", "legacy.vue")
-        with open(self.vue, "w", encoding="utf-8", newline="") as f:
-            f.write("<template><view /></template>\n<script setup>\n// TODO 存量占位\n</script>\n")
-        subprocess.run(["git", "add", "src/legacy.vue"], cwd=self.repo, capture_output=True)
-        subprocess.run(["git", "commit", "-q", "-m", "存量"], cwd=self.repo, capture_output=True)
-
-    def tearDown(self):
-        _rmtree_force(self.dir)
-
-    def _run_h5(self, legacy):
-        cfg = os.path.join(self.dir, f"cfg_{legacy}.yaml")
-        with open(cfg, "w", encoding="utf-8", newline="") as f:
-            f.write(f"repos:\n  t_h5: {self.repo.replace(chr(92), '/')}\n"
-                    "gates:\n  t_h5:\n    enabled: true\n    repo: t_h5\n"
-                    "    script: checks/h5_code_check.py\n"
-                    + ("    legacy_baseline: true\n" if legacy else ""))
-        return _run([PY, os.path.join(ROOT, "checks", "h5_code_check.py"),
-                     "--gate", "t_h5", "--repo", self.repo, self.vue],
-                    env=dict(os.environ, HARNESS_CONFIG=cfg))
-
-    def test_legacy_repo_reports_observe_item_without_blocking(self):
-        r = self._run_h5(legacy=True)
-        self.assertEqual(r.returncode, 0, f"legacy 存量不应拦\n{r.stdout[-400:]}")
-        self.assertIn("观察项", r.stdout + r.stderr, "但必须可见（否则存量状态无从评估）")
-
-    def test_non_legacy_repo_still_blocks(self):
-        r = self._run_h5(legacy=False)
-        self.assertEqual(r.returncode, 1, f"非 legacy 仓同一文件必须拦\n{r.stdout[-400:]}")
 
 
 class TestThirdRoundLocks(unittest.TestCase):
@@ -728,15 +566,6 @@ class TestThirdRoundLocks(unittest.TestCase):
         r = _run([PY, hook, "codex", "PostToolUse"], cwd=ROOT)   # _run 用 DEVNULL
         self.assertEqual(r.returncode, 0, f"无 payload 时应静默放行\n{r.stdout}{r.stderr}")
 
-    def test_h5_has_node_switch_like_pc(self):          # N-θ
-        """H5 与 PC 同款 `skip_node_in_full`（只对全量扫描生效），且真的读配置。"""
-        src = _read("checks", "h5_code_check.py")
-        self.assertIn("SKIP_NODE_IN_FULL", src)
-        self.assertIn('if "skip_node_in_full" in g', src)
-        self.assertIn("SKIP_NODE_IN_FULL and mode ==", src)
-        cfg = _read("config", "harness.yaml")
-        self.assertIn("skip_node_in_full", cfg)
-
     def test_auto_gate_skip_hint_goes_to_stderr(self):  # N-α 配套
         """跳过编辑期检查的提示必须走 stderr：stdout 是"检查结论"通道，
         rc=0 只代表没检查，不代表通过。"""
@@ -744,151 +573,6 @@ class TestThirdRoundLocks(unittest.TestCase):
         i = src.index("的 run_on={run_on} 不含 post_edit")   # 唯一锚点：跳过分支的 print
         self.assertIn("file=sys.stderr", src[i:i + 200])
 
-
-@_slow("全量扫描口径链路（建临时 git 仓 + 全量扫）")
-class TestPcFullScanIsWholeFile(unittest.TestCase):
-    """第四轮修复锁：全量扫描 = **整文件口径**，且不该为每个文件算 changed_lines。
-
-    两个方向互为反面，只测一头就把口径改坏也照样全绿：
-      · 全量：dirty 文件里**未改动行**上的违规也必须报（修前被 changed_lines 过滤 → 漏报存量）
-      · 定向：同一文件同一违规不报（存量按行豁免，是既有特性）
-    另外它是性能锁：compute_changed_lines 每文件两次 git 子进程（实测 163ms），
-    hy_pc 1889 文件 → 全量扫描会白等约 5 分钟（实测修后 15.6s / 修前 >2min 未完）。
-    """
-
-    def setUp(self):
-        self.dir = tempfile.mkdtemp(prefix="pcfull_")
-        self.repo = os.path.join(self.dir, "repo")
-        os.makedirs(os.path.join(self.repo, "src"), exist_ok=True)
-        self.file = os.path.join(self.repo, "src", "demo.vue")
-        # 行尾必须是 CRLF（PC 仓约定），否则行尾规则先拦，测不到 console 规则
-        with open(self.file, "wb") as f:
-            f.write('<template>\r\n  <div>x</div>\r\n</template>\r\n'
-                    '<script setup>\r\nconsole.log("存量");\r\n</script>\r\n'.encode("utf-8"))
-        self.cfg = os.path.join(self.dir, "cfg.yaml")
-        with open(self.cfg, "w", encoding="utf-8", newline="") as f:
-            f.write("repos:\n  t_pc: %s\ngates:\n  t_pc:\n    enabled: true\n    repo: t_pc\n"
-                    "    script: checks/pc_code_check.py\n    src: src\n    mode: strict\n"
-                    "    run_on: [pre_commit, post_edit]\n" % self.repo.replace("\\", "/"))
-        for cmd in (["git", "init", "-q"], ["git", "config", "user.email", "t@t"],
-                    ["git", "config", "user.name", "t"], ["git", "add", "src/demo.vue"],
-                    ["git", "commit", "-qm", "init"]):
-            subprocess.run(cmd, cwd=self.repo, capture_output=True)
-        # 制造一次真实改动：新增一行注释（干净行）→ changed_lines = 只有这一行
-        with open(self.file, "ab") as f:
-            f.write(b"<!-- 2026-09-12 new line -->\r\n")
-
-    def tearDown(self):
-        _rmtree_force(self.dir)
-
-    def _run_check(self, extra, repo=None, cfg=None):
-        # 注意：_run 的 env 是**整体替换**（不是合并）。只传 HARNESS_CONFIG 会让子进程没有 PATH，
-        # git 就调不到 → changed_lines 静默为空（本文件就是这么先踩到"git 不可用"形态的）。
-        env = dict(os.environ, HARNESS_CONFIG=cfg or self.cfg)
-        return _run([PY, os.path.join(ROOT, "checks", "pc_code_check.py"), "--gate", "t_pc",
-                     "--repo", repo or self.repo] + extra, env=env)
-
-
-    def test_full_scan_reports_untouched_lines(self):
-        r = self._run_check(["--all"])
-        self.assertEqual(r.returncode, 1, f"全量扫描必须报出存量违规\n{r.stdout}{r.stderr}")
-        self.assertIn("console", r.stdout, "全量=整文件口径，未改动行上的违规也要报")
-
-    def test_targeted_waives_legacy_lines(self):
-        r = self._run_check([self.file])
-        self.assertEqual(r.returncode, 0,
-                         f"定向口径应只拦新增行，存量 console.log 不该拦\n{r.stdout}{r.stderr}")
-
-    def test_non_git_repo_warns_instead_of_silent(self):
-        """git 不可用 / 非 git 仓库 与「文件确实没改动」原本都返回空集 → 存量按行豁免**静默失效**
-        （表现为"改一行老文件被整文件存量拦住"）。这条锁要求至少一次性告警出来。
-
-        构造用「非 git 仓库」而不是「去掉 PATH」：CI 上（Linux）用后者红过一次——POSIX 的 execvp
-        在 PATH 为空时会退回 /bin:/usr/bin，git 照样找得到，测试因此变成平台相关（Windows 过 / Linux 挂）。
-        """
-        plain = os.path.join(self.dir, "plain_repo")        # 故意不 git init
-        os.makedirs(os.path.join(plain, "src"), exist_ok=True)
-        shutil.copyfile(self.file, os.path.join(plain, "src", "demo.vue"))
-        cfg = os.path.join(self.dir, "cfg_plain.yaml")
-        with open(cfg, "w", encoding="utf-8", newline="") as f:
-            f.write("repos:\n  t_pc: %s\ngates:\n  t_pc:\n    enabled: true\n    repo: t_pc\n"
-                    "    script: checks/pc_code_check.py\n    src: src\n    mode: strict\n"
-                    "    run_on: [pre_commit, post_edit]\n" % plain.replace("\\", "/"))
-        r = self._run_check([os.path.join(plain, "src", "demo.vue")], repo=plain, cfg=cfg)
-        self.assertIn("存量按行豁免", r.stderr, f"git 侧失效必须告警\n{r.stdout}{r.stderr}")
-        self.assertEqual(r.returncode, 1, "降级为整文件口径时该拦的仍要拦（宁可吵不可漏）")
-
-
-
-class TestSyntaxSensorNotSilent(unittest.TestCase):
-    """④ 第四轮外审追问："语法规则从未触发，是不是 node 缺失导致的静默跳过？"
-
-    本机实测 node 可调（v22.22.0），两条语法规则正例对照都会响。但代码里 `except FileNotFoundError`
-    原先直接 return None —— "没检查"与"检查通过"无法区分 = 假绿。这里三层锁住它：
-      ① 埋点必须记到 SYNTAX（PC/H5 各一遍，真跑 CLI）
-      ② node 缺失时必须**出声**（告警函数真的写 stderr）
-      ③ 两个 loader 的缺 node 分支确实调了那个告警（源码级，跨平台确定）
-    """
-
-    def setUp(self):
-        self.fx = _Fixture()
-
-    def tearDown(self):
-        self.fx.cleanup()
-
-    def _run_with_stats(self, script, gate, repo, target, cfg):
-        stats = os.path.join(self.fx.dir, "stats.json")
-        env = dict(self.fx.env, HARNESS_CONFIG=cfg, HARNESS_STATS_FILE=stats)
-        r = _run([PY, os.path.join(ROOT, "checks", script), "--gate", gate,
-                  "--repo", repo, target], env=env)
-        got = {}
-        if os.path.isfile(stats):
-            with open(stats, encoding="utf-8") as f:
-                got = json.load(f).get("rules") or {}
-        return r, got
-
-    def _cfg_for(self, h5=False):
-        cfg = os.path.join(self.fx.dir, "cfg_h5.yaml" if h5 else "cfg_pc.yaml")
-        script = "checks/h5_code_check.py" if h5 else "checks/pc_code_check.py"
-        with open(cfg, "w", encoding="utf-8", newline="") as f:
-            f.write("repos:\n  t_end: %s\ngates:\n  t_end:\n    enabled: true\n    repo: t_end\n"
-                    "    script: %s\n    mode: strict\n    run_on: [pre_commit]\n"
-                    % (self.fx.repo.replace(chr(92), "/"), script))
-        return cfg
-
-    @unittest.skipUnless(_has_node(), "无 node（此时按设计跳过，另有 test_node_missing_must_announce 守着）")
-    def test_pc_syntax_hits_the_stats_channel(self):
-        bad = self.fx.write("src/bad.vue", BAD_VUE)
-        r, got = self._run_with_stats("pc_code_check.py", "t_end", self.fx.repo, bad, self._cfg_for())
-        self.assertEqual(r.returncode, 1, f"坏语法应拦住\n{r.stdout[-400:]}")
-        self.assertIn("PC-SYNTAX", got,
-                      f"语法规则必须进埋点通道，否则覆盖度自评里它永远隐身（实测 {got}）")
-
-    @unittest.skipUnless(_has_node(), "无 node（按设计跳过）")
-    def test_h5_syntax_hits_the_stats_channel(self):
-        bad = self.fx.write("src/bad.vue", BAD_VUE)
-        r, got = self._run_with_stats("h5_code_check.py", "t_end", self.fx.repo, bad, self._cfg_for(h5=True))
-        self.assertIn("H5-SYNTAX", got, f"H5 语法规则必须进埋点通道（实测 {got}）")
-
-    def test_node_missing_must_announce(self):
-        """跨平台确定的两层锁：告警函数真写 stderr + 两个 loader 的缺 node 分支真的调了它。"""
-        import contextlib, importlib.util, io
-        spec = importlib.util.spec_from_file_location("rb_t", os.path.join(ROOT, "checks", "rule_base.py"))
-        rb = importlib.util.module_from_spec(spec)
-        sys.path.insert(0, os.path.join(ROOT, "checks"))
-        try:
-            spec.loader.exec_module(rb)
-        finally:
-            sys.path.pop(0)
-        buf = io.StringIO()
-        with contextlib.redirect_stderr(buf):
-            rb.warn_node_missing_once()
-        self.assertIn("未找到 node", buf.getvalue(), "缺 node 必须出声（否则语法校验静默失效 = 假绿）")
-        for f in ("pc_code_check.py", "h5_code_check.py"):
-            with open(os.path.join(ROOT, "checks", f), encoding="utf-8") as fh:
-                src = fh.read()
-            self.assertIn("warn_node_missing_once", src, f"{f} 的 FileNotFoundError 分支没接告警")
-            self.assertIn("except FileNotFoundError", src)
 
 class TestAgentHookContracts(unittest.TestCase):
     """三款客户端的**钩子输出契约**（不依赖模型：合成 payload 直喂钩子）。
@@ -900,7 +584,7 @@ class TestAgentHookContracts(unittest.TestCase):
     def setUp(self):
         self.fx = _Fixture()
         self.hook = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate.py")
-        self.bad = self.fx.write("src/bad.vue", BAD_VUE)
+        self.bad = self.fx.write("src/bad.vue", BAD_FILE)
 
     def tearDown(self):
         self.fx.cleanup()
@@ -955,7 +639,7 @@ class TestAgentHookContracts(unittest.TestCase):
         反锁：仓里另放一个违规文件，钩子只被告知 bad.vue —— bad.vue 的问题必须报，
         另一个文件**不能**出现在结论里（旧行为走 auto-gate 收集全仓未提交改动，会把别人的问题一起报）。
         """
-        self.fx.write("src/other_bad.vue", BAD_VUE)
+        self.fx.write("src/other_bad.vue", BAD_FILE)
         r = self._hook("claude", self._payload(self.bad))
         out = r.stdout + r.stderr
         self.assertIn("bad.vue", out)
@@ -965,7 +649,7 @@ class TestAgentHookContracts(unittest.TestCase):
     @_slow("每例真起 hook 子进程跑契约（1.3~2.5s）")
     def test_codex_bash_path_extraction(self):
         """Codex 在 Windows 上只有 PowerShell 命令 → 从命令里提取被写文件，同样只查它。"""
-        self.fx.write("src/other_bad.vue", BAD_VUE)
+        self.fx.write("src/other_bad.vue", BAD_FILE)
         payload = json.dumps({"cwd": self.fx.repo, "tool_name": "Bash",
                               "tool_input": {"command":
                                              "Set-Content -LiteralPath 'src/bad.vue' -Value x"}})
@@ -986,7 +670,7 @@ class TestAgentHookContracts(unittest.TestCase):
     @_slow("每例真起 hook 子进程跑契约（1.3~2.5s）")
     def test_stop_event_still_covers_whole_repo(self):
         """兜底不放松：回合结束（Stop）仍走全仓收集——仓里任一处违规都要报出来。"""
-        other = self.fx.write("src/other_bad.vue", BAD_VUE)
+        other = self.fx.write("src/other_bad.vue", BAD_FILE)
         r = self._hook("codex", json.dumps({"cwd": self.fx.repo}), event="Stop")
         data = json.loads(r.stdout)
         self.assertIn("门禁未通过", data["systemMessage"],
@@ -1051,19 +735,32 @@ class TestAgentHookContracts(unittest.TestCase):
         `[config-warn] ... 仓库路径不存在`，40 行的回灌窗口会被诊断整段占满
         （CI 上 4 条钩子契约锁齐红就是这个形状）。
 
-        这里把 base 各 gate 的 repo 全指到不存在处，**在本机也制造同样的处境** ——
-        否则本机有私盘路径 → 0 条诊断 → 本锁恒绿，等于没锁。
+        这里把 base 各 gate 的 repo 全指到不存在处，**再自己造 24 个仓不存在的 gate**，
+        在本机复刻"同事机器上 30+ 条诊断"的处境 —— 否则本机有私盘路径 → 0 条诊断 →
+        本锁恒绿，等于没锁。
+
+        ⚠ 不能只靠 base 的 gate 数（2026-10-20 变异冒烟实测）：开源裁剪后 base 只剩
+        `harness_self`（路径会被 _sanity_check 指回工程根）和 `example` 两个，真正
+        会报"仓不存在"的只有 1 个 —— 逐 gate 各发一条也只有 1 行，`<=3` 的断言照样绿，
+        锁就空转了（M12 变异后仍然绿）。噪声由夹具自己造，锁才与 base 的 gate 数解耦。
 
         锁两件事：(a) 诊断已汇总（条数是个位数，不是每 gate 一条）；
                   (b) 被编辑的文件仍出现在回灌内容里（不是"空跑"）。
         """
         cfg = os.path.join(self.fx.dir, "cfg_flood.yaml")
-        lines = ["repos:", "  t_pc: %s" % self.fx.repo.replace("\\", "/")]
+        n_noise = 24
+        lines = ["repos:", "  t_gate: %s" % self.fx.repo.replace("\\", "/")]
         for k in _base_repo_keys():
-            if k != "t_pc":
+            if k != "t_gate":
                 lines.append("  %s: /nonexistent/%s" % (k, k))    # 本机也造"仓不存在"
-        lines += ["gates:", "  t_pc:", "    enabled: true", "    repo: t_pc",
-                  "    script: checks/pc_code_check.py"]
+        for i in range(n_noise):
+            lines.append("  noise_repo_%02d: /nonexistent/noise_%02d" % (i, i))
+        lines += ["gates:", "  t_gate:", "    enabled: true", "    repo: t_gate",
+                  "    script: checks/example_code_check.py"]
+        for i in range(n_noise):
+            lines += ["  noise_gate_%02d:" % i, "    enabled: true",
+                      "    repo: noise_repo_%02d" % i,
+                      "    script: checks/example_code_check.py"]
         with open(cfg, "w", encoding="utf-8", newline="\n") as f:
             f.write("\n".join(lines) + "\n")
         payload = json.dumps({"cwd": self.fx.repo, "tool_name": "Write",
@@ -1178,7 +875,7 @@ class TestAgentHookContracts(unittest.TestCase):
     def test_clean_file_passes_reverse_lock(self):
         """反向锁：合规文件必须放行——钩子把正常编辑也拦了就是误报型灾难。"""
         os.unlink(self.bad)                      # 关键：钩子走 auto-gate，会收集仓内全部未提交改动
-        clean = self.fx.write("src/clean.vue", OK_VUE)
+        clean = self.fx.write("src/clean.vue", OK_FILE)
         r = self._hook("claude", self._payload(clean))
         self.assertEqual(r.returncode, 0, f"合规文件应放行\n{r.stdout}{r.stderr}")
 
@@ -1246,7 +943,7 @@ class TestHookPathExtraction(unittest.TestCase):
 
         Codex 在 Windows 上写入就是 shell 命令，`>>` 是它真实形态之一（也在 WRITE_HINTS 里）。
         """
-        bad = self.fx.write("src/bad.vue", BAD_VUE)
+        bad = self.fx.write("src/bad.vue", BAD_FILE)
         r = self._hook("codex", {"cwd": self.fx.repo, "tool_name": "Bash",
                                  "tool_input": {"command": "echo x >> src/bad.vue"}})
         ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
@@ -1278,7 +975,7 @@ class TestHookPathExtraction(unittest.TestCase):
         """
         # 用 Codex 的**写操作重定向**形态取回灌（与上一条同款）：它的 target 从命令里抽，
         # 走 `file_path` 字段在 codex 契约下抽不到东西 —— 那样会"静默通过"，本锁就成了空转。
-        self.fx.write("src/bad.vue", BAD_VUE)
+        self.fx.write("src/bad.vue", BAD_FILE)
         r = self._hook("codex", {"cwd": self.fx.repo, "tool_name": "Bash",
                                  "tool_input": {"command": "echo x >> src/bad.vue"}})
         ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
@@ -1321,7 +1018,7 @@ class TestHookPathExtraction(unittest.TestCase):
         self.fx.write("src/mix.vue",
                       '<template><div /></template>\r\n'
                       '<script setup>\r\n'
-                      'console.log("debug")  // harness-ok: PC-CONSOLE ' + marker + '\r\n'
+                      'console.log("debug")  // harness-ok: NO-CONSOLE ' + marker + '\r\n'
                       '\r\n'
                       'console.log("leak")\r\n'
                       '</script>\r\n')
@@ -1333,7 +1030,7 @@ class TestHookPathExtraction(unittest.TestCase):
         self.assertIn("本次用掉", ctx,
                       "豁免的审计行不见了 —— 本锁的前提（真的用掉了一条豁免）不成立，"
                       "下面那条 assertNotIn 会在空跑中通过\n%s" % ctx)
-        self.assertIn("PC-CONSOLE L", ctx,
+        self.assertIn("NO-CONSOLE L", ctx,
                       "审计行里必须仍有「规则 ID + 行号」—— 否则就是把「别回显理由」"
                       "做成了「什么都别打印」\n%s" % ctx)
         self.assertNotIn(marker, ctx,
@@ -1451,15 +1148,15 @@ class TestLedgerEntryFallback(unittest.TestCase):
 
     def setUp(self):
         self.dir = _mkdtemp("entryfall-")
-        self.repo = os.path.join(self.dir, "repo_pc")
+        self.repo = os.path.join(self.dir, "repo_gate")
         os.makedirs(os.path.join(self.repo, "src"), exist_ok=True)
         self.vue = os.path.join(self.repo, "src", "a.vue")
         with open(self.vue, "w", encoding="utf-8", newline="") as f:
             f.write("<template><div /></template>\n<script setup>\nconst a = 1;\n</script>\n")
         self.cfg = os.path.join(self.dir, "cfg.yaml")
         with open(self.cfg, "w", encoding="utf-8", newline="\n") as f:
-            f.write("repos:\n  t_pc: %s\ngates:\n  t_pc:\n    enabled: true\n    repo: t_pc\n"
-                    "    script: checks/pc_code_check.py\n" % self.repo.replace("\\", "/"))
+            f.write("repos:\n  t_gate: %s\ngates:\n  t_gate:\n    enabled: true\n    repo: t_gate\n"
+                    "    script: checks/example_code_check.py\n" % self.repo.replace("\\", "/"))
         self.log = os.path.join(self.dir, "gate_log.jsonl")
 
     def tearDown(self):
@@ -1470,7 +1167,7 @@ class TestLedgerEntryFallback(unittest.TestCase):
         env.pop("HARNESS_ENTRY", None)
         if extra_env:
             env.update(extra_env)
-        return _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_pc", self.vue], env=env)
+        return _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t_gate", self.vue], env=env)
 
     def _last_rec(self):
         with open(self.log, encoding="utf-8") as f:
@@ -1503,7 +1200,7 @@ class TestHookEntryAttribution(unittest.TestCase):
     def setUp(self):
         self.fx = _Fixture()
         self.hook = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate.py")
-        self.bad = self.fx.write("src/bad.vue", BAD_VUE)
+        self.bad = self.fx.write("src/bad.vue", BAD_FILE)
 
     def tearDown(self):
         self.fx.cleanup()
@@ -1591,7 +1288,7 @@ class TestHookVisibility(unittest.TestCase):
 
     @_slow("真起 hook 子进程（1.3~2.5s）")
     def test_dump_records_payload_redacted(self):
-        bad = self.fx.write("src/bad.vue", BAD_VUE)
+        bad = self.fx.write("src/bad.vue", BAD_FILE)
         os.makedirs(self.act, exist_ok=True)
         with open(os.path.join(self.act, "hook-dump.on"), "w") as f:
             f.write("1")
@@ -1626,7 +1323,7 @@ class TestRepoRootFromFile(unittest.TestCase):
         #   是既定设计）—— 那是产品行为、不是本测试要测的东西，所以夹具把目录先造好。
         os.makedirs(self.act, exist_ok=True)
         self.log = os.path.join(self.fx.dir, "hook_gate_log.jsonl")
-        self.bad = self.fx.write("src/bad.vue", BAD_VUE)
+        self.bad = self.fx.write("src/bad.vue", BAD_FILE)
         # 夹具仓要变成**真 git 仓**：_repo_root_for 的判据是「文件在 git 工作树里」
         subprocess.run(["git", "init", "-q"], cwd=self.fx.repo, capture_output=True)
 

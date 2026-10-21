@@ -7,7 +7,7 @@
 #   3. 清理临时文件
 # 用法：
 #   sh <harness>/sandbox/demo_gate.sh [gate名]
-#   gate 默认 hy_hzy_backend（hzy 后端仓），也可传 gxgk_backend 等。
+#   gate 默认 hy_hzy_backend（hzy 后端仓），也可传其他已配置的后端 gate。
 # 前提：对应端仓库已 clone 到本机，且 config/harness.local.yaml 已配置该仓路径。
 # 安全：只在临时文件上演示，跑完自动清理；不碰真实代码。
 # 实现：直接调 run_gate.py 传单个文件（只检查 Demo 文件，不被全仓 diff 存量污染）。

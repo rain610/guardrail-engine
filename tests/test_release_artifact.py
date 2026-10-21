@@ -51,6 +51,7 @@ VERIFIER = os.path.join(ROOT, "sandbox", "verify_release.py")
 PACKER = os.path.join(ROOT, "sandbox", "pack_release.py")
 RELEASE_YML = os.path.join(ROOT, ".github", "workflows", "release.yml")
 CI_YML = os.path.join(ROOT, ".github", "workflows", "ci.yml")
+FAST = os.environ.get("HARNESS_FAST") == "1"
 
 
 def _load_verifier():
@@ -458,6 +459,8 @@ class TestRealArtifactPasses(unittest.TestCase):
 # （`--wheel` 复用假轮子，省掉 setuptools），再在副本上逐个制造病变。
 
 
+@unittest.skipIf(FAST, "快速模式（HARNESS_FAST=1）跳过真打包基线"
+                       "（每个子类一次 pack_release + 每例整树拷贝；全量口径仍跑）")
 class _Pack(_Base):
     """真产物基线：跑一次 `pack_release.py`，每个用例在它的**副本**上做病变。"""
 

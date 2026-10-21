@@ -28,6 +28,12 @@ CHECKS = os.path.join(ROOT, "checks")
 HARNESS_LIB = os.path.join(ROOT, "harness")
 PY = sys.executable
 
+# 各用例按需 import 门禁模块；不依赖"别的测试文件先污染过 sys.path"（单跑本文件时
+# TestLow21 曾经全是 ModuleNotFoundError，全量套件里却绿 —— 顺序依赖的假绿/假红）。
+for _p in (CHECKS, HARNESS_LIB):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 for _s in (sys.stdout, sys.stderr):
     try:
         _s.reconfigure(encoding="utf-8", errors="replace")
@@ -110,7 +116,7 @@ class _Repo:
 class _Fixture(unittest.TestCase):
     """公共底座：临时仓 + 一份只含本测试用得到的临时配置 + 台账隔离。
 
-    临时配置里 gate 名**刻意不用** gxgk_*/hy_* 这些真名：真名会撞上 _config 的策略
+    临时配置里 gate 名**刻意不用**真实端 gate 名：真名会撞上 _config 的策略
     覆盖保护（本地/环境覆盖层不许改已注册 gate 的策略），夹具就构造不出被测场景了。
     """
 
@@ -204,184 +210,52 @@ class TestMidCThreeStateChangedLines(_Fixture):
         self.repo.loose("src/a.vue", "line1\nline2\n")
         self.assertEqual(set(self._changed("src/a.vue")), {2})
 
-    @_slow("端到端跑真 gate（子进程 1.47s）；三态语义在本类另有 3 例亚秒单元锁、"
-           "且另有 4 份已接文件覆盖 compute_changed_lines，故它可跳")
-    def test_end_to_end_delete_only_does_not_block_on_legacy_violation(self):
-        """端到端：只删一行 → 同文件里没碰过的存量 console.log **不拦**。
-
-        这是中 C 的可观测后果（撤掉修复即 rc 从 0 变 1）。
-        """
-        self.repo.commit("src/a.vue",
-                         '<template>\r\n  <div>ok</div>\r\n</template>\r\n<script setup>\r\n'
-                         'console.log("存量残留")\r\nlet keep = 1\r\nlet drop = 2\r\n</script>\r\n')
-        self.repo.loose("src/a.vue",
-                        '<template>\r\n  <div>ok</div>\r\n</template>\r\n<script setup>\r\n'
-                        'console.log("存量残留")\r\nlet keep = 1\r\n</script>\r\n')   # 只删了 drop
-        cfg = self._cfg_path("    enabled: true\n    script: checks/pc_code_check.py\n"
-                             "    mode: strict\n    line_ending: CRLF\n")
-        r = self._run_gate([self.repo.file("src/a.vue")], env=self._env(cfg))
-        out = (r.stdout or "") + (r.stderr or "")
-        self.assertEqual(r.returncode, 0,
-                         "纯删除型改动不该为存量 console.log 负责（中 C）；输出=%s" % out[-400:])
-        self.assertNotIn("console.log", out)
-
-
-# ============================================================ 中 D：SFC 结构计数
-class TestMidDSfcStructure(_Fixture):
-    """中 D：整份 findall 计数会把注释里的 `<script>` 也算进去。
-
-    真实场景：模板里写一句注释说明"本文件不要写 script 标签"，注释里出现 `<script>`
-    → 开标签数比闭标签多 1 → 假阻断。左到右走一遍块结构（并跳过 HTML 注释）才是对的。
-    """
-
-    def setUp(self):
-        super().setUp()
-        import pc_code_check
-        self.mod = pc_code_check
-
-    def test_commented_script_tag_is_not_counted(self):
-        content = ('<template>\r\n  <!-- 注意：本文件不写 <script> 标签 -->\r\n'
-                   '  <div>ok</div>\r\n</template>\r\n<style scoped>\r\n.a{color:red}\r\n</style>\r\n')
-        self.assertIsNone(self.mod.check_sfc_structure(content),
-                          "注释里的 <script> 不该被当成开标签（会导致「未闭合」假阻断）")
-
-    def test_commented_broken_quote_is_not_counted(self):
-        content = ('<template>\r\n  <!-- 反例：<script setup lang="ts> 少了引号 -->\r\n'
-                   '  <div>ok</div>\r\n</template>\r\n')
-        self.assertIsNone(self.mod.check_sfc_structure(content),
-                          "注释里的坏引号不该报（它不在代码里）")
-
-    def test_real_unclosed_script_still_reported(self):
-        self.assertIn("未闭合", self.mod.check_sfc_structure(
-            '<template><div/></template>\n<script setup>\nlet a = 1\n') or "")
-
-    def test_nested_template_closes_correctly(self):
-        """v-for 的 <template> 是合法的嵌套：2 开 2 闭必须放行（按深度收口）。"""
-        content = ('<template>\r\n  <template v-for="i in list" :key="i">\r\n    <div>{{ i }}</div>\r\n'
-                   '  </template>\r\n</template>\r\n<script setup>\r\nlet x = 1\r\n</script>\r\n')
-        self.assertIsNone(self.mod.check_sfc_structure(content))
-
-    def test_nested_template_unclosed_still_reported(self):
-        content = ('<template>\r\n  <template v-for="i in list" :key="i">\r\n    <div>{{ i }}</div>\r\n'
-                   '</template>\r\n<script setup>\r\nlet x = 1\r\n</script>\r\n')
-        self.assertIn("不匹配", self.mod.check_sfc_structure(content) or "")
-
-    def test_broken_lang_quote_still_reported(self):
-        self.assertIn("引号未闭合", self.mod.check_sfc_structure(
-            '<template><div/></template>\n<script setup lang="ts>\nlet a = 1\n</script>\n') or "")
-
-    def test_custom_component_named_like_block_not_counted(self):
-        """词边界：`<template-choose-model>` 不是 `<template>` 块（ZhongXin 实测误报）。"""
-        content = '<template>\n  <template-choose-model />\n</template>\n<script setup>\nlet a = 1\n</script>\n'
-        self.assertIsNone(self.mod.check_sfc_structure(content))
-
-    def test_commented_placeholder_inside_template_block(self):
-        """**块内**的注释同样不算数 —— 这是全量实测反查出来的，不是推想。
-
-        gxgk PC `src/views/modules/danger/dangerTpl/tabs/basic.vue` 第 5 行就是
-        `<!-- <template> -->`（写正文里的一行说明）。上一版只在"块外"跳注释，
-        块内照样把它算成嵌套开标签 → 该文件恒定报"3开 2闭"，全量扫描实测到的唯一一条 SFC 命中。
-        """
-        content = ('<template>\r\n  <!-- <template> -->\r\n  <div>ok</div>\r\n</template>\r\n'
-                   '<script setup>\r\nlet a = 1\r\n</script>\r\n')
-        self.assertIsNone(self.mod.check_sfc_structure(content))
-
-    def test_commented_closer_inside_template_block(self):
-        """反方向也一样：块内注释里的 `</template>` 不能提前把块关掉。"""
-        content = ('<template>\n  <!-- </template> -->\n  <div>ok</div>\n</template>\n'
-                   '<script setup>\nlet a = 1\n</script>\n')
-        self.assertIsNone(self.mod.check_sfc_structure(content))
-
-    def test_slot_nested_template_closes_correctly(self):
-        """`<template #slot>` 是另一种常见嵌套（组件插槽），同样要放行。"""
-        content = ('<template>\n  <el-x>\n    <template #a><div/></template>\n  </el-x>\n</template>\n'
-                   '<script setup>\nlet a = 1\n</script>\n')
-        self.assertIsNone(self.mod.check_sfc_structure(content))
-
-
 # ============================================================ 中 E：配置「空承诺」
 class TestMidEConfigPromise(_Fixture):
     """中 E：配置里声明了、但没有任何消费方读的键。
 
-    这类键没有任何症状：写的人以为已经管住了，门禁照常跑、照常绿。实测三处
-    （12 个 PC/H5 gate 的 encoding、11 个 backend gate 的 mode、harness_self 的 endpoint）
-    已在本轮清掉；本类锁的是"以后再加回来会被当场拦下"。
+    这类键没有任何症状：写的人以为已经管住了，门禁照常跑、照常绿。开源裁剪后
+    只剩示例 gate（`checks/example_code_check.py` 不读任何 gate 级策略键），
+    本类锁的是"以后再加键会被当场拦下"。
     """
 
-    PC = "    script: checks/pc_code_check.py\n"
-    BACKEND = "    script: checks/backend_layer_check.py\n"
+    EXAMPLE = "    script: checks/example_code_check.py\n"
 
     def test_declared_but_unread_key_is_blocking(self):
-        r = self._validate(self.PC + "    enabled: true\n    encoding: utf-8-bom\n")
+        r = self._validate(self.EXAMPLE + "    enabled: true\n    encoding: utf-8-bom\n")
         out = (r.stdout or "") + (r.stderr or "")
-        self.assertEqual(r.returncode, 2, "PC 端的 encoding 没有消费方，必须 rc=2；输出=%s" % out[-300:])
+        self.assertEqual(r.returncode, 2, "示例端不读 encoding，必须 rc=2；输出=%s" % out[-300:])
         self.assertIn("没有任何消费方读", out)
 
     def test_misspelled_key_is_blocking(self):
         """拼错键名（encodig）与"键本身没人读"是同一个后果：写了等于没写。"""
-        r = self._validate(self.PC + "    enabled: true\n    encodig: utf-8-bom\n")
+        r = self._validate(self.EXAMPLE + "    enabled: true\n    encodig: utf-8-bom\n")
         out = (r.stdout or "") + (r.stderr or "")
         self.assertEqual(r.returncode, 2)
         self.assertIn("encodig", out)
 
-    def test_backend_mode_is_blocking(self):
-        """后端不读 mode（ctx.mode 按定向/全量自己推）—— 声明 mode 与事实相反。"""
-        r = self._validate(self.BACKEND + "    enabled: true\n    mode: loose\n")
-        out = (r.stdout or "") + (r.stderr or "")
-        self.assertEqual(r.returncode, 2)
-        self.assertIn("没有任何消费方读", out)
-
     def test_engine_level_keys_are_not_flagged(self):
         """反向锁：引擎/入口真的读的那些键不能被误报（否则体检天天红 = 告警疲劳）。"""
-        r = self._validate(self.PC + "    enabled: true\n    run_on: [pre_commit]\n"
-                                     "    mode: strict\n    src: src\n    line_ending: CRLF\n"
-                                     "    legacy_baseline: true\n    disabled_rules: [PC-TODO]\n")
+        r = self._validate(self.EXAMPLE + "    enabled: true\n    run_on: [pre_commit]\n"
+                                         "    legacy_baseline: true\n    disabled_rules: [NO-CONSOLE]\n")
         out = (r.stdout or "") + (r.stderr or "")
         self.assertEqual(r.returncode, 0, "这些都是真有消费方的键，不该被报；输出=%s" % out[-400:])
 
-    def test_backend_encoding_is_not_flagged(self):
-        """反向锁：后端 encoding **是**被读的（encoding_ruleset 接线），不能跟着一起报。"""
-        r = self._validate(self.BACKEND + "    enabled: true\n    encoding: utf-8-bom\n")
-        self.assertEqual(r.returncode, 0, (r.stdout or "") + (r.stderr or ""))
-
     def test_disabled_rules_unknown_id_is_blocking(self):
-        r = self._validate(self.PC + "    enabled: true\n    disabled_rules: [PC-NOSUCH]\n")
+        r = self._validate(self.EXAMPLE + "    enabled: true\n    disabled_rules: [NO-SUCH]\n")
         out = (r.stdout or "") + (r.stderr or "")
         self.assertEqual(r.returncode, 2, "拼错的规则 id 等于开关没拨；输出=%s" % out[-300:])
-        self.assertIn("PC-NOSUCH", out)
+        self.assertIn("NO-SUCH", out)
 
-    def test_disabled_rules_other_end_id_is_blocking(self):
-        """H5 的规则 id 写在 PC gate 上 —— 同样什么也关不掉。"""
-        r = self._validate(self.PC + "    enabled: true\n    disabled_rules: [H5-UPLOAD]\n")
+    def test_disabled_rules_foreign_id_is_blocking(self):
+        """别的产品线的规则 id 写在本 gate 上 —— 同样什么也关不掉。"""
+        r = self._validate(self.EXAMPLE + "    enabled: true\n    disabled_rules: [H5-UPLOAD]\n")
         self.assertEqual(r.returncode, 2)
-
-    def test_every_declared_rule_id_is_actually_disableable(self):
-        """低 19/中 E 的交汇：`disabled_rules` 里的 id **存不存在**与**关不关得掉**是两回事。
-
-        PC-EOL / PC-SFC 是 loader 直接执行的伪规则（不在 *_RULES 列表里），它们的
-        `if ... not in off` 原先**根本没写** —— 写了 `disabled_rules: [PC-EOL]` 照样拦。
-        所以这里不看源码、直接端到端验：真写进配置，真跑一次，必须不再报。
-        """
-        # 文件末尾少一个 </script> —— PC-SFC 必报（先确认"不关就报"，再确认"关了不报"）。
-        # 行尾给 CRLF，免得 PC-EOL 混进来干扰归因（本测试只谈 PC-SFC 的开关）。
-        self.repo.commit("src/a.vue", "<template>\r\n  <div>ok</div>\r\n</template>\r\n"
-                                      "<script setup>\r\nlet a = 1\r\n")
-        base = "    enabled: true\n    mode: strict\n    line_ending: CRLF\n"
-        cfg_on = self._cfg_path(self.PC + base)
-        r_on = self._run_gate([self.repo.file("src/a.vue")], env=self._env(cfg_on))
-        self.assertEqual(r_on.returncode, 1, "这个文件是坏的 → 不关必须拦")
-        cfg_off = self._cfg_path(self.PC + base + "    disabled_rules: [PC-SFC]\n")
-        r_off = self._run_gate([self.repo.file("src/a.vue")], env=self._env(cfg_off))
-        out = (r_off.stdout or "") + (r_off.stderr or "")
-        self.assertEqual(r_off.returncode, 0,
-                         "PC-SFC 写进 disabled_rules 就必须真的关掉（原先静默不生效）；输出=%s" % out[-300:])
 
     def test_real_config_has_no_dead_keys_and_passes(self):
         """真配置必须干净通过 —— 否则这道检查第二天就变成常驻噪音（告警疲劳）。
 
-        外加一条**按端**的锁：本轮删掉的 24 行键不许被"顺手加回来"。不能只数字符串——
-        `encoding` 在后端是**合法**的（encoding_ruleset 真读它），数错了会把后端 11 行
-        也算成违规，测试就变成误导下一个人的东西。按 script 判端才对。
+        外加一条反向锁：示例端不消费的策略键不许被"顺手加回来"。
         """
         r = _sh([PY, os.path.join(HARNESS_LIB, "run_gate.py"), "--validate", "--structure-only"],
                 cwd=ROOT, env={"HARNESS_CONFIG": ""})
@@ -390,22 +264,14 @@ class TestMidEConfigPromise(_Fixture):
 
         import _config
         cfg = _config.load(os.path.join(ROOT, "config", "harness.yaml"))
-        seen = {"pc": 0, "h5": 0, "backend": 0}
+        seen = 0
         for name, g in (cfg.get("gates") or {}).items():
-            script = os.path.basename(g.get("script") or "")
-            if script == "pc_code_check.py":
-                seen["pc"] += 1
-                self.assertNotIn("encoding", g, "%s：PC 端不读 encoding，别加回来" % name)
-            elif script == "h5_code_check.py":
-                seen["h5"] += 1
-                self.assertNotIn("encoding", g, "%s：H5 端不读 encoding，别加回来" % name)
-            elif script == "backend_layer_check.py":
-                seen["backend"] += 1
-                self.assertNotIn("mode", g, "%s：后端不读 mode（定向实际按 strict 拦）" % name)
-            elif script == "harness_self_check.py":
-                self.assertNotIn("endpoint", g, "%s：endpoint 全仓无消费方" % name)
-        self.assertTrue(all(v > 0 for v in seen.values()),
-                        "按 script 认端的逻辑本身失效了（没数到任何一端）：%r" % seen)
+            if os.path.basename(g.get("script") or "") != "example_code_check.py":
+                continue
+            seen += 1
+            for dead in ("encoding", "endpoint", "line_ending", "src"):
+                self.assertNotIn(dead, g, "%s：示例端不读 %s，别加回来" % (name, dead))
+        self.assertGreater(seen, 0, "按 script 认端的逻辑失效了（没数到示例 gate）")
 
     def test_badly_behaved_check_script_does_not_hijack_validate(self):
         """体检要读检查脚本拿 CONFIG_KEYS，于是**导入**了它们。
@@ -427,32 +293,6 @@ class TestMidEConfigPromise(_Fixture):
             sys.path.remove(mod_dir)
             sys.modules.pop("evil_check", None)
         self.assertIsNone(got, "拿不到声明就不判（None），而不是让体检被脚本的退出码劫持")
-
-
-# ============================================================ 低 19：门禁自身故障不许静默
-class TestLow19SfcInternalFailure(_Fixture):
-    """低 19：`except Exception: pass` 让整项检查消失 —— 校验没跑成与校验通过不可区分。
-
-    "越坏越安静"是门禁最不能有的性质：它把基础设施故障伪装成"代码没问题"。
-    """
-
-    def test_sfc_check_crash_is_reported_as_blocking(self):
-        import pc_code_check
-        self.repo.commit("src/a.vue", '<template><div/></template>\n<script setup>\nlet a = 1\n</script>\n')
-        orig = pc_code_check.check_sfc_structure
-
-        def _boom(_content):
-            raise RuntimeError("模拟正则回溯炸掉")
-        pc_code_check.check_sfc_structure = _boom
-        try:
-            problems, _warns = pc_code_check.check_file(self.repo.file("src/a.vue"), skip_node=True)
-        finally:
-            pc_code_check.check_sfc_structure = orig
-        joined = "\n".join(problems)
-        self.assertIn("SFC结构校验未能执行", joined,
-                      "校验没跑成必须出声（否则等于静默放行）；实际=%r" % problems)
-        self.assertIn("门禁自身的故障", joined, "文案要点明是门禁自己的问题，不是本文件的")
-        self.assertIn("RuntimeError", joined, "要带上异常类型，排障才有抓手")
 
 
 # ============================================================ 低 21：编码标签不许乱贴
@@ -506,142 +346,6 @@ class TestLow21EncodingLabel(unittest.TestCase):
         self.assertNotEqual(got, "gbk")
         self.assertIn("非 UTF-8 且非 GBK", got)
         self.assertIn("需人工确认", got, "给不出确定结论时要明说要人看，而不是猜一个编码名")
-
-
-# ============================================================ 低 F：正则绕过面
-class TestLowFFirstFourBypasses(unittest.TestCase):
-    """低 F：四处**零判断成本**的绕过（严格超集改写 —— 旧写法能命中的一个不少）。
-
-    这些不是"收紧策略"，而是"这条规则本来就是这个意思，只是写法漏了"。
-    """
-
-    def _rules(self):
-        import pc_ruleset as P
-        import h5_ruleset as H
-        return {"PC": P, "H5": H}
-
-    def _pat(self, mod, rid):
-        for n in dir(mod):
-            o = getattr(mod, n)
-            if isinstance(o, type) and getattr(o, "id", "") == rid:
-                return o.pattern
-        raise AssertionError("找不到规则 %s" % rid)
-
-    def test_console_log_with_space(self):
-        import re
-        for end, mod in self._rules().items():
-            pat = self._pat(mod, end + "-CONSOLE")
-            self.assertTrue(re.search(pat, 'console.log ("x")'),
-                            "%s-CONSOLE 漏了 log 与括号之间的空格" % end)
-            self.assertTrue(re.search(pat, 'console.log("x")'), "%s-CONSOLE 不能丢原写法" % end)
-
-    def test_https_ip(self):
-        import re
-        for end, mod in self._rules().items():
-            pat = self._pat(mod, end + "-IP")
-            self.assertTrue(re.search(pat, 'https://192.168.1.1/api'),
-                            "%s-IP 漏了 https（内网地址同样该走环境变量）" % end)
-            self.assertTrue(re.search(pat, 'http://192.168.1.1/api'), "不能丢原写法")
-
-    def test_todo_any_case(self):
-        import re
-        for end, mod in self._rules().items():
-            pat = self._pat(mod, end + "-TODO")
-            for s in ("Todo: 修", "ToDo 修", "TODO 修", "todo 修"):
-                self.assertTrue(re.search(pat, s), "%s-TODO 漏了 %r" % (end, s))
-
-    def test_todo_knowledge_base_exception_kept(self):
-        """有意保留的例外不能被这轮改写弄丢（约定允许引用知识库的 TODO）。"""
-        import re
-        for end, mod in self._rules().items():
-            self.assertFalse(re.search(self._pat(mod, end + "-TODO"), "TODO: 详见知识库"),
-                             "%s-TODO 的「知识库」例外被改写弄丢了" % end)
-
-    def test_axios_default_plus_named_import(self):
-        import re
-        pat = self._pat(self._rules()["PC"], "PC-AXIOS")
-        self.assertTrue(re.search(pat, 'import axios, { AxiosInstance } from "axios"'),
-                        "默认导入 + 具名导入是同一个违规，仍绕过了 @/utils/request")
-        self.assertTrue(re.search(pat, 'import axios from "axios"'), "不能丢原写法")
-        self.assertFalse(re.search(pat, 'import axiosConfig from "@/utils/request"'),
-                         "axiosConfig 是合规封装，不能被误伤")
-
-
-class TestLowFKnownBlindSpots(unittest.TestCase):
-    """低 F 的另一半：剩下的边界**不可能**靠收紧正则解决，所以把它钉成可执行事实。
-
-    断言的是"这条现在确实不报"。这不是替漏检找理由 —— 一旦有人改好了正则，
-    这些断言会红，逼人回来同步 README「规则能力边界」那张表。
-    边界只写在代码注释里，等于没人知道。
-    """
-
-    def _pat(self, mod, rid):
-        for n in dir(mod):
-            o = getattr(mod, n)
-            if isinstance(o, type) and getattr(o, "id", "") == rid:
-                return o.pattern
-        raise AssertionError("找不到规则 %s" % rid)
-
-    def test_console_bracket_form_missed(self):
-        import re
-        import pc_ruleset as P
-        self.assertFalse(re.search(self._pat(P, "PC-CONSOLE"), 'console["log"]("x")'))
-
-    def test_protocol_relative_ip_missed(self):
-        import re
-        import pc_ruleset as P
-        self.assertFalse(re.search(self._pat(P, "PC-IP"), '//192.168.1.1/api'))
-
-    def test_require_axios_missed(self):
-        import re
-        import pc_ruleset as P
-        self.assertFalse(re.search(self._pat(P, "PC-AXIOS"), 'const a = require("axios")'))
-
-    def test_component_path_form_missed(self):
-        """**这不是理论绕过**：`@/components/eagle-x.vue` 才是本仓组件引用的主要形态。
-
-        本条锁的是**窄口径**：**单看这一行**，`_extract_components` 认不出路径写法。
-        ⚠ 2026-09-18 复量更正了本条原来的**现实结论**：`registerGlobComp.ts` 里这类组件
-        **并不会逃逸** —— 注册文件同时写着 `app.component("eagle-tabs-new", ...)`（裸形态），
-        旧规则在那一行就抓到了，该文件实跑今天**就是红的**（rc=1）。真正看不见的是
-        `views/layout/*.vue` 与 `views/modules/**` 那类**只用路径写法**的文件。
-        接线与否是业务判断，README 已记复量结果，故这里锁的仍是"**单行**确实看不见"。
-        """
-        import pc_ruleset as P
-        import h5_ruleset as H
-        for mod in (P, H):
-            self.assertEqual(mod._extract_components(
-                'import EagleTabsNew from "@/components/eagle-tabs-new.vue";'), set(),
-                "路径写法被认出来了 —— 说明有人接线了：请同步 README「待裁定」一节与 `_is_new_parallel` 的后果")
-            self.assertEqual(mod._extract_components('<eagle-tabs-new />'), {"eagle-tabs-new"},
-                             "标签写法必须仍然看得见")
-
-    def test_vfor_window_sibling_key_satisfies(self):
-        """v-for 之后 300 字符内**任一** `:key` 都算数 —— 兄弟元素的也算。"""
-        import h5_ruleset as H
-        from rule_base import CheckContext
-        tpl = ('<template>\r\n  <div v-for="i in list">\r\n    <span>{{ i }}</span>\r\n  </div>\r\n'
-               '  <div :key="other">兄弟元素的 key</div>\r\n</template>')
-        ctx = CheckContext(path=__import__("pathlib").Path("x.vue"), content=tpl, template=tpl,
-                           mode="strict")
-        self.assertEqual([f.message for f in H.VForKeyRule().run(ctx)], [],
-                         "窗口内的兄弟 :key 满足了规则 —— 这是已实测的漏检，写进 README 了")
-
-    def test_readme_documents_every_locked_boundary(self):
-        """文档锁：上表每条边界都必须在 README「规则能力边界」里写着。
-
-        防的是"测试改了、文档没改"—— 对使用者来说，没写进文档的边界就是不存在。
-        """
-        readme = _read(os.path.join(ROOT, "README.md"))
-        i = readme.find("### 已实测的具体边界")
-        self.assertGreater(i, 0, "README 缺「已实测的具体边界」一节")
-        sec = readme[i:i + 6000]
-        for token in ('console["log"]("x")', "//192.168.1.1/x", 'require("axios")',
-                      "TODO: 见知识库", "300 字符"):
-            self.assertIn(token, sec, "边界 %r 没写进 README，等于用户不知道" % token)
-        j = readme.find("### 待裁定：组件引用的路径写法")
-        self.assertGreater(j, 0, "组件路径写法这条发现必须写进 README（它是本轮最重的一条）")
-        self.assertIn("registerGlobComp.ts", readme[j:j + 3000])
 
 
 if __name__ == "__main__":

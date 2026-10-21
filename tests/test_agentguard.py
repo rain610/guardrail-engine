@@ -80,7 +80,7 @@ def _mk_fixture():
     cfg = os.path.join(d, "cfg.yaml")
     with io.open(cfg, "w", encoding="utf-8", newline="") as f:
         f.write("repos:\n  t: %s\ngates:\n  t:\n    enabled: true\n    repo: t\n"
-                "    script: checks/pc_code_check.py\n    run_on: [pre_commit, post_edit]\n"
+                "    script: checks/example_code_check.py\n    run_on: [pre_commit, post_edit]\n"
                 % repo.replace("\\", "/"))
     log = os.path.join(d, "gate_log.jsonl")
     tpl = "<template>\r\n  <div>h</div>\r\n</template>\r\n<script setup>\r\n%s\r\n</script>\r\n"
@@ -92,23 +92,6 @@ def _mk_fixture():
         f.write(tpl % "const a = 1;")
     env = dict(HARNESS_CONFIG=cfg, HARNESS_LOG_FILE=log, PYTHONUTF8="1")
     return d, repo, cfg, log, bad, good, env
-
-
-def _mk_dead_component_fixture(d):
-    """在 `_mk_fixture` 的同一个仓里再放一个「只犯 PC-COMP」的文件 → 路径。
-
-    为什么单独造：**判定口径能被 `--mode` 翻动的只有这一条规则**。
-    实测（2026-09-23）：`checks/pc_ruleset.py::ComponentRule` 对 `dead` 名单里的组件
-    **只在 `mode == "strict"` 时报**，loose 直接跳过 —— 而 PC-CONSOLE 之类两种模式都拦，
-    拿它验"口径被覆盖"只会看到 rc 两种模式都是 1（假绿：锁看起来响了，其实什么都没验）。
-    组件名取自 `checks/components_allowlist.yaml` 的 `dead:` 名单（零引用死组件）。
-    """
-    tpl = ("<template>\r\n  <eagle-menu></eagle-menu>\r\n</template>\r\n"
-           "<script setup>\r\nconst a = 1;\r\n</script>\r\n")
-    p = os.path.join(d, "repo", "src", "dead_comp.vue")
-    with io.open(p, "w", encoding="utf-8", newline="") as f:
-        f.write(tpl)
-    return p
 
 
 class _McpSession(object):
@@ -248,7 +231,7 @@ class TestMcpTools(unittest.TestCase):
         cfg2 = os.path.join(d, "cfg-repo-missing.yaml")
         with io.open(cfg2, "w", encoding="utf-8", newline="") as f:
             f.write("repos:\n  t: %s\ngates:\n  t:\n    enabled: true\n    repo: t\n"
-                    "    script: checks/pc_code_check.py\n    run_on: [pre_commit]\n"
+                    "    script: checks/example_code_check.py\n    run_on: [pre_commit]\n"
                     % os.path.join(d, "no_such_repo").replace("\\", "/"))
         env2 = dict(env)
         env2["HARNESS_CONFIG"] = cfg2
@@ -370,12 +353,14 @@ class TestFlagLikePredicate(unittest.TestCase):
 class TestFlagSmugglingClosedAtEveryEntry(unittest.TestCase):
     """H1 回归锁（2026-09-23 评审报告）：**位置参数通道不许被当成旗标通道**。
 
-    现场（本类 `test_engine_would_have_been_fooled` 里逐条复现，不引用报告结论）：
-    `run_gate.py t <文件> --mode loose` 把一次 PC-COMP 拦截（rc=1）翻成放行（rc=0），
-    而两个壳（MCP / CLI）是把调用方给的 `files` **原样拼在 gate 名之后**的 ——
-    于是一个内容为 `--mode` 的"文件名"就能改判定口径；`auto-gate` 的 `--only` 同理
-    （它的值来自**编辑器宿主的 payload**，是外部输入）。
+    现场（2026-09-23 评审报告，当时的 PC/H5 规则集读 mode）：`run_gate.py t <文件> --mode loose`
+    可把一次拦截（rc=1）翻成放行（rc=0），而两个壳（MCP / CLI）是把调用方给的 `files`
+    **原样拼在 gate 名之后**的 —— 于是一个内容为 `--mode` 的"文件名"就能改判定口径；
+    `auto-gate` 的 `--only` 同理（它的值来自**编辑器宿主的 payload**，是外部输入）。
     与 2026-09-16 修掉的 `--gate` 冒充同类（"被检查方可以自己把门禁放宽，对门禁是硬伤"）。
+
+    开源裁剪后只剩 example 规则（不区分 strict/loose），"判定被翻动"的现场已无规则可复现；
+    本类因此钉两件事：**三个入口必须拒绝旗标形态的位置参数**，以及引擎侧对口径覆盖**必须留痕**。
     """
 
     @classmethod
@@ -436,21 +421,21 @@ class TestFlagSmugglingClosedAtEveryEntry(unittest.TestCase):
         self.assertEqual(rc, 1, out)
 
     # ---------------- 引擎侧：跑掉了也要留痕（H1 的后半） ----------------
-    def test_engine_would_have_been_fooled(self):
-        """把 H1 的现场**跑一遍**：口径被覆盖时，判定与台账各是什么样。
+    def test_mode_override_is_recorded_in_the_ledger(self):
+        """口径被覆盖时**必须留痕**（`mode_override` + `weakened`）。
 
-        这条同时是两件事的证据：
-          ① 为什么要在三个入口拦（引擎侧拦不住：它分不清"人敲的 --mode"与"files 注入的 --mode"）；
-          ② 引擎侧的兜底 —— **至少留痕**（`mode_override` + `weakened`），
-             否则那一行与"真检查过且通过"逐字不可区分（评审报告的原话，实测确实如此）。
+        开源裁剪后的 example 规则不区分 strict/loose，所以这里不断言"判定被翻动"
+        （两跑都应是 rc=1）—— 只钉引擎侧的兜底：调用方改了口径这件事本身要逐字落账，
+        否则那一行与"真检查过且通过"不可区分（评审报告的原话）。
         """
-        dead = _mk_dead_component_fixture(self.d)
         before = len(self._ledger())
-        rc1, o1, _ = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t", dead], env=self.env)
-        self.assertEqual(rc1, 1, "基线：死组件引用在 strict 下应拦截（不拦这条锁就没意义）\n%s" % o1)
-        rc2, o2, _ = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t", dead,
+        rc1, o1, _ = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t", self.bad],
+                          env=self.env)
+        self.assertEqual(rc1, 1, "基线：bad.vue 应被 example 规则拦截（不拦这条锁就没意义）\n%s" % o1)
+        rc2, o2, _ = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t", self.bad,
                            "--mode", "loose"], env=self.env)
-        self.assertEqual(rc2, 0, "口径被覆盖后确实放行了（这就是要拦的东西）\n%s" % o2)
+        self.assertEqual(rc2, 1,
+                         "example 规则不读 mode，判定不该变；若这里变了说明新规则开始读 mode\n%s" % o2)
         rows = self._ledger()[before:]
         self.assertEqual(len(rows), 2, rows)
         self.assertNotIn("mode_override", rows[0], "没覆盖就不许落这个键（否则标记没有信息量）")
@@ -462,9 +447,8 @@ class TestFlagSmugglingClosedAtEveryEntry(unittest.TestCase):
 
     def test_same_mode_is_not_an_override(self):
         """反向锁：`--mode` 与 gate 配置同值 → **不算覆盖**，不落键（别让每行都挂标记）。"""
-        dead = _mk_dead_component_fixture(self.d)
         before = len(self._ledger())
-        rc, o, _ = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t", dead,
+        rc, o, _ = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "t", self.bad,
                          "--mode", "strict"], env=self.env)
         self.assertEqual(rc, 1, o)
         rows = self._ledger()[before:]
@@ -762,12 +746,12 @@ class TestLogGateFilter(unittest.TestCase):
             with io.open(log, "w", encoding="utf-8", newline="") as f:
                 f.write(json.dumps({"ts": "2026-10-15T10:00:00", "gate": "hy_pc",
                                     "rc": 0, "entry": "auto-gate", "ver": "0.1.7-dev"}) + "\n")
-                f.write(json.dumps({"ts": "2026-10-15T10:01:00", "gate": "gxgk_pc",
+                f.write(json.dumps({"ts": "2026-10-15T10:01:00", "gate": "demo_pc",
                                     "rc": 1, "entry": "cli", "ver": "0.1.7-dev"}) + "\n")
             rc, out, err = _run([PY, CLI, "log", "--log", log, "--gate", "hy_pc", "--last", "10"])
             self.assertEqual(rc, 0, out + err)
             self.assertIn("hy_pc", out)
-            self.assertNotIn("gxgk_pc", out, "--gate 过滤后别的 gate 的记录不得出现")
+            self.assertNotIn("demo_pc", out, "--gate 过滤后别的 gate 的记录不得出现")
             rc2, out2, _ = _run([PY, CLI, "log", "--log", log, "--gate", "nope_pc", "--last", "10"])
             self.assertEqual(rc2, 1, "窗口内无该 gate 记录必须 rc=1：自查靠退出码区分「没查到」与「没跑过」")
             self.assertIn("NO_RECORD gate=nope_pc", out2)
@@ -894,7 +878,8 @@ class TestKillTree(unittest.TestCase):
             while time.time() < deadline and not pid:
                 if os.path.exists(pid_file):
                     try:
-                        pid = int(io.open(pid_file).read().strip() or 0) or None
+                        with io.open(pid_file) as fh:
+                            pid = int(fh.read().strip() or 0) or None
                     except ValueError:
                         pid = None
                 if not pid:

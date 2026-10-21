@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import List, Optional
 import json
 import os
+import re
 import sys
 
 # UTF-8 兜底（2026-09-13 评审 v3 H1 系统性修法）：宿主管道可能是 GBK/ASCII，
@@ -691,6 +692,28 @@ def comment_spans(line):
     return spans
 
 
+_WAIVER_RE = re.compile(r"harness-ok:\s*([A-Za-z0-9_.-]+)(?:\s+(\S.*))?$")
+
+
+def inline_waiver(rule_id, lineno, lines):
+    """命中行或紧邻上一行的**注释**里有 `harness-ok: <规则ID> <理由>` → 返回理由。
+
+    只看 `comment_spans` 认定的注释区间：字符串字面量里的标记不算（数据不能自己解除
+    对自己的检查）。规则 ID 必须写对，理由必须非空 —— 无理由的标记不放行。
+    """
+    if lineno is None or lineno < 1:
+        return None
+    for ln in (lineno, lineno - 1):
+        if ln < 1 or ln > len(lines):
+            continue
+        text = lines[ln - 1]
+        for start, end in comment_spans(text):
+            m = _WAIVER_RE.search(text[start:end])
+            if m and m.group(1) == rule_id and m.group(2) and m.group(2).strip():
+                return m.group(2).strip()
+    return None
+
+
 # ---------- 代码段归一（评审 v13 严重 2）----------
 # 背景：PC/H5 的 `_RegexScriptRule.applicable` 是 `ctx.script != ""`，而 `ctx.script` 只对
 # **Vue SFC** 有值（extract_script 从 <script> 取）。于是 .js/.ts/.tsx/.jsx 这些**纯脚本文件**
@@ -781,7 +804,7 @@ def gate_for_repo(repo, gate_name=None, lib=None):
 def legacy_baseline(repo=None, gate_name=None, lib=None):
     """该 gate 是否 legacy_baseline 仓（存量仓：整文件口径命中的卫生规则降级为观察项）。
 
-    repo 反查优先于 gate 名：PC 的 GATE_NAME 带默认值（"gxgk_pc"），直接跑脚本没传 --gate 时
+    repo 反查优先于 gate 名：端脚本可能带 GATE_NAME 默认值，直接跑脚本没传 --gate 时
     按名字查会拿到**别的 gate** 的 legacy 设置（假豁免/漏豁免）。
     """
     g = gate_for_repo(repo, lib=lib) if repo else {}
@@ -795,7 +818,7 @@ def disabled_rules(gate_name=None, repo=None, lib=None):
 
     2026-09-12 新增（配置表开关）。为什么需要它：**规则的适用范围该由配置说了算**，
     而不是把某客户的专属要求硬塞给所有 gate。触发场景：H5-UPLOAD（上传须带签名头）
-    只对 gxgk 成立——全仓实扫 gxgk 108 处 buildUploadHeader，其余 8 个客户仓 0 处，
+    只对某一个客户仓成立——全仓实扫该仓 108 处 buildUploadHeader，其余 8 个客户仓 0 处，
     其上传本来就不签名；全局启用会给它们制造"按行豁免"噪声，而豁免理由本身是假的。
 
     取法：优先按 gate_name 查；查不到再按 repo 路径反查（直接跑脚本、没传 --gate 时）。

@@ -537,7 +537,7 @@ def _sanity_check(cfg):
         warn("有 %d 个 gate 引用了 repos 段里**没有声明**的键：%s%s\n"
              "        这是**配置错**：键名拼错，或新加的 gate 忘了在 config/harness.yaml 的\n"
              "        repos 段登记一行。注意与「本机没配路径」的区别 —— 后者长这样：\n"
-             "        键在、值留空（`gxgk_pc: \"\"`），那是常态、不阻断。"
+             "        键在、值留空（`my_gate: \"\"`），那是常态、不阻断。"
              % (len(undeclared), items, more))
 
     if unconfigured:

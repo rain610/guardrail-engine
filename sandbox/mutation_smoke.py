@@ -71,12 +71,6 @@ PLATFORM = "nt" if os.name == "nt" else "posix"
 
 # 变异清单：id / 文件 / 施加方式 / 期望被拉红的锁模块
 MUTATIONS = [
-    {"id": "M1-legacy", "file": "harness/run_gate.py", "kind": "exact",
-     "old": '    repo = repo_override or g.get("_repo_path")',
-     "new": '    repo = g.get("_repo_path")  # mutation-smoke',
-     "lock": "test_review_v9_batch1.py",
-     "expect": "test_basis_used_legacy_changed_lines",
-     "why": "调度器退回 config 主仓当基准 → legacy 下改动行被判存量 → 静默放过（评审 v11 形态 A）"},
     {"id": "M5-repo-wide", "file": "checks/file_types.py", "kind": "after_def",
      "anchor": "def is_repo_wide(gate_name):", "inject": "    return False  # mutation-smoke",
      "lock": "test_review_v9_batch1.py",
@@ -92,12 +86,6 @@ MUTATIONS = [
      "lock": "test_review_v9_batch1.py",
      "expect": "test_dispatcher_passes_hook_rc_through",
      "why": "分发器把 rc=2 压成 1 → 配置错误被当成业务拦截（Codex v4 P2-1）"},
-    {"id": "M10-allman", "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": "r\"\\bpublic\\s+(?:virtual\\s+)?DateTime\\??\\s+\\w+\\s*(\\{|$)\"",
-     "new": "r\"\\bpublic\\s+(?:virtual\\s+)?DateTime\\??\\s+\\w+\\s*\\{\"",
-     "lock": "test_review_v9_batch2.py",
-     "expect": "test_table",
-     "why": "R10 要求 `{` 同行 → allman 属性漏报（评审 v9 V9-5 / v10 M10）"},
     {"id": "M11-compact-tail", "file": "integrations/hooks/agentguard-gate.py", "kind": "exact",
      "old": ('        head_n = MAX_LINES // 2                  # 省略标记占 1 行，其余头尾对半\n'
              '        tail_n = MAX_LINES - 1 - head_n\n'
@@ -141,31 +129,6 @@ MUTATIONS = [
      "expect": "test_all_entries_agree_without_version_file",
      "why": "公用件摘掉包元数据回退 → 「三处一致」变成「三处一致地错」（都退化成写死的 0.0.0-dev）。"
             "M13 防分叉、M14 防集体退化，两条一起才说明这条锁比的是**真值**而不是自洽"},
-    {"id": "M15-enum-read-crash", "file": "sandbox/list_entries.py", "kind": "exact",
-     "old": ('    try:\n'
-             '        return pathlib.Path(path).read_text(encoding="utf-8", errors="replace")\n'
-             '    except OSError:\n'
-             '        return None\n'),
-     "new": '    return pathlib.Path(path).read_text(encoding="utf-8", errors="replace")  # mutation-smoke\n',
-     "lock": "test_source_hygiene.py",
-     "expect": "test_list_entries_tolerate_a_file_gone_after_enumeration",
-     "why": "去掉「枚举后文件消失」的兜底 → 候选清单枚举到、读取时文件已被并发删掉，"
-            "整个 list_entries 直接 FileNotFoundError（2026-09-16 实测：并行套件里被验收探针踩中）。"
-            "★ 这条变异同时是**反假绿**的探针：它的第一版锁定用「影子 isfile 边回报边删」复现，"
-            "看似精准，实则 entries() 会再次调用 candidates()、文件已被 isfile 挡掉，"
-            "兜底那一行根本没被执行 —— 变异下照样绿。现在直接打在两个兜底点上。"},
-    {"id": "M16-hygiene-read-crash", "file": "tests/test_source_hygiene.py", "kind": "exact",
-     "old": ('    try:\n'
-             '        with open(fp, "rb") as f:\n'
-             '            return f.read()\n'
-             '    except OSError:\n'
-             '        return None\n'),
-     "new": ('    with open(fp, "rb") as f:  # mutation-smoke\n'
-             '        return f.read()\n'),
-     "lock": "test_source_hygiene.py",
-     "expect": "test_hygiene_locks_skip_a_vanished_file_and_say_so",
-     "why": "卫生锁自己退回「枚举完直接 open」→ 枚举后文件被并发删掉时整条锁以"
-            "FileNotFoundError 收场（与 M15 同源：枚举与读取之间那个窗口）"},
     {"id": "M18-override-silent", "file": "harness/_config.py", "kind": "exact",
      "old": ('                _policy_notice_once(\n'
              '                    ("override", local, tuple(sorted(bad))),\n'
@@ -453,48 +416,15 @@ MUTATIONS = [
             "★ 与 M40 的区别：M40 是行尾，本条是工具链版本。两条都治好了「本机 vs CI」才真的对得上 —— "
             "实测那一对包里 8 处差异中，5 处行尾、2 处工具链、1 处派生件，正好 M39/M40 + M42 + M41。"},
     {"id": "M43-gate-key-glued-into-the-previous-line", "file": "config/harness.yaml", "kind": "exact",
-     "old": '    skip_node_in_full: true\n  gxgk_h5:',
-     "new": '    skip_node_in_full: true  gxgk_h5:',
+     "old": '    run_on: [pre_commit, post_edit]\n  \n  # 示例 gate（展示配置结构，按需修改或删除）\n  example:\n',
+     "new": '    run_on: [pre_commit, post_edit]  example:\n',
      "lock": "test_review_v13_batch9.py",
      "expect": "test_no_gate_key_is_glued_onto_the_previous_line",
-     "why": "把 gate 键 `  gxgk_h5:` 粘回上一行末尾 —— 复现 2026-09-18 施工中**真出过**的那次事故："
-            "删 `line_ending:` 行时替换把该行与下一行之间的换行一起吞了。在 YAML 里整行成了注释的一部分，"
-            "**该 gate 从配置里整个消失**，而症状不是报错，是「看起来配好了」："
-            "`--validate --structure-only` 实测从 34 个 gate 掉到 13 个、`script:` 全部串位"
-            "（`gxgk_pc` 显示成 `checks/backend_layer_check.py`），`run_gate.py gxgk_h5 <文件>` 报「gate 未登记」。"
-            "★ 为什么值得单独一条变异：**本仓的锁原本一条都咬不住它** —— `test_lock_inventory.py` 只看方法在不在；"
-            "而「严格行扫描 == 加载后的 gate 集」那条断言同样咬不住，因为粘连会**同时**骗过行扫描与加载器，"
-            "两边一起少、集合仍然相等（实测：注入后它是绿的）。真正起作用的是粘连正则与 `script` 后缀后果锁。"
+     "why": "把 gate 键 `  example:` 粘回上一行末尾 —— 复现 2026-09-18 施工中**真出过**的那次事故："
+            "批量删行时替换把该行与下一行之间的换行一起吞了。在 YAML 里该键成了上一行值的一部分，"
+            "**这个 gate 从配置里整个消失**，而症状不是报错，是「看起来配好了」。"
+            "★ 严格行扫描与配置加载器会**同时**看不见它，集合仍然相等 —— 真正咬得住的是粘连正则。"
             "★ 这条变异治的是**编辑动作**而不是代码：只要以后还有人在 `harness.yaml` 里批量删行，它就会复发。"},
-    {"id": "M44-eol-not-handed-to-the-ledger", "file": "harness/run_gate.py", "kind": "exact",
-     # 2026-09-23 重接锚点：H1 把这条调用拆成多行并加了 `mode_override=`，旧锚点（含
-     # `rules=... , weakened=...` 那一整行）命中 0 次 ⇒ 变异**施加不上**。
-     # ⚠ 这类失效产品代码全绿、没有任何测试会红，只让护盾静默失效（"已登记"冒充"已验证"）。
-     # 判据：本条的语义是「eol 不交给 _log_run」，故锚点只留 eol 与收尾两行。
-     "old": '             eol=stats.get("eol"),          # 行尾来源（防护 3）：子进程经 stats 文件回传\n'
-            '             mode_override=_mode_note)      # 口径覆盖（H1）：当时按什么判的，用了才出现',
-     "new": '             mode_override=_mode_note)      # 口径覆盖（H1）：当时按什么判的，用了才出现',
-     "lock": "test_review_v13_batch9.py",
-     "expect": "test_checkout_majority_source_reaches_the_ledger",
-     "why": "把**父进程那半条通道**断掉（2026-09-18 防护 3 的接线点）：子进程照旧把 `{\"value\",\"source\"}` "
-            "写进 `HARNESS_STATS_FILE`，`_read_stats` 也照旧读回来，唯一没做的是把它交给 `_log_run`。"
-            "于是**每个 gate 都少两个键**，而其余一切正常：rc 不变、检查结论不变、`rules:` 统计照旧 —— "
-            "这正是本仓反复记过的形状「两半各自绿、中间是断的」。"
-            "★ 为什么它的锁必须是**端到端读台账**的那几条：单元测 `emit_stats()` 证明的只是"
-            "「写进临时文件了」，父进程读没读、落没落、键叫什么名字全在它视野之外 —— "
-            "本条变异对单测**完全隐形**。"},
-    {"id": "M45-resolve-failed-faked-as-endpoint-default", "file": "checks/pc_code_check.py", "kind": "exact",
-     "old": '        _EOL["source"] = "resolve-failed"',
-     "new": '        _EOL["source"] = "endpoint-default"  # mutation-smoke',
-     "lock": "test_review_v13_batch9.py",
-     "expect": "test_resolve_failure_is_recorded_not_faked",
-     "why": "解析失败时补一个 `endpoint-default` —— 看起来无害（反正值还是端默认那个），"
-            "实际是把**两个不同的世界写成同一句话**：`no-repo`（本机压根没配这个 gate 的仓，正常状态）"
-            "与「半残部署 / `_eol_policy.py` 缺失，门禁正按模块默认跑」从此在台账里长得一模一样，"
-            "而后者本该被看见。这是本批唯一写进设计文件的一条禁令（「绝不写 endpoint-default」），"
-            "所以单独给它一条变异。"
-            "★ 注意它**不会**被「键在不在」的锁咬住：`eol_source` / `eol_value` 两个键照常出现、"
-            "值也是合法值 —— 只有断言**具体值**的那条锁能识破。"},
     {"id": "M46-machine-keys-counts-empty-values", "file": "harness/_config.py", "kind": "exact",
      "old": '    return sorted(k for k in repos if k != "harness_self" and repos[k])',
      "new": '    return sorted(k for k in repos if k != "harness_self")',
@@ -529,96 +459,6 @@ MUTATIONS = [
             "而 CI 用的是后者）。两者必须同时修对：只修 ⑤ 的话，同事的 CI 照样红。"
             "★ 它同时咬住「看得见」那一半：⊘ 是**不阻断但不静默**的唯一痕迹，退回阻断项之后，"
             "「未配的 gate 逐条列出来」这件事就没了（静默放行是本仓反复记过的形状）。"},
-    {"id": "M49-backend-r1-comment-blind", "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '        for i, line in enumerate(_code_lines(ctx.content), 1):\n'
-            '            m = re.search(r"new\\s+([A-Za-z_]\\w*)Repository\\s*\\(", line)',
-     "new": '        for i, line in enumerate(ctx.content.splitlines(), 1):\n'
-            '            m = re.search(r"new\\s+([A-Za-z_]\\w*)Repository\\s*\\(", line)  # mutation-smoke',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r1_cases",
-     "why": "把 R1 退回 raw `splitlines()`（评审 M5 的那半）—— 注释掉的旧写法重新计入观察数。"
-            "实测口径：本机 12 个后端仓 1051 万行里 **1146 行**是这种形态，集中在被整段注释掉的 "
-            "Controller 方法体（样例 `//    data = new ProjectConsultationRepository()....`）。"
-            "★ 为什么这条**值得**锁：R1 恒为 info（`error_in_targeted=False`），退回去不会拦任何人 —— "
-            "它污染的是**观察数**本身，而「R1 还有 1146 处」这种数字一旦进了汇报就再也退不回来"
-            "（本仓有过一条 975 假数就是这么来的）。宁可判据严一点，也别让注释决定台账。"},
-    {"id": "M50-backend-r2-comment-blind", "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '        for i, line in enumerate(_code_lines(ctx.content), 1):\n'
-            '            ns = _using_ns(line)\n'
-            '            if not ns:\n'
-            '                continue\n'
-            '            for forbid in self.forbidden:',
-     "new": '        for i, line in enumerate(ctx.content.splitlines(), 1):\n'
-            '            ns = _using_ns(line)\n'
-            '            if not ns:\n'
-            '                continue\n'
-            '            for forbid in self.forbidden:  # mutation-smoke',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r2_cases",
-     "why": "把 R2（ERROR 级分层规则）退回 raw `splitlines()`：`/*\\nusing Eagle.RMC.Controller;\\n*/` "
-            "这种**跨行**块注释里被注掉的 `using` 会被判违规。与 M49 不同，这条**真的会拦人** —— "
-            "R2 是 ERROR、`error_in_targeted` 默认 True，被拦的人看到的是一行自己不打算启用的注释。"
-            "★ 它同时说明「M5 那一改为什么必须逐规则量」：同一处改法，在 R1 上是减噪声、在 R2 上是"
-            "消除误拦，量出来的存量增量却是两码事（R1=1146、R2=0）—— 不能拿其中一条的结论去替另一条背书。"
-            "★★ 这条变异第一次跑是**绿的**，而原因值得记：`_using_ns()` 自己就要求整行以 `using` 开头，"
-            "于是 `// using X;` / `/* using X; */` 这两种**单行**形态在 raw 与 `_code_lines` 下结果相同 —— "
-            "拿它们当 M5 的判据，退回 raw 也照样全绿（M4 的修复把 M5 的判据遮住了）。"
-            "能区分的只有**跨行**块注释（含反方向：`/* x */ using X;` 在 raw 下反而看不见）。"
-            "探针表已按这个改成四向钉（两条跨行 + 两条单行改名），锁才真正咬得住。"},
-    {"id": "M51-using-alias-bypasses-R2", "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '    m = re.match(r"(\\w+)\\s*=\\s*([\\w.]+)\\s*;$", body)     # using A = X.Y;',
-     "new": '    m = None  # mutation-smoke: 别名 using 重新变成绕过口',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r2_cases",
-     "why": "把 `_using_ns` 认别名的那一支拆掉（评审 M4）：`using Ctrl = Eagle.RMC.Controller;` "
-            "此后返回 None → R2 看不见它。**语义完全等价**的导入，换个写法就绕过 ERROR 级分层规则。"
-            "★ 存量是 0（1051 万行里一次都没出现），所以这条变异咬的不是今天，而是**明天**："
-            "同事哪天顺手用别名整理 using，门禁静默放行 —— 这正是「有歧义的形状先关口子」的用法。"
-            "★ 锁的写法有意用**表**而不是断言某一行：`test_r2_cases` 里同时钉着「别名/static/global "
-            "三种都要报」和「`using var x = F();` 这种 C# 8 声明**不许**报」—— 只锁前者会把"
-            "「越修越宽、把 using 声明也判成导入」这个反向错误放过去。"},
-    {"id": "M52-using-static-bypasses-R2", "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '    if body.startswith("static "):',
-     "new": '    if False:  # mutation-smoke: using static 重新变成绕过口',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r2_cases",
-     "why": "与 M51 同族，拆的是 `using static X;` 那一支。单独给一条而不是合并 —— "
-            "三种形态在 `_using_ns` 里是**三段独立的代码**，合并成一条变异只能证明其中一段还在。"
-            "★ 这三条（M51/M52/M53）合起来才说明「同一个入口收口」这件事："
-            "少任何一段，另外两段的锁照样绿。"},
-    {"id": "M53-global-using-bypasses-R2", "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '    if s.startswith("global "):                      # global using X; / global using static X;',
-     "new": '    if False:  # mutation-smoke: global using 重新变成绕过口',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r2_cases",
-     "why": "同族第三条：`global using Eagle.RMC.Controller;`（`global` 前缀不剥 → 整行不以 "
-            "`using` 开头 → 直接返回 None）。★ 这条我第一版真写错过：`_using_ns` 初版先判 "
-            "`startswith(\"using\")` 再剥 `global`，于是 global using 恒返回 None，而**当时没有任何"
-            "一条测试会红** —— 这正是本仓那条规矩的现场：「锁在到达时是绿的，不算证据」。"
-            "★ 它同时咬住 R3：`global using Eagle.RMC.Business;` 在 Entities 目录里同样绕过。"},
-    {"id": "M54-override-substring-exemption", "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '                if _OVERRIDE_DECL.search(line):',
-     "new": '                if "override" in line:  # mutation-smoke: 退回无边界子串',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r5_cases",
-     "why": "把 R5/R6 的豁免退回 `\"override\" in line`（评审 M6）：`overrideEnabled` / `overridden` "
-            "乃至**字符串里**的 \"override\"，都能让含 `GetData(` 的整行免检。"
-            "★ 存量增量实测 0（1051 万行）—— 又是一条「咬明天不咬今天」的变异，所以它必须靠探针表"
-            "（`overrideEnabled && GetData(id)` 这种**构造**出来的行）来咬，指望真实语料是等不到的。"
-            "★ 顺带记：同处删掉的 `override_pat` 是**被完全遮蔽的死判据**（实测全语料 0 次单独命中），"
-            "删它不需要变异 —— 但「它曾经在那里」这件事只有靠注释留档，代码本身看不出来。"},
-    {"id": "M55-const-substring-skip", "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '            if _CONST_DECL.search(line):',
-     "new": '            if "const" in line:  # mutation-smoke: 退回无边界子串',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r9_cases",
-     "why": "把 R9 的跳过判据退回 `\"const\" in line`（评审 M7）：`constantFlag`、`isConst()`、"
-            "`\"constraint\"` 会把**同一行**里真正的裸数字比较（`Status == 0`）一并跳过 —— "
-            "一条本来就该报的命中，被一个不相干的词救掉。"
-            "★ 与 M54 同形（豁免/跳过判据的子串化），但受害面不同：M54 让该报的不报、"
-            "M55 让**已经命中的**那部分静默消失。后者更难发现 —— 输出的数字只是小了一点。"
-            "★ 存量增量实测 0；真实语料里 `isConst() && Status == 0` 这种同现一次都没有，"
-            "所以又只能靠探针表构造。这两条并列摆着，是在记录「同一种形状在本仓出现了两次」。"},
     {"id": "M56-stale-pyc-reuse", "file": "sandbox/mutation_smoke.py", "kind": "exact",
      "old": "    _purge_pycache(path)\n    return None",
      "new": "    return None  # mutation-smoke: 故意不清 __pycache__",
@@ -633,8 +473,8 @@ MUTATIONS = [
             "只有两向都在，这条锁才既不是空转、也不只是「记录了一个历史事实」。"},
     {"id": "M57-pretooluse-newfile-denied", "file": "integrations/hooks/agentguard-gate.py",
      "kind": "exact",
-     "old": '        if event == "PreToolUse" and not os.path.isfile(tf):\n            return 0\n',
-     "new": '        if False and not os.path.isfile(tf):\n            return 0\n',
+     "old": '            if event == "PreToolUse" and not os.path.isfile(tf):\n',
+     "new": '            if False and not os.path.isfile(tf):\n',
      "lock": "test_review_2026_09_23.py",
      "expect": "test_new_file_is_allowed_through_pretooluse",
      "why": "评审 2026-09-23 M10：撤掉「PreToolUse + 文件不存在 → 放行」（新建场景）这一支。"
@@ -650,8 +490,8 @@ MUTATIONS = [
             "契约是三家各自读的，只钉一家等于替另两家背书。"},
     {"id": "M58-newfile-allowance-swallows-postedit",
      "file": "integrations/hooks/agentguard-gate.py", "kind": "exact",
-     "old": '        if event == "PreToolUse" and not os.path.isfile(tf):\n            return 0\n',
-     "new": '        if not os.path.isfile(tf):\n            return 0\n',
+     "old": '            if event == "PreToolUse" and not os.path.isfile(tf):\n',
+     "new": '            if not os.path.isfile(tf):\n',
      "lock": "test_review_2026_09_23.py",
      "expect": "test_missing_file_is_still_loud_after_the_edit",
      "why": "与 M57 同锚点、反方向：把放行从 `event == PreToolUse and not isfile(tf)` 扩成"
@@ -663,8 +503,8 @@ MUTATIONS = [
             "正因为如此才需要 M57/M58 两条分钉，而不是合成一条。"},
     {"id": "M59-only-relative-path-not-normalized",
      "file": "integrations/hooks/agentguard-gate.py", "kind": "exact",
-     "old": '        if not os.path.isabs(tf):\n            tf = os.path.join(cwd, tf)\n',
-     "new": '        if False:\n            tf = os.path.join(cwd, tf)\n',
+     "old": '            if not os.path.isabs(tf):\n                tf = os.path.join(cwd, tf)\n',
+     "new": '            if False:\n                tf = os.path.join(cwd, tf)\n',
      "lock": "test_review_2026_09_23.py",
      "expect": "test_existing_bad_file_still_denied_with_relative_path",
      "why": "评审 2026-09-23 M11 的钩子侧一半：撤掉 `--only` 的绝对化。`tf` 是宿主给的原始字符串，"
@@ -706,15 +546,6 @@ MUTATIONS = [
             "（错得比多报更隐蔽）。★ 变异是**加回**那两行（不是删），所以 old 是插入点、"
             "new 是插入后的样子。"},
 
-    {"id": "M62-backend-dropped-not-accounted",
-     "file": "checks/backend_layer_check.py", "kind": "exact",
-     "old": '        if _dropped:\n',
-     "new": '        if False:\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_dropped_hits_are_accounted_and_only_then",
-     "why": "评审 2026-09-23 L3：摘掉后端收集端的 `waived_legacy` 记账。三端共用同一本台账，"
-            "少记一端的表现**不是报错**，而是 `harness_coverage` 里这条规则看着「从没豁免过」——"
-            "判据对不上现场，就没人再信它（PC/H5 早就记这一笔）。"},
 
     {"id": "M63-cli-last-zero-reads-everything",
      "file": "agentguard/cli.py", "kind": "exact",
@@ -727,45 +558,8 @@ MUTATIONS = [
             "（`--last -5` → `lines[5:]`，丢掉开头 5 条、其余全返回）。台账本机可以几千条，"
             "这种「参数写 0、行为是全量」的错位在排查现场极难认出来（输出看着就是一份正常台账）。"},
 
-    {"id": "M64-pc-waiver-marker-in-string",
-     "file": "checks/pc_ruleset.py", "kind": "exact",
-     "old": '            m = None\n'
-            '            if marker:\n'
-            '                for _a, _b in comment_spans(chunk):\n'
-            '                    m = marker.search(chunk[_a:_b]) if _b > _a else None\n'
-            '                    if m:\n'
-            '                        break\n',
-     "new": '            m = marker.search(chunk) if marker else None\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_marker_in_string_literal_does_not_waive",
-     "why": "评审 2026-09-23 L4 的**原缺陷形态**（PC 站点）：豁免标记退回「拿原始行去搜」。"
-            "于是 `console.log(\"harness-ok: PC-CONSOLE 理由\")` 这行**自己把自己豁免了** ——"
-            "被检测的数据有权力关掉检测。这不是「报得多/报得少」的口径问题，是出口没上锁。"},
 
-    {"id": "M65-h5-waiver-marker-in-string",
-     "file": "checks/h5_ruleset.py", "kind": "exact",
-     "old": '            m = None\n'
-            '            if marker:\n'
-            '                for _a, _b in comment_spans(chunk):\n'
-            '                    m = marker.search(chunk[_a:_b]) if _b > _a else None\n'
-            '                    if m:\n'
-            '                        break\n',
-     "new": '            m = marker.search(chunk) if marker else None\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_marker_in_string_literal_does_not_waive",
-     "why": "与 M64 同缺陷、**另一个模块**：H5 的 `_find_hits` 是 PC 那份的逐字副本（本仓反复"
-            "栽在「同一语义多份实现各改各的」上），所以两份各钉一条 —— 只钉 PC 的话，H5 那份"
-            "退回原状时锁照样绿（锁里两个端是分开跑的 subTest）。"},
 
-    {"id": "M66-backend-waiver-marker-in-string",
-     "file": "checks/backend_layer_check.py", "kind": "exact",
-     "old": '        for _a, _b in comment_spans(lines[idx]):\n',
-     "new": '        for _a, _b in [(0, len(lines[idx]))]:\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_backend_inline_waiver_needs_a_comment_too",
-     "why": "评审 2026-09-23 L4 在后端 loader 的同款形态：把「只看注释区间」退化成「整行都是注释」"
-            "（`[(0, len(line))]` 是个区间，锚点极小但语义正好回到原缺陷）。C# 侧的载体是"
-            "`var s = \"harness-ok: R9 理由\";` 这类字符串。"},
 
     {"id": "M67-comment-spans-whole-line",
      "file": "checks/rule_base.py", "kind": "exact",
@@ -883,33 +677,6 @@ MUTATIONS = [
     # 按行豁免**叠乘**：存量文件里已有一处命中（存量、不在 changed_lines 里），开发时又添第二处
     # → 判据仍锚第一处 → 整条结论被按行豁免丢掉 → **新写的那处静默通过**。而「往 Visual/ 文件里
     # 新写一个 [Table(」正是 R12 最想拦的那一幕（见 test_entity_standards 里 F3 锚点那条锁）。
-    {"id": "M74-f3-first-hit-only",
-     "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '    return [i for i, ln in enumerate(_code_lines(content), 1)\n'
-            '            if _R12_TABLE_ATTR.search(_strip_strings(ln))]\n',
-     "new": '    return [i for i, ln in enumerate(_code_lines(content), 1)\n'
-            '            if _R12_TABLE_ATTR.search(_strip_strings(ln))][:1]\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_second_table_attribute_in_visual_file_is_reported",
-     "why": "F3 退回「只报首个命中行」= L5 的原缺陷形态（`[:1]` 是这套改动的**最小**还原："
-            "判据、行号、口径全没动，只少报几处）。后果是**漏报**而不是多报：往已有 `[Table(` 的"
-            "存量 Visual/ 文件里新添一处，那条新违规会被按行豁免整条丢掉。"
-            "⚠ 这里原先写的是「存量实测 27 个违规文件里有 6 个同文件 2 处」—— 那是**错口径**的"
-            "数（把 `*Entities/Lib/Visual/…` 这类 `applicable()=False` 的文件也算进来了）。"
-            "按产品自己的入口判据复量：F3 真会走进来的 **21 个文件、21 条结论、同文件 ≥2 处的 0 个**"
-            "（F6：86 / 86 / 0，脚本 `%TEMP%\\eg_l5verdict.py`）。"
-            "★ 也就是说这条修法在**存量上一条都不多报**，它挡的全是将来新添的第二处 —— "
-            "这正是「0 存量影响」与「有牙齿」可以同时成立的那种改动，别拿存量数当它的辩词。"},
-    {"id": "M75-f6-first-hit-only",
-     "file": "checks/backend_ruleset.py", "kind": "exact",
-     "old": '            out.append(i)\n    return out\n',
-     "new": '            out.append(i)\n    return out[:1]\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_second_nested_namespace_is_reported",
-     "why": "F6 侧的同款还原。**为什么 F6 也要单钉一条**（尽管存量实测 0 个文件有第二处）："
-            "它与 F3 是两份独立实现，本仓反复栽在「同一语义多份实现各改各的」上 —— "
-            "只钉 F3 的话，将来谁把 F6 那份改回首个，锁照样全绿（两条锁是分开的用例）。"
-            "存量 0 只说明**今天**没有第二处，不说明这条路走不通。"},
     # ★ 这里原本还登记了 `M76-f3-line-fallback-to-1`（把原实现无命中时兜底 `return 1` 请回来，
     # 期望 `test_no_occurrence_reports_nothing` 红）。**真跑冒烟时被判 FAIL「变异后仍然绿」**
     # —— 冒烟是对的，这条变异**今天打不中任何锁**：F3 分支先过 `has_table_attr` 闸门，而
@@ -1030,17 +797,6 @@ MUTATIONS = [
             "M85 与 M86 各守一端，中间的判据线就是「谁在回答」—— git 回答了 / git 没答上来。"},
     # ★ 本组是语料里**第一条改 `.md` 的变异**（其余 78 条都是 `.py`）：`apply_mutation` 只做
     #   读-替换-写、不认后缀，所以机制上本来就支持；登记它是因为 L18 那一类**复发过三次**。
-    {"id": "M87-l18-vault-path-bare-spelling",
-     "file": "golden-patterns/index.md", "kind": "exact",
-     "old": "`<VAULT>/concepts/技术规范/跨文件Partial类对照表.md`",
-     "new": "`KnowledgeVault/concepts/技术规范/跨文件Partial类对照表.md`",
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_no_maintainer_only_vault_path_in_the_pattern_library",
-     "why": "L18 复发形态里最阴的一种：**裸名字**（无盘符、也无 /d/ 前缀）。按形态扫的两种正则"
-            "（盘符形态、`^/d/` 形态）都不命中它 —— 报告按 `D:/KnowledgeVault` 扫漏了 `/d/…`，"
-            "我按盘符形态再扫一遍又漏了裸写法。所以锁的判据刻意做成「按名字扫」（`vault_mentions`）。"
-            "★ 本变异**专门挑裸写法**：若换回 `/d/` 或 `D:/` 形态，一个「只看盘符」的弱化判据"
-            "照样能红，那这条变异就证明不了判据选对了。"},
     # L15 的两半（代码 + 那段临时说明）已在 `0.1.7-dev` **同一次提交里一起落地**，锁盯着它们同真同假：
     # 《安装说明》§5.1 的 ⚠ 与「演练支还丢不丢 `fails`」。
     # ⚠ 2026-09-23 夜（踩到自己第三次的老病）：**本变异原先的 `old` 就是被第⑦条删掉的那句话**
@@ -1172,34 +928,6 @@ MUTATIONS = [
      "expect": "test_qoder_readme_block_equals_the_shipped_example",
      "why": "L12/M9：出货样例的命令退回与 README §5.3 不一致的形态 —— 照它抄会拼出"
             "指向不存在的钩子路径的命令。判据同样是对拍（README 块 vs 样例文件）。"},
-    {"id": "M100-l5-r1-scope-back-to-one-prefix", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '        return parts[1].startswith("Eagle.") and parts[1].endswith(".Controller")',
-     "new": '        return (ctx.rel or "").startswith("RMC/Eagle.RMC.Controller")  # mutation-smoke',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_widening_is_not_vacuous",
-     "why": "把 R1 的作用域退回**一条前缀**（评审 L5 修复前的原状）：同族的 Module/、Support/"
-            "（12/12 仓）、RMCHY/（3 个 hy 仓）重新整片不覆盖。"
-            "★ 这条变异**不拦任何人**（R1 恒 info、`error_in_targeted=False`）—— 它咬的是"
-            "「观察面」：退回后这三个族的 `new *Repository(` 一处都不再统计，而套件与门禁全绿。"
-            "★ 判据刻意挑 `test_widening_is_not_vacuous`（而非某条计数用例）：那条问的是"
-            "「这次放宽到底带来了什么」，退回旧前缀时它必须红 —— 否则锁在放宽被撤回时也不会响。"
-            "★ 同一次注入下 `test_every_controller_family_is_in_scope_and_still_reports` 也红，"
-            "两条一起才是「该进的全进」。"},
-    {"id": "M101-l5-r1-scope-wildcard-eats-apicontroller", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '        return parts[1].startswith("Eagle.") and parts[1].endswith(".Controller")',
-     "new": '        return bool(re.search(r"[^/]+/Eagle.*.Controller/",'
-            ' (ctx.rel or "").replace("\\\\", "/")))  # mutation-smoke',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_api_controller_and_neighbours_are_out_of_scope",
-     "why": "把判据换成评审报告 L5 原话建议的通配形态 `*/Eagle.*.Controller` —— 实测它会把 "
-            "`Eagle.RMCEx.ApiController` 与 `Eagle.RMC.ApiController` **一并吞进 R1 作用域**"
-            "（`.*` 能吃 `RMCEx.Api`）。R1 是观察项所以没人被拦，被污染的又是观察数，"
-            "而且方向相反：把**另一套防腐层**（ApiController）算成 Controller 直连 Repository。"
-            "★ 这条是「别人报的修法也要自己实读原文再采纳」的现场：报告建议的写法看着更宽更省事，"
-            "实际是错的；产品最终采用后缀判定（顺带还比旧前缀更严：`ControllerX` 不再误入）。"
-            "★ 注入下**恰好只有这一条用例红**（另两条照绿）—— 说明锁钉的正是那个边界。"},
     {"id": "M102-only-space-form-ignored-again", "file": "sandbox/mutation_smoke.py",
      "kind": "exact",
      "old": '        if _a == "--only":\n'
@@ -1302,8 +1030,8 @@ MUTATIONS = [
     {"id": "M109-in-tree-guard-dropped",
      "file": "integrations/hooks/agentguard-gate.py",
      "kind": "exact",
-     "old": '        if not in_tree(tf, cwd):\n            return 0',
-     "new": '        if False:\n            return 0',
+     "old": '            elif not in_tree(tf, cwd):\n',
+     "new": '            elif False:\n',
      "lock": "test_entry_level.py",
      "expect": "test_out_of_tree_path_defers_to_stop",
      "why": "撤掉仓外目标的那道兜底：`--only` 的值指到仓外**必然**一个都匹配不上 → rc=2 → "
@@ -1330,21 +1058,6 @@ MUTATIONS = [
             "所以本锁**不能**写成 `assertNotIn(\"harness-ok\")` —— 那会把「用掉了豁免、又另有真违规」"
             "的**正常**文件判红（2026-09-30 当场探针验过，一条假阳性机器）。它锁的是两个**只有教学"
             "形态才命中**的点：模板占位符 `<规则ID>` 与位置指令「紧邻上一行」。"},
-    {"id": "M111-ruleset-message-teaches-the-waiver-again",
-     "file": "checks/h5_ruleset.py",
-     "kind": "exact",
-     "old": '    name = "上传调用确认：需签名的客户（当前仅 gxgk）应走 buildUploadHeader"',
-     "new": '    name = ("上传调用确认：需签名的客户（当前仅 gxgk）应走 buildUploadHeader"\n'
-            '            "；确认无误可在本行/上一行加 harness-ok: H5-UPLOAD 豁免")',
-     "lock": "test_checks.py",
-     "expect": "test_upload_sign_rule_message_does_not_teach_the_waiver",
-     "why": "只把**注入正文**那句删掉是不够的（M110 只守住了一半）：规则命中的 `name` 文案会**逐字**"
-            "进入同一条通道 —— `check()` 把它拼成 `f\"{self.name} ×{n}\"` 放进 Finding，再经 gate "
-            "的 stdout 原样回灌。留它等于：注入正文不教了，命中行旁边照教。"
-            "★ 这条锁**原来的判据正好写反**：老锁写的是 `assertIn(\"harness-ok: H5-UPLOAD\", "
-            "fnd[0].message)`「文案里必须给出出口」—— 它把缺陷锁成了**要求**，所以改文案会先撞锁。"
-            "本批把判据反转（`assertNotIn`）并补上「AGENTS.md 里必须写着出口」，两半一起："
-            "只删不给出路＝把人堵死，不是把路改道。"},
     {"id": "M112-lock-run-whole-module-again",
      "file": "sandbox/mutation_smoke.py",
      "kind": "exact",
@@ -1462,180 +1175,10 @@ MUTATIONS = [
             "全部接入仓 pre-commit 的**实体**，且同样是先截断后写。"
             "同一批的另一半（`_restore_probe` 的截断窗口）由 M117 守。"},
     # ---- 2026-10-01 后端作用域对齐批次（R2/R5/R6 作用域、R3/R9 判据）----
-    # 这一批的共同现场：四条规则的**作用域/判据偏窄**在 CHANGELOG 里挂了两周，写的却是
+    # 这一批的共同现场：四条规则的**作用域/判据偏窄**在内部开发记录里挂了两周，写的却是
     # 「只量不动」；实测后才发现其中 R9 那半句是**错的**（它的 dirs 是死代码，见 M123 的 why）。
     # ★ 五条各自只咬一条锁：作用域三条（M119/M121/M122）+ 判据两条（M120/M123）。
     #   这批之前**一把锁都没有** —— 把四条就地放宽后 27 条相关用例全绿，所以这些锁是新增的。
-    {"id": "M119-r2-scope-back-to-three-prefixes", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '        return in_business(ctx)\n',
-     "new": '        return any(ctx.rel.startswith(d) for d in self.dirs)  # mutation-smoke\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_business_widening_is_not_vacuous",
-     "why": "把 R2 的作用域退回**写死的三条完整前缀**（本批修复前的原状）：R2 的 `dirs` 至今仍留着"
-            "那三条（已改标 `# 仅作清单留档`），所以这一改就精确复现旧判据。"
-            "被退回后 `Module/`、`Support/`（12/12 仓都有）、`DataReport/` 的 Business 层整片不覆盖。"
-            "★ R2 是 **ERROR 级**（`severity_default=ERROR`、`error_in_targeted=False` ⇒ 全量档也拦）"
-            "——所以这条变异是**真的放过违规**，不是少统计一个观察数（与 M100 的 R1 正相反）。"
-            "★★ 但仍不该只盯着'拦不拦'：退回去之后，同事在 `Module/Eagle.Module.Business` 里"
-            "`using Eagle.RMC.Controller;` 会**全绿通过**，而同一行写在 `RMC/Eagle.RMC.Business` 里"
-            "就被拦 —— 门禁对同一个错误的答案取决于代码放在哪个组，这种不一致比漏报本身更伤信任。"},
-    {"id": "M120-r3-forbidden-back-to-full-names", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '            if ns.startswith("Eagle.") and any(f in ns.split(".") for f in self.forbidden):\n',
-     "new": '            if any(ns == f or ns.startswith(f + ".") for f in ("Eagle.RMC.Business",'
-            ' "Eagle.RMC.Controller", "Eagle.RMC.Repository", "Eagle.RMCHY.Business",'
-            ' "Eagle.RMCHY.ApiController", "Eagle.RMC.ApiController")):  # mutation-smoke\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_segment_match_catches_every_module_family",
-     "why": "把 R3 的 `forbidden` 判定退回**写死全名**的原状（本批修复前逐字如此，六个全名写死在"
-            "`R3EntitiesRule.forbidden` 里）。注意 `new` 把那份名单**内联**进这一行 —— 因为 "
-            "`apply_mutation` 的 `exact` 只换一处字符串，把两处改动（名单 + 判据）压成一行，"
-            "才能精确复现旧契约；`old`/`new` 各自都能在文件里唯一定位。"
-            "退回后 `Module/Eagle.Module.Entities` 里 `using Eagle.Module.Business;` 抓不到。"
-            "★ 这条的病灶形状值得记：**全名匹配对'命名不规则的目录'结构性失效** —— Core 是 "
-            "`Eagle.Entities`（两段）、其余是 `Eagle.<组>.Entities`（三段），名单只能穷举已知形态；"
-            "段名匹配则天然免疫段数差异（同 R2 的 `forbid in ns.split(\".\")`）。"
-            "★ 病理是**穷举**：全名只能列出**已知的组**（旧名单只列了 RMC/RMCHY 两族六个全名），"
-            "段名判定按**段**判 ⇒ 天然覆盖全部组、不用枚举（同 R2 的 `forbid in ns.split(\".\")`）。"
-            "★ 另一向的收益：`Eagle.RMC.ControllerX` 这类**同前缀不同段**的旧误报消失。"
-            "★★ **本条 `why` 订正过两次，两次都留在这里**（这段历史本身就是教材）："
-            "① 初版写着「旧名单**漏**了 `Eagle.Repository`、段名判定顺手收下、方向是好的」；"
-            "② 随后据「12 仓 225 条全是死 using、零真实依赖」改成「`Repository` 已从章程摘出」"
-            "（当时挂了护盾 M124 守这个收窄）；"
-            "③ **2026-10-02 复量把 ② 的依据整个推翻** —— 那 225 条 = **177 条死 using** + "
-            "**48 条真类型依赖**（`StaticManager`，声明在 `namespace Eagle.Repository`，"
-            "数处是实体属性里的运行时调用）。②的错因是**判据用错了**：拿字符串 `Repository` "
-            "去 grep 正文，而在用的类型名是 `StaticManager`（**不含 `Repository` 子串**）⇒ "
-            "「grep 不到」被读成了「不存在」。"
-            "⇒ `Repository` **留在名单里**（用户 2026-10-02 拍板「走 D 治本」）；M124 已按新契约"
-            "**反转**（不再是「加回去」，而是「拿掉它 ⇒ 必须红」）。"
-            "★ M120 自己不受影响（它退的是**全名 vs 段名**这一维，与 `Repository` 在不在名单里正交）"
-            "，但那段被推翻的话**必须一并订正** —— 护盾的 `why` 是给后来人看的唯一现场，"
-            "里面留一句已被推翻的结论，比不写更糟。"},
-    {"id": "M121-r5-scope-back-to-two-groups", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '    dirs = ["RMC", "RMCEx", "RMCHY", "Core", "Module", "Support",\n'
-            '            "DataReport", "Audit", "EntityGenerator"]\n'
-            '    severity_default = Severity.INFO\n'
-            '    error_in_targeted = True\n'
-            '    pattern = r"\\b(?:GetData|Deletes|InitData)\\s*\\("\n',
-     "new": '    dirs = ["RMC", "RMCEx"]  # mutation-smoke\n'
-            '    severity_default = Severity.INFO\n'
-            '    error_in_targeted = True\n'
-            '    pattern = r"\\b(?:GetData|Deletes|InitData)\\s*\\("\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r5_group_scope_is_widened",
-     "why": "把 R5 的 `dirs` 退回**两组**（本批修复前的原状 `[\"RMC\", \"RMCEx\"]`）。"
-            "退回后 Core/ Module/ Support/ DataReport/ Audit/ EntityGenerator/ 六个组的 .cs"
-            "整片不在作用域。"
-            "★ 锚点带上后四行（`severity_default`/`error_in_targeted`/`pattern`）是**必须的**："
-            "R5 与 R6 的 dirs 块**逐字相同**，`exact` 严格要求锚点唯一命中一次"
-            "（`apply_mutation` 里 `s.count(old) != 1` 直接报错），只写 dirs 两行会命中 2 次。"
-            "★ R5 的 `error_in_targeted=True` ⇒ 定向提交时这条是 **error 拦新代码**："
-            "退回后同事在 `Module/` 里新写 `GetData(` 不再被拦。"},
-    {"id": "M122-r6-scope-back-to-two-groups", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '    dirs = ["RMC", "RMCEx", "RMCHY", "Core", "Module", "Support",\n'
-            '            "DataReport", "Audit", "EntityGenerator"]\n'
-            '    severity_default = Severity.INFO\n'
-            '    error_in_targeted = True\n'
-            '    pattern = r"\\bGetPageData\\s*\\("\n',
-     "new": '    dirs = ["RMC", "RMCEx"]  # mutation-smoke\n'
-            '    severity_default = Severity.INFO\n'
-            '    error_in_targeted = True\n'
-            '    pattern = r"\\bGetPageData\\s*\\("\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_r6_group_scope_is_widened",
-     "why": "与 M121 同族，拆的是 R6（分页接口 `GetPageData` 混用）。"
-            "★ 单独给一条而不是与 M121 合并 —— 两条是**独立的 `dirs` 声明**"
-            "（R5 `R5MethodNameRule` / R6 `R6MethodNameRule`），合并成一条只能证明其中一处还在；"
-            "与 M51/M52/M53 那组「同一入口三段代码」是同一个道理。"
-            "★ 它同时是 M121 锚点唯一性的**活证明**：两条锚点都带上各自的 `pattern` 行才互不干扰 ——"
-            "哪天真有人把这两个块改成逐字相同，本批会先在这里炸出来（`锚点命中 2 次`）。"},
-    {"id": "M123-r9-pattern-back-to-bare-status", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '    pattern = r"\\b\\w*(?:Status|State)\\s*[=!]=\\s*(-?(?:0|5|10))\\b(?!\\d)"\n',
-     "new": '    pattern = r"\\b(?:Status|State)\\s*[=!]=\\s*(-?(?:0|5|10))\\b(?!\\d)"  # mutation-smoke\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_named_status_is_now_caught",
-     "why": "把 R9 的正则退回**只认裸 `Status`/`State`**（本批修复前的原状）—— 具名状态"
-            "（`AuditStatus == 5`、`NormalStatus == 0`）整片不进判据。"
-            "★ 这条最刺眼的地方：R9 自己的 `fix` 文案点名要大家改用 "
-            "`SysConst.NormalState/DraftStatus/AuditStatus/NormalStatus/...` —— 全是**具名**常量，"
-            "而旧正则恰恰对这些名字视而不见。**规则在教一种写法，却只检查另一种写法。**"
-            "★ 与 M119/M121/M122 不同，本条改的是**判据**不是作用域 —— 所以它不碰任何 dirs。"
-            "★★ 顺带记一条**本批查实的错误论断**：CHANGELOG `:509` 与 lock-inventory 里写"
-            "「R5/R6/R9 是组前缀 ⇒ 六个整片不在作用域」—— 其中 **R9 那半句是错的**。"
-            "R9 **没有覆写 `applicable()`**，基类 `Rule.applicable`（rule_base.py:105-107）恒返回 "
-            "True，`_BackendRule` 也不定义它 ⇒ R9 早就是**全仓生效**，它的 `dirs`"
-            "（`[\"RMC\",\"RMCEx\",\"RMCHY\"]`）从来没参与过判定。"
-            "实测证据：gxgk 后端仓 R9 的命中里有 `Core/` 5 处、`Module/` 4 处，而 dirs 里根本没有这两个组。"
-            "所以扩 R9 的 dirs 是**空操作**，它要改的只有这条正则。"
-            "★ 这条留档还有一个用处：它解释了为什么本批**没有**给 R9 加作用域变异 —— "
-            "没有可退的判据（`dirs` 退回什么都不变），加一条只会是一条**永远绿**的假变异。"},
-    {"id": "M124-r3-repository-segment-dropped-from-forbidden", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '    forbidden = ["Business", "Controller", "ApiController", "Repository"]\n',
-     "new": '    forbidden = ["Business", "Controller", "ApiController"]  # mutation-smoke\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_repository_segment_is_reported_again",
-     "why": "把 `Repository` **从** R3 的 `forbidden` 里拿掉 —— 也就是退回 2026-10-01 那次"
-            "「章程收窄」，撤掉 2026-10-02 的复位。"
-            "★ **本条的方向在 2026-10-02 反转过**（原先是`加回去`），反转的理由必须带上，"
-            "否则后来的人只看得见一个方向、不知道哪个方向才是当下契约："
-            "2026-10-01 的依据是「12 仓 225 条 `Eagle.Repository` 命中**全是**死 using、"
-            "**零**真实类型依赖」，**那个前提是错的** —— 逐条复量（跑规则本体，不是 grep）得"
-            "**225 = 177 条死 using + 48 条真类型依赖**，那 48 条恰好是 **4 个路径 × 12 个仓**、"
-            "用的**全是** `StaticManager`（声明于 `Core/Eagle.Repository/Manager/StaticManager.cs`，"
-            "`namespace Eagle.Repository`），且都是**运行时调用**（`DangerTemplateEntity.cs` L105、"
-            "`RentalOrderEntity.cs` L83/93、`ConfigEntityExtensions.cs` L48 等）。"
-            "★ 错因是**判据用错了**：拿字符串 `Repository` 去 grep 正文，而在用的**类型名是 "
-            "`StaticManager`**，这个词里**没有 `Repository` 子串** ⇒「grep 不到」被读成了"
-            "「不存在」。**「没搜到」只能证明我没搜，不能证明它不在。**"
-            "★ 噪声（那 177 条死 using）按用户 2026-10-02 拍板「走 D 治本」从**代码侧**治"
-            "（逐仓删死 using），**不在规则侧把 48 条真命中一起盖掉** —— 后者是治标："
-            "R3 是 `severity_default=ERROR` + `error_in_targeted=False` ⇒ 恒 ERROR"
-            "（`backend_ruleset.py:313` 那条 legacy 降级分支的第一条件正是 `error_in_targeted`），"
-            "摘掉 `Repository` 等于让 48 处**真实的**分层违规永久隐形。"},
-    {"id": "M125-r3-bare-ns-segments-emptied", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '        bare = sorted(_BARE_NS_SEGMENTS & set(forbidden))\n',
-     "new": '        bare = []  # mutation-smoke\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_qualified_name_channel_catches_the_using_free_form",
-     "why": "清空**裸段名**这条通道的可判集合 —— 限定名判据只剩「带 `Eagle.` 前缀」那一半。"
-            "★ 守的是一个**真现场**：12 个后端仓各有一份 "
-            "`RMC/Eagle.RMC.Entities/Table/Plan/PlanSiteDisposalPlanEntity.cs`，L70 写的是"
-            "`var listP = Repository.StaticManager.ParamsProvider.GetParamList(\"PossibleRange\");` "
-            "—— **该文件一条 `using Eagle.Repository;` 都没有**（using 块是 "
-            "`Eagle.Common`/`Eagle.Entities`/`System.*`/`Microsoft.EntityFrameworkCore`）。"
-            "它能编过，是因为实体文件的 namespace 是 `Eagle.RMC.Entities`，而 `Repository` 是"
-            "**外层命名空间 `Eagle` 的直接成员** —— C# 逐层向上找 enclosing namespace，"
-            "**不需要任何 using**。⇒ 只查 using 行的旧判据对这 12 处**一条都看不见**。"
-            "★ 改走 `bare` 这个锚点（不删 `_BARE_NS_SEGMENTS` 本身）是为了让变异**只**打掉"
-            "「裸名可判」这一半：带 `Eagle.` 前缀的写法仍由 M126 独立守着，两条合起来才是全通道。"
-            "★ 若哪天有人把这里改成「把所有 forbidden 段都当裸段名」（把 `Business` 也放行），"
-            "M125 不会红 —— 那条是**放宽**，得靠 "
-            "`test_qualified_name_channel_does_not_report_lookalikes` 里那条「裸 `Business.X` 不报」"
-            "的用例兜住（判据是行为，不是这一行源码）。"},
-    {"id": "M126-r3-qualified-prefix-killed", "file": "checks/backend_ruleset.py",
-     "kind": "exact",
-     "old": '        alts = [r"\\bEagle(?:\\s*\\.\\s*[A-Za-z_]\\w*)*\\s*\\.\\s*(?:%s)\\s*\\.\\s*[A-Za-z_]\\w*"\n'
-            '                % "|".join(re.escape(s) for s in forbidden)]\n',
-     "new": '        alts = []  # mutation-smoke\n',
-     "lock": "test_review_2026_09_23.py",
-     "expect": "test_qualified_name_channel_catches_the_using_free_form",
-     "why": "打掉限定名判据的**带前缀**那一半（`Eagle.Repository.X` / `Eagle.Support.Repository.X`）"
-            "—— 只剩 M125 守的裸 `Repository.X`。"
-            "★ 与 M125 **必须分成两条**：同一条判据的两半，合并只能证明「其中一半还在」。"
-            "这正是 M51/M52/M53（同一入口三段代码）与 M121/M122（两条独立 dirs 声明）的同款口径。"
-            "★ `alts` 被清空后 `bare` 那支**仍会 append**，所以 "
-            "`\"|\".join(alts)` 不会变成空串去 `re.compile(\"\")`（那会匹配一切 —— "
-            "正是本批最怕的反向事故：不是漏报而是**全报**）。"
-            "★★ 两半的**平台/形态互补**也记在这里：裸名那半靠 enclosing namespace 解析"
-            "（`Eagle.<组>.Entities` 里才成立），带前缀那半与文件在哪个 namespace **无关** —— "
-            "所以两半合起来覆盖「同一个依赖的两种合法写法」，而不是「两种平台的同一种写法」。"},
 
     # ── 产物出生证明（2026-10-04）────────────────────────────────────────────
     {"id": "M127-scaffold-fingerprint-is-a-constant", "file": "sandbox/agents_scaffold.py",
@@ -1726,7 +1269,7 @@ MUTATIONS = [
      "kind": "exact",
      "old": '            f.see = f.see or getattr(self, "see", "")\n',
      "new": '            pass  # mutation-smoke\n',
-     "lock": "test_paradigm_pointers.py",
+     "lock": "test_checks.py",
      "expect": "test_rule_run_stamps_see_onto_findings",
      "why": "把 Rule.run 的 see 盖章拆掉：规则类上声明的范式指针再也到不了 Finding ——"
             "命中文案退回「只说应走 project-form、不给路径」，走廊断在最后一步。"
@@ -1737,41 +1280,15 @@ MUTATIONS = [
      "kind": "exact",
      "old": '    line = "[%s] %s" % (fnd.rule_id, fnd.message) if fnd.rule_id else fnd.message\n',
      "new": '    line = fnd.message  # mutation-smoke\n',
-     "lock": "test_paradigm_pointers.py",
+     "lock": "test_checks.py",
      "expect": "test_format_finding_embeds_rule_id_and_see",
      "why": "把 [规则ID] 前缀丢掉：行内豁免要求「规则 ID 必须写对，写错不生效」，"
             "端级模板承诺「被拦时门禁会把 ID 直接打给你」—— 没了 ID，agent 只能靠猜。"
             "这正是本批修的另一半：PC/H5 原先在转换点把 rule_id 就地丢弃，"
             "后端一直是 ❌ RULE 格式，三端就此对齐。"},
 
-    {"id": "M135-el-dialog-scan-dropped", "file": "checks/pc_ruleset.py",
-     "kind": "exact",
-     "old": '        (r"<\\s*el-dialog(?![\\w-])",\n'
-            '         "直用原生 el-dialog ×%d（弹窗应走 project-model：title / footer / 白卡容器由它统一，"\n'
-            '         "见 pc_page_patterns.md §6.2）"),\n',
-     "new": '        # mutation-smoke: el-dialog 扫描项被移除\n',
-     "lock": "test_pc_elform_modal.py",
-     "expect": "test_el_dialog_new_file_is_error",
-     "why": "把批次 2 新加的 el-dialog 扫描项拆掉：新代码直用 <el-dialog> 退回不拦 ——"
-            "范式走廊刚接上的第三根线又断掉。复量数据（11 仓：views 350 文件存量、"
-            "project-model 8558 文件在用）证明判据成立，锁住它防止后人以「存量多」为由静默移除。"
-            "★ el-drawer 刻意不在 _SCANS 里（09-19 业务决定，无 project-drawer）—— 变异只拆"
-            "el-dialog，若有人把 el-drawer 加回来，由 allowlist 注释与评审记录挡。"},
 
     # ── el-drawer 回禁止清单（2026-10-15c：用户当场抓到的陈旧清单）──────────────
-    {"id": "M136-el-drawer-put-back-into-forbidden-list", "file": "golden-patterns/rules/pc_CODE_RULES.md",
-     "kind": "exact",
-     "old": '禁止绕过封装直接用 `el-table`、`el-form`、`el-dialog` 等底层组件自建（project-xxx 确无对应能力的除外 —— 如抽屉无 `project-drawer`，**直接用 `el-drawer`**，见 §6.3 / §10.1；门禁 `PC-ELFORM` 拦这些底层标签的新增行）',
-     "new": '禁止绕过封装直接用 `el-table`、`el-form`、`el-dialog`、`el-drawer` 等底层组件自建（除非 project-xxx 确无对应能力）',
-     "lock": "test_docs_consistency.py",
-     "expect": "test_no_rule_doc_line_forbids_el_drawer",
-     "why": "把第二章的句**整句**变回旧文案：`el-drawer` 又留在「禁止绕过封装直接用」的枚举里"
-            "（旧文案的尾巴「除非 project-xxx 确无对应能力」是**笼统豁免**，看着像留了出口，"
-            "实际让读者把 el-drawer 读成禁用项——与同文件 §6.3/§10.1「可直接用」自相矛盾）。"
-            "★ 锁里的放行标记刻意不收「确无对应能力」，正是为了能咬住这个旧形状（详见锁 docstring）。"
-            "★ 本变异第一版只换尾句、枚举里没有 el-drawer —— 锁正确地没响（判据是「同行 el-drawer+禁」），"
-            "说明第一版变异本身写错了形状；改为整句回退（枚举+尾句一起）后才命中。记录在案，别把"
-            "「变异没响」一律读成锁被弱化 —— 先核对变异是否复现了真实缺陷形状。"},
 
     # ── 台账归因（2026-10-15 批次 3：直调兜底 + 钩子 via）──────────────────
     {"id": "M137-direct-call-entry-fallback-dropped", "file": "harness/run_gate.py",
@@ -1796,7 +1313,7 @@ MUTATIONS = [
     # ── 钩子可见性（2026-10-15 批次 4：心跳 / 跳过不静默）──────────────────
     {"id": "M139-skip-heartbeat-dropped", "file": "integrations/hooks/agentguard-gate.py",
      "kind": "exact",
-     "old": '            _activity(client, event, "skip-no-file")\n',
+     "old": '            _activity(client, event, "skip-no-file", tool=_tool_name(payload))\n',
      "new": '            pass  # mutation-smoke\n',
      "lock": "test_entry_level.py",
      "expect": "test_write_without_file_leaves_heartbeat_and_skip",
@@ -1805,7 +1322,7 @@ MUTATIONS = [
 
     {"id": "M140-skip-record-dropped", "file": "integrations/hooks/agentguard-gate.py",
      "kind": "exact",
-     "old": '                _skip_note(client, event, "no-file")\n',
+     "old": '                _skip_note(client, event, "no-file", tool=_tool_name(payload))\n',
      "new": '                pass  # mutation-smoke\n',
      "lock": "test_entry_level.py",
      "expect": "test_write_without_file_leaves_heartbeat_and_skip",
@@ -1905,6 +1422,11 @@ def copy_tree(dest):
                            "；git ls-files rc=%d，文件数=%d" % (r.returncode, len(rels)))
     for rel in rels:
         src, dst = os.path.join(ROOT, rel), os.path.join(dest, rel)
+        if not os.path.isfile(src):
+            # 索引里有、工作区已删（尚未提交的删除）：副本按工作区现状建基线，否则 copy2
+            # 直接抛 FileNotFoundError，整趟冒烟倒在第一步。
+            sys.stderr.write("⚠ 副本跳过工作区已不存在的跟踪文件：%s\n" % rel)
+            continue
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copy2(src, dst)
     _make_work_tree(dest)

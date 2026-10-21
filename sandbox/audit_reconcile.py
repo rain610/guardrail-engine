@@ -23,8 +23,8 @@
 用法：
     python sandbox/audit_reconcile.py                  # 全部端仓，近 14 天，本机作者
     python sandbox/audit_reconcile.py --since 7d
-    python sandbox/audit_reconcile.py --gate gxgk_pc   # 只审一个 gate
-    python sandbox/audit_reconcile.py --repo <PATH> --gate gxgk_pc   # 显式单仓（调试）
+    python sandbox/audit_reconcile.py --gate example   # 只审一个 gate
+    python sandbox/audit_reconcile.py --repo <PATH> --gate example   # 显式单仓（调试）
     python sandbox/audit_reconcile.py --json           # 额外输出 JSON 到 stdout
     python sandbox/audit_reconcile.py --fail-on-suspicious   # 有可疑项时退出码 1
 

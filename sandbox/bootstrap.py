@@ -48,9 +48,8 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-#: 引擎仓地址（公司内网 GitLab）。旧 GitHub 源（github.com/rain610/agentguard）
-#: 只是镜像，不再作为接入入口 —— 与仓库 `README_推广接入.md` 同口径。仓库搬家时改这一行。
-DEFAULT_URL = "https://resources.ehsway.com:8929/developer/agentguard.git"
+#: 引擎仓地址（公开源）。私有镜像 / 内网部署用 `--url` 覆盖。
+DEFAULT_URL = "https://github.com/rain610/agentguard.git"
 
 #: 引擎仓的判据。**与 `fix_paths.py` 的 fail-fast 用同一条**（它查的就是这个文件）：
 #: 两处判据不一致的话，会出现"本脚本说好了、下一步照样 ✗"的鬼故事。
@@ -114,7 +113,7 @@ def main(argv=None):
     ap.add_argument("--dir", default=None,
                     help="clone 到哪里（默认 ~/agentguard）")
     ap.add_argument("--url", default=DEFAULT_URL,
-                    help="引擎仓地址（默认公司内网 GitLab；换地址或走 SSH 时用）")
+                    help="引擎仓地址（默认公开源；私有镜像或走 SSH 时用）")
     ap.add_argument("--check", action="store_true",
                     help="只体检：git 在不在、目标目录什么状态，不动手")
     a = ap.parse_args(argv)
@@ -187,8 +186,8 @@ def main(argv=None):
         print("✗ clone 失败（git rc=%s）：" % r.returncode)
         for ln in (r.stderr or r.stdout or "").strip().splitlines()[-8:]:
             print("    %s" % ln)
-        print("  最常见的原因：还没有内网 GitLab 权限 → 找 harness 负责人开（各客户业务仓也在同一个实例上）。")
-        print("  其次：地址不对 → 用 --url 指定（走 SSH 就把 SSH 地址给它）。")
+        print("  最常见的原因：仓库地址不对，或没有该仓库的访问权限。")
+        print("  公开源：https://github.com/rain610/agentguard；私有镜像用 --url 指定（走 SSH 就给 SSH 地址）。")
         return 1
 
     # clone 成功 ≠ 拿到的是引擎仓：域名/路径敲错时 git 可能克隆到**别的**仓。

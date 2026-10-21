@@ -54,9 +54,6 @@ for p in (os.path.join(ROOT, "harness"), os.path.join(ROOT, "checks")):
         sys.path.insert(0, p)
 
 import _config                      # noqa: E402
-import pc_code_check as pc          # noqa: E402
-import h5_code_check as h5          # noqa: E402
-import backend_layer_check as be    # noqa: E402
 import harness_guard as guard       # noqa: E402
 import run_gate                     # noqa: E402
 from rule_base import Rule, Finding, CheckContext, Severity  # noqa: E402
@@ -318,7 +315,7 @@ class TestMiniYamlOutOfSubset(unittest.TestCase):
         finally:
             sys.stderr = old
         warns = [l for l in buf.getvalue().splitlines() if "[config-warn]" in l]
-        self.assertGreater(len(cfg.get("gates") or {}), 20, "没读到 gate，判据坏了")
+        self.assertGreaterEqual(len(cfg.get("gates") or {}), 2, "没读到 gate，判据坏了")
         self.assertEqual(warns, [], "真配置触发了超纲告警（要么配置越界，要么探测误报）")
 
 
@@ -390,393 +387,6 @@ class TestLocalOverride(unittest.TestCase):
 
 
 # ------------------------------------------------- PC 组件收敛（ruleset 层）
-class TestPcComponents(unittest.TestCase):
-    """2026-09-06 迁移：直接测生产路径 pc_ruleset（阶段1 兼容层已删，防止双轨掩盖回归）。"""
-    def setUp(self):
-        import pc_ruleset as pr
-        self.pr = pr
-        self._saved = (pr.ALLOW, pr.DENY, pr.DEAD, pr.SUFFIX_EXC)
-        pr.ALLOW = {"eagle-input", "eagle-table"}
-        pr.DENY = {"eagle-date-new"}
-        pr.DEAD = {"eagle-menu"}
-        pr.SUFFIX_EXC = {"eagle-checkbox-group-page"}
-
-    def tearDown(self):
-        self.pr.ALLOW, self.pr.DENY, self.pr.DEAD, self.pr.SUFFIX_EXC = self._saved
-
-    def _run(self, content, mode="strict"):
-        from rule_base import CheckContext
-        ctx = CheckContext(path=Path("x.vue"), content=content,
-                           template=re.search(r"<template>(.*?)</template>", content, re.S).group(1) if "<template>" in content else "",
-                           mode=mode)
-        return [f.message for f in self.pr.ComponentRule().run(ctx)]
-
-    def test_deny_blocked_in_both_modes(self):
-        for mode in ("strict", "loose"):
-            ps = self._run("<template><eagle-date-new /></template>", mode)
-            self.assertEqual(len(ps), 1, mode)
-            self.assertIn("废弃组件", ps[0])
-
-    def test_dead_strict_blocked_loose_allowed(self):
-        self.assertEqual(len(self._run("<template><eagle-menu /></template>", "strict")), 1)
-        self.assertEqual(self._run("<template><eagle-menu /></template>", "loose"), [])
-
-    def test_unknown_new_parallel_blocked(self):
-        ps = self._run("<template><eagle-foo-new /></template>")
-        self.assertEqual(len(ps), 1)
-        self.assertIn("平行组件", ps[0])
-
-    def test_allow_and_suffix_exception_pass(self):
-        self.assertEqual(self._run("<template><eagle-input /><eagle-table /></template>"), [])
-        self.assertEqual(self._run("<template><eagle-checkbox-group-page /></template>"), [])
-
-    def test_extract_components_two_forms(self):
-        content = "<template><eagle-input /><eagle-table :x='1'/></template>\n" \
-                  "<script>export default {components: {'eagle-menu': X}}</script>"
-        names = self.pr._extract_components(content)
-        self.assertEqual(names, {"eagle-input", "eagle-table", "eagle-menu"})
-
-
-# ------------------------------------------------- H5 组件收敛（ruleset 层）
-class TestH5Components(unittest.TestCase):
-    def setUp(self):
-        import h5_ruleset as hr
-        self.hr = hr
-        self._saved = (hr.ALLOW, hr.DENY, hr.DEAD)
-        hr.ALLOW = {"eagle-input"}
-        hr.DENY = {"eagle-checkbox-group-new"}
-        hr.DEAD = set()
-
-    def tearDown(self):
-        self.hr.ALLOW, self.hr.DENY, self.hr.DEAD = self._saved
-
-    def _run(self, content, mode="strict"):
-        from rule_base import CheckContext
-        ctx = CheckContext(path=Path("x.vue"), content=content, mode=mode)
-        return [f.message for f in self.hr.ComponentRule().run(ctx)]
-
-    def test_deny_blocked(self):
-        ps = self._run("<template><eagle-checkbox-group-new /></template>")
-        self.assertEqual(len(ps), 1)
-        self.assertIn("废弃组件", ps[0])
-
-    def test_new_parallel_blocked(self):
-        ps = self._run("<template><eagle-widget-new /></template>")
-        self.assertEqual(len(ps), 1)
-        self.assertIn("平行组件", ps[0])
-
-    def test_allow_passes_and_unknown_not_blocked(self):
-        self.assertEqual(self._run("<template><eagle-input /><eagle-something-else /></template>"), [])
-
-    def test_extract_components_two_forms(self):
-        content = "<template><eagle-row-card /></template>\n" \
-                  "<script>uni.navigateTo({url: '/x?c=' + 'eagle-fab'})</script>"
-        names = self.hr._extract_components(content)
-        self.assertEqual(names, {"eagle-row-card", "eagle-fab"})
-
-    def test_allowlist_h5_loads_real_file(self):
-        """真实 allowlist 文件应可加载且含手册关键组件 + 已生效的 dead 段。
-        注意不读 setUp patch 后的模块变量，直接从 yaml 重载（防测试间污染）。"""
-        import h5_ruleset as hr
-        allow, deny, dead = hr._load_allowlist()
-        self.assertIn("eagle-row-card", allow)
-        self.assertIn("eagle-page-plus", allow)
-        self.assertIn("eagle-checkbox-group-new", deny)
-        self.assertIn("eagle-tag", dead)  # 2026-09-06 死组件治理已生效
-        self.assertEqual(len(dead), 11)
-
-
-# ------------------------------------------------- P2/P3 回归（2026-09-06 双轨掩盖 bug 修复验证）
-class TestShimRemovalRegressions(unittest.TestCase):
-    def test_p2_eldeniy_warns_on_template_tag(self):
-        """P2 修复验证：模板直用 <el-dialog> 应 warn（曾因误扫 script 段而漏报）。"""
-        import pc_ruleset as pr
-        ctx = CheckContext(path=Path("x.vue"),
-                           content="<template><el-dialog title='x'/></template>",
-                           template="<el-dialog title='x'/>")
-        msgs = [f.message for f in pr.ElDenyWarnRule().run(ctx)]
-        self.assertEqual(len(msgs), 1)
-        self.assertIn("直用 el-dialog ×1", msgs[0])
-        self.assertIn("eagle-* 封装", msgs[0])
-
-    def test_p2_eldeniy_silent_for_unknown_tag(self):
-        import pc_ruleset as pr
-        ctx = CheckContext(path=Path("x.vue"), template="<el-table-column />", content="t")
-        self.assertEqual([f.message for f in pr.ElDenyWarnRule().run(ctx)], [])
-
-    def test_p3_pc_syntax_rule_skips_ts(self):
-        """P3 修复验证：lang=\"ts\" SFC 必须跳过 node（曾误写 or 致语义反转）。"""
-        import pc_ruleset as pr
-        rule = pr.SyntaxRule(skip_node=False)
-        ts_double = CheckContext(path=Path("a.vue"), content='<script lang="ts">const x: number = 1</script>')
-        ts_single = CheckContext(path=Path("a.vue"), content="<script lang='ts'>const x: number = 1</script>")
-        js = CheckContext(path=Path("a.vue"), content="<script>const x = 1</script>")
-        self.assertFalse(rule.applicable(ts_double))
-        self.assertFalse(rule.applicable(ts_single))
-        self.assertTrue(rule.applicable(js))
-
-    def test_p3_h5_syntax_rule_skips_ts(self):
-        import h5_ruleset as hr
-        rule = hr.SyntaxRule(skip_node=False)
-        ts = CheckContext(path=Path("a.vue"), content='<script lang="ts">const x: number = 1</script>')
-        js = CheckContext(path=Path("a.vue"), content="<script>const x = 1</script>")
-        self.assertFalse(rule.applicable(ts))
-        self.assertTrue(rule.applicable(js))
-
-    def test_p3_6_h5_upload_inline_exemption(self):
-        """P3-6 回归锁（外部评审）：`harness-ok: <规则ID>` 提供代码级豁免出口——
-        存量合规写法（签名由 common.uploadUrl 统一封装）改到该行时不再无处申辩。
-        锁四点：①无标记必拦 ②上行标记豁免 ③同行标记豁免 ④ID 不匹配不豁免。"""
-        import h5_ruleset as hr
-        rule = hr.UploadSignRule()
-        call = "  m() { uni.uploadFile({ url: u }) }\n"
-        def hits(script):
-            ctx = CheckContext(path=Path("a.vue"), content=script, script=script)
-            return len(rule.run(ctx))
-        self.assertEqual(hits(call), 1, "无标记必须拦（规则失效=回归）")
-        self.assertEqual(hits("  // harness-ok: H5-UPLOAD 签名由 common.uploadUrl 统一加\n" + call), 0,
-                         "紧邻上一行的标记应豁免")
-        self.assertEqual(hits("  m() { uni.uploadFile({ url: u }) }  // harness-ok: H5-UPLOAD 统一封装\n"), 0,
-                         "同行标记应豁免")
-        self.assertEqual(hits("  // harness-ok: H5-CONSOLE 只豁免别的规则\n" + call), 1,
-                         "规则 ID 不匹配不得豁免（防一句话静默全部规则）")
-
-    def test_p0_pc_syntax_rule_wired_and_catches_bad_js(self):
-        """P0 回归锁（外部评审）：语法规则必须真正被 check_file 执行——
-        重构曾把实例构造后漏接，坏语法 .vue 零检出且 68 例全绿（测试只测了规则
-        对不对，没测接没接）。本测试双锁：①规则自身能检出 ②check_file 链路能检出。
-        无 node 的机器（CI 精简镜像）跳过而非红——与 sh 密闭同一原则（见 test_hooks_chain._find_sh）。"""
-        if shutil.which("node") is None:
-            self.skipTest("node 不可用（语法校验依赖 node；CI 需 setup-node 才跑本用例）")
-        import pc_code_check as pcc
-        bad = "<template><div /></template>\n<script setup>\nconst x = ;\n</script>\n"
-        # ①规则层
-        from pc_ruleset import SyntaxRule
-        rule = SyntaxRule(skip_node=False)
-        rule._check_syntax = pcc.check_syntax
-        out = rule.run(CheckContext(path=Path("a.vue"), content=bad, script="\nconst x = ;\n"))
-        self.assertTrue(out, "SyntaxRule 自身检不出坏语法（node 环境或规则问题）")
-        # ②链路层（check_file 实际执行）
-        tmpd = tempfile.mkdtemp(prefix="synwire_")
-        try:
-            f = os.path.join(tmpd, "bad.vue")
-            with open(f, "w", encoding="utf-8") as fh:
-                fh.write(bad)
-            saved_repo, saved_mode, saved_gate = pcc.REPO, pcc.MODE, pcc.GATE_NAME
-            pcc.REPO, pcc.MODE = tmpd, "strict"
-            # 同 TestBackendRules：夹具临时目录不得继承真机 gxgk_pc 的
-            # legacy_baseline: true（坏语法会被降为观察项 → problems 为空 → 假红）。
-            pcc.GATE_NAME = "__hermetic_no_gate__"
-            try:
-                problems, _ = pcc.check_file(f)
-            finally:
-                pcc.REPO, pcc.MODE, pcc.GATE_NAME = saved_repo, saved_mode, saved_gate
-            self.assertTrue(any("语法错误" in p for p in problems),
-                            f"check_file 未检出坏语法（接线回归!）: {problems}")
-        finally:
-            _rmtree_force(tmpd)
-
-
-# -------------------------------------------------------- 后端分层规则
-class TestBackendRules(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.tmp = tempfile.mkdtemp(prefix="hbiz_")
-        cls._saved_root, cls._saved_targeted = be.ROOT, be.TARGETED
-        cls._saved_gate = be.GATE_NAME
-        be.ROOT = Path(cls.tmp)
-        # 夹具是临时目录，check_file 却按 GATE_NAME 读**真机** gate 配置：共享配置里
-        # gxgk_backend 带 legacy_baseline: true → targeted 命中被降 info，本类的双态
-        # severity 断言随机器/配置翻红翻绿（2026-09-21 实测翻红）。钉到不存在的 gate
-        # 名 → gate() 拿到空配置 → LEGACY_EXEMPT 恒 False，只验证 severity 机制本身。
-        be.GATE_NAME = "__hermetic_no_gate__"
-
-    @classmethod
-    def tearDownClass(cls):
-        be.ROOT, be.TARGETED = cls._saved_root, cls._saved_targeted
-        be.GATE_NAME = cls._saved_gate
-        _rmtree_force(cls.tmp)
-
-    def _file(self, rel, text):
-        p = Path(self.tmp, *rel.split("/"))
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text, encoding="utf-8")
-        return p
-
-    def test_r2_business_using_controller_is_error(self):
-        p = self._file("RMC/Eagle.RMC.Business/B.cs",
-                       "using Eagle.RMC.Controller;\nnamespace X {}\n")
-        vs = be.check_file(p)
-        r2 = [v for v in vs if v["rule"] == "R2"]
-        self.assertEqual(len(r2), 1)
-        self.assertEqual(r2[0]["severity"], "error")
-
-    def test_r2_component_match_no_false_positives(self):
-        """第三方 System.Web / 超集段名 Controllers 不应命中。"""
-        p = self._file("RMC/Eagle.RMC.Business/Safe.cs",
-                       "using System.Web;\nusing Eagle.RMC.Controllers;\nnamespace X {}\n")
-        vs = be.check_file(p)
-        self.assertEqual([v for v in vs if v["rule"] == "R2"], [])
-
-    def test_r3_entities_using_business(self):
-        p = self._file("RMC/Eagle.RMC.Entities/E.cs",
-                       "using Eagle.RMC.Business;\nnamespace X {}\n")
-        vs = be.check_file(p)
-        r3 = [v for v in vs if v["rule"] == "R3"]
-        self.assertEqual(len(r3), 1)
-
-    def test_r5_r6_dual_severity(self):
-        p = self._file("RMC/Eagle.RMC.Controller/C.cs",
-                       "public void GetData(int id) {}\n"
-                       "public object GetPageData(int id) { return null; }\n")
-        be.TARGETED = False
-        vs = be.check_file(p)
-        sev = {v["rule"]: v["severity"] for v in vs}
-        self.assertEqual(sev.get("R5"), "info")   # 全量=观察
-        self.assertEqual(sev.get("R6"), "info")
-        be.TARGETED = True
-        vs = be.check_file(p)
-        sev = {v["rule"]: v["severity"] for v in vs}
-        self.assertEqual(sev.get("R5"), "error")  # targeted=拦新代码
-        self.assertEqual(sev.get("R6"), "error")
-        be.TARGETED = False
-
-    def test_compute_changed_lines_non_repo_is_silent_none(self):
-        """非 git 目录：compute_changed_lines 静默返回 None（整文件口径），不得出告警。
-
-        噪音来源（2026-09-21 实测）：git 在仓外目录把 diff 退化成 --no-index 模式，
-        该模式不认 --cached → rc=129「unknown option `cached'」→ 旧实现当传感器故障
-        刷「[⚠ harness] 存量按行豁免可能未生效」。夹具临时目录 / CLI 体检任意目录
-        是合法输入而非故障 —— 三态语义不变（None=整文件口径），只去误报。"""
-        import rule_base
-        saved_warned = rule_base._GIT_DIAG_WARNED
-        rule_base._GIT_DIAG_WARNED = False
-        buf = io.StringIO()
-        old = sys.stderr
-        sys.stderr = buf
-        try:
-            got = rule_base.compute_changed_lines(
-                self.tmp, os.path.join("RMC", "Eagle.RMC.Controller", "C.cs"))
-        finally:
-            sys.stderr = old
-            rule_base._GIT_DIAG_WARNED = saved_warned
-        self.assertIsNone(got, "非 git 仓应退整文件口径（None），与旧实现同值")
-        self.assertEqual(buf.getvalue(), "", "非 git 目录不是传感器故障，不得出告警")
-
-    def test_r1_controller_new_repository_is_info(self):
-        p = self._file("RMC/Eagle.RMC.Controller/R.cs",
-                       "var x = new FooRepository(conn);\n")
-        vs = be.check_file(p)
-        r1 = [v for v in vs if v["rule"] == "R1"]
-        self.assertEqual(len(r1), 1)
-        self.assertEqual(r1[0]["severity"], "info")
-
-    def test_r7_foreign_vue_is_error(self):
-        """targeted 传入非 .cs 代码文件（如探针 .vue）必须拦，不能静默丢弃。"""
-        p = self._file("src/__cb_gate_probe__.vue", "console.log(1)\n")
-        be.TARGETED = True
-        try:
-            vs = be.check_file(p)
-        finally:
-            be.TARGETED = False
-        r7 = [v for v in vs if v["rule"] == "R7"]
-        self.assertEqual(len(r7), 1)
-        self.assertEqual(r7[0]["severity"], "error")
-
-    def test_r7_wwwroot_js_is_info(self):
-        """wwwroot/ 第三方前端资源改动降观察，不产生误拦。"""
-        p = self._file("RMC/Eagle.RMC.Web/wwwroot/Plugins/x.js", "var a = 1\n")
-        vs = be.check_file(p)
-        r7 = [v for v in vs if v["rule"] == "R7"]
-        self.assertEqual(len(r7), 1)
-        self.assertEqual(r7[0]["severity"], "info")
-
-    def test_r7_not_applicable_to_cs(self):
-        p = self._file("RMC/Eagle.RMC.Business/B.cs", "namespace X {}\n")
-        vs = be.check_file(p)
-        self.assertEqual([v for v in vs if v["rule"] == "R7"], [])
-
-    def test_clean_file_no_violation(self):
-        # 文件须符合 ENC 约定(utf-8-bom): BOM + 内容
-        p = self._file("RMC/Eagle.RMC.Business/Good.cs", "")
-        with open(p, "wb") as f:
-            f.write(b"\xef\xbb\xbf" + "using Eagle.RMC.Entities;\npublic class T { void UpdateBatchDeletes(){} }\n".encode("utf-8"))
-        self.assertEqual(be.check_file(p), [])
-
-    # -------- 2026-09-16：文件级规则被按行过滤器静默丢弃（实测坐实的缺陷）--------
-    # 缺陷形态：ENC / R7 是**文件级**规则，Finding 行号恒为 1；而按行过滤器只保留
-    # changed_lines 内的命中 —— 编辑存量文件的第 50 行时 1 ∉ {50}，结论被静默丢弃、rc=0。
-    # 下面这些锁**必须走 check_file 的真实链路**：helper 自己的单测（test_review_v8 的
-    # test_finding_line_filter_helper）当时是绿的，缺口恰在「规则 × 过滤器」的接缝上。
-    def _with_changed_lines(self, lines, fn):
-        """临时仓不是 git 仓，compute_changed_lines 真实实现恒返回 None（=整文件口径、
-        不过滤）→ 不注入改动行就复现不出缺陷。这里把它钉成给定集合，跑完还原。
-        （注意是 None 不是空集：空集=「本次没有新增行」的 0 命中口径，中 C 的关键区分。）
-
-        ⚠ 2026-09-23（M12）：注入点从 `compute_changed_lines` 移到 `compute_changed_lines_ex`
-        —— 后者是 `build_ctx` 现在**真的**调的那个名字（三态版是它的 `[0]`）。改完名不改这里，
-        打桩会静默落空：`changed` 退回真实实现的 None，本组锁会**因为"不过滤了"而变红**
-        （不是变绿，所以当场暴露了）；但更该记住的是反向情形 —— 打桩落在没人调的名字上，
-        测试会继续绿着，而它声称锁住的那条链路其实一次都没被驱动。"""
-        import rule_base
-        saved_t, saved_ccl = be.TARGETED, rule_base.compute_changed_lines_ex
-        be.TARGETED = True
-        rule_base.compute_changed_lines_ex = lambda repo, rel: (frozenset(lines), False)
-        try:
-            return fn()
-        finally:
-            be.TARGETED, rule_base.compute_changed_lines_ex = saved_t, saved_ccl
-
-    def test_enc_not_dropped_by_line_filter(self):
-        """ENC 不得因改动行不含第 1 行而被丢掉。
-
-        真实触发面：仓内约 7% 无 BOM 存量文件（encoding_ruleset 注释里的实测数字），
-        改其中任一文件的**中间某行**即可 —— 正是 2026-09-15 那次 P1 修复（"改动过的文件
-        没有存量可豁免，必须硬拦"）想拦的场景，却被按行过滤器抵消掉。
-        """
-        p = Path(self.tmp, "RMC", "Eagle.RMC.Business", "Legacy.cs")
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes("// 中文注释\n".encode("gbk"))        # 存量异类：GBK，仓约定 utf-8-bom
-        vs = self._with_changed_lines({50}, lambda: be.check_file(p))
-        enc = [v for v in vs if v["rule"] == "ENC"]
-        self.assertEqual(len(enc), 1, "改动行不含第 1 行时 ENC 的文件级结论被静默丢弃（缺陷复发）")
-        self.assertEqual(enc[0]["severity"], "error", "改动过的文件编码错必须硬拦")
-
-    def test_r7_not_dropped_by_line_filter(self):
-        """R7 同为文件级规则：改存量 .vue 的中间某行，不得静默放过。"""
-        p = Path(self.tmp, "src", "legacy_probe.vue")
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(b"\xef\xbb\xbf" + b"console.log(1)\n")   # BOM 合规，隔离掉 ENC 干扰
-        vs = self._with_changed_lines({50}, lambda: be.check_file(p))
-        r7 = [v for v in vs if v["rule"] == "R7"]
-        self.assertEqual(len(r7), 1, "改动行不含第 1 行时 R7 的文件级结论被静默丢弃（缺陷复发）")
-        self.assertEqual(r7[0]["severity"], "error")
-
-    def test_file_level_flag_contract(self):
-        """反向锁：file_level 是**例外**，不是豁免总开关。
-
-        它只给"整个文件的属性"这类规则（ENC/R7）；行级规则一旦误挂，按行豁免会整体失效
-        （改一行老文件又变成对整文件历史遗留负责）。两个方向都钉住。
-        """
-        import rule_base
-        from encoding_ruleset import EncodingRule
-        from backend_ruleset import (R7ForeignFileRule, R5MethodNameRule,
-                                     R9MagicStatusRule, R10DatetimeColumnRule)
-
-        class _F:      # 行号恒为 1 的 Finding 替身
-            line = 1
-        keep, dropped = rule_base.filter_findings_by_lines([_F()], frozenset({50}), file_level=True)
-        self.assertEqual((len(keep), dropped), (1, 0), "file_level=True 必须放行")
-        keep2, dropped2 = rule_base.filter_findings_by_lines([_F()], frozenset({50}))
-        self.assertEqual((len(keep2), dropped2), (0, 1), "不带 file_level 时仍按行过滤（默认不变）")
-
-        self.assertTrue(EncodingRule().file_level, "ENC 必须自报 file_level")
-        self.assertTrue(R7ForeignFileRule().file_level, "R7 必须自报 file_level")
-        for r in (R5MethodNameRule(), R9MagicStatusRule(), R10DatetimeColumnRule()):
-            self.assertFalse(r.file_level, "%s 是行级规则，不得自报 file_level" % r.id)
-
-
-# ------------------------------------------------------------ 阶段1 规则模型统一（rule_base + ruleset）
 class TestRuleBase(unittest.TestCase):
     def test_severity_enum_values(self):
         self.assertEqual(Severity.ERROR.value, "error")
@@ -808,97 +418,38 @@ class TestRuleBase(unittest.TestCase):
         self.assertEqual(full[0].severity, Severity.INFO)
         self.assertEqual(tgt[0].severity, Severity.ERROR)
 
+    def test_rule_run_stamps_see_onto_findings(self):
+        """护盾 M133 的锁：Rule.run 必须把类属性 see 盖章到 Finding。"""
+        class _Stub(Rule):
+            id = "STUB"
+            name = "s"
+            see = "golden-patterns/patterns/web/request-layer.md"
 
-class TestPcRuleset(unittest.TestCase):
-    def test_console_rule_fires(self):
-        from pc_ruleset import PC_RULES, ConsoleLogRule
-        ctx = CheckContext(path=Path("/p"), content="<script>console.log(1)</script>",
-                            script="console.log(1)")
-        rule = ConsoleLogRule()
-        fnd = rule.run(ctx)
-        self.assertEqual(len(fnd), 1)
-        self.assertIn("残留 console.log", fnd[0].message)
-        self.assertEqual(fnd[0].severity, Severity.ERROR)
+            def check(self, ctx):
+                return [Finding(self.id, "msg")]
 
-    def test_ruleset_importable(self):
-        from pc_ruleset import PC_RULES
-        self.assertTrue(any(r.id == "PC-COMP" for r in PC_RULES))
+        out = _Stub().run(CheckContext(path=Path("x.vue")))
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].see, _Stub.see)
 
-
-class TestH5Ruleset(unittest.TestCase):
-    def test_crlf_rule_fires_on_crlf(self):
-        from h5_ruleset import CrlfRule
-        ctx = CheckContext(path=Path("/h"), content="a", raw=b"a\r\nb")
-        fnd = CrlfRule().run(ctx)
-        self.assertEqual(len(fnd), 1)
-        self.assertIn("CRLF", fnd[0].message)
-
-    def test_upload_sign_rule_fires(self):
-        """H5-UPLOAD：规则本身仍会命中（适用范围由配置决定：非 gxgk 的 gate 用
-        disabled_rules 关闭，见 TestDisabledRules）。文案已改为"上传调用确认"，
-        不再声称所有客户都要签名（2026-09-12 前提修正）。"""
-        from h5_ruleset import UploadSignRule
-        ctx = CheckContext(path=Path("/h"), script="uni.uploadFile({")
-        fnd = UploadSignRule().run(ctx)
-        self.assertEqual(len(fnd), 1)
-        self.assertIn("上传调用确认", fnd[0].message)
-
-    def test_upload_sign_rule_message_does_not_teach_the_waiver(self):
-        """★ 2026-09-30 **反转**：原锁写的是「文案里必须给出出口」，正好写反了。
-
-        命中文案会随 gate 输出被**逐字**注入给 agent（hook 里的 `out` 就是它）。
-        在那里复述豁免语法，等于把「怎么把命中行合法豁免」交给**非可信通道** ——
-        注入通道若可伪造，攻击者就能借门禁自己的口吻诱导"把命中行全豁免"。
-
-        出口并没有消失，只是搬去了**可信文档**：工程根 `AGENTS.md` 的「行内豁免」一节
-        （它本来就在 agent 的上下文里，正常用法一点没少）。所以本锁是双向的：
-        文案里**不许**再出现语法或「豁免」字样，同时 AGENTS.md 里**必须**还写着它。
-        """
-        from h5_ruleset import UploadSignRule
-        ctx = CheckContext(path=Path("/h"), script="uni.uploadFile({")
-        fnd = UploadSignRule().run(ctx)
-        self.assertEqual(len(fnd), 1)
-        self.assertNotIn("harness-ok", fnd[0].message,
-                         "命中文案里又出现了豁免语法 —— 该文案会被逐字注入，语法只住 AGENTS.md")
-        self.assertNotIn("豁免", fnd[0].message,
-                         "命中文案里又提到「豁免」—— 连这个引导词也不该出现在注入通道里")
-        doc = (Path(__file__).resolve().parent.parent / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("harness-ok: H5-UPLOAD", doc,
-                      "AGENTS.md 里必须写着出口 —— 否则这条锁只是把人堵死，不是把路改道")
+    def test_format_finding_embeds_rule_id_and_see(self):
+        """护盾 M134 的锁：输出行必须带 [规则ID] 前缀与 📖 See 行。"""
+        from rule_base import format_finding
+        line = format_finding(Finding("PC-X", "消息",
+                                      see="golden-patterns/patterns/web/request-layer.md"))
+        self.assertTrue(line.startswith("[PC-X] "), "规则 ID 丢失（agent 只能猜 ID 写豁免）：%r" % line)
+        self.assertIn("消息", line)
+        self.assertIn("📖 See: golden-patterns/patterns/web/request-layer.md", line)
+        plain = format_finding(Finding("PC-Y", "纯消息"))
+        self.assertNotIn("See:", plain)
+        self.assertIn("[PC-Y]", plain)
 
 
-class TestBackendRuleset(unittest.TestCase):
-    def test_r2_component_match_via_ruleset(self):
-        from backend_ruleset import R2ComponentRule
-        # 用临时 repo 根算 rel
-        tmp = tempfile.mkdtemp(prefix="hr2_")
-        rel = "RMC/Eagle.RMC.Business/B.cs"
-        ctx = CheckContext(path=Path(tmp, rel), rel=rel,
-                            content="using Eagle.RMC.Controller;\n")
-        rule = R2ComponentRule()
-        fnd = rule.run(ctx)
-        self.assertEqual(len(fnd), 1)
-        self.assertEqual(fnd[0].rule_id, "R2")
-        self.assertEqual(fnd[0].severity, Severity.ERROR)
-        _rmtree_force(tmp)
-
-    def test_r5_targeted_dual_state(self):
-        from backend_ruleset import R5MethodNameRule
-        rule = R5MethodNameRule()
-        ctx_full = CheckContext(path=Path("/x"), rel="RMC/A.cs",
-                                 content="void GetData(){}", targeted=False)
-        ctx_tgt = CheckContext(path=Path("/x"), rel="RMC/A.cs",
-                                content="void GetData(){}", targeted=True)
-        self.assertEqual(rule.run(ctx_full)[0].severity, Severity.INFO)
-        self.assertEqual(rule.run(ctx_tgt)[0].severity, Severity.ERROR)
-
-
-# ------------------------------------------------- 阶段2 注册表（registry）
 class TestRegistry(unittest.TestCase):
     def test_load_returns_all_configured_gates(self):
         from registry_loader import load_gate_scripts
         m = load_gate_scripts()
-        for k in ("gxgk_pc", "gxgk_h5", "gxgk_backend"):
+        for k in ("harness_self", "example"):
             self.assertIn(k, m)
 
     def test_registry_overrides_default(self):
@@ -981,7 +532,7 @@ class TestNotify(unittest.TestCase):
         orig = run_gate._notify_webhook
         run_gate._notify_webhook = lambda: None
         try:
-            run_gate._notify_on_block("gxgk_pc", "targeted", 1, 1, 500)
+            run_gate._notify_on_block("demo_pc", "targeted", 1, 1, 500)
         finally:
             run_gate._notify_webhook = orig
         self.assertEqual(calls, [])
@@ -989,9 +540,9 @@ class TestNotify(unittest.TestCase):
 
     def test_throttle_blocks_second_within_window(self):
         run_gate.NOTIFY_STATE = os.path.join(self.tmp, "notify_last.json")
-        self.assertFalse(run_gate._notify_throttled("gxgk_pc"))
-        self.assertTrue(run_gate._notify_throttled("gxgk_pc"))
-        self.assertTrue(run_gate._notify_throttled("gxgk_h5") is False or True)  # 不同 gate 独立
+        self.assertFalse(run_gate._notify_throttled("demo_pc"))
+        self.assertTrue(run_gate._notify_throttled("demo_pc"))
+        self.assertTrue(run_gate._notify_throttled("demo_h5") is False or True)  # 不同 gate 独立
 
     def test_send_swallows_network_errors(self):
         """网络失败静默（通知不能反过来影响门禁）。"""
@@ -1004,8 +555,8 @@ class TestNotify(unittest.TestCase):
         run_gate._notify_on_block = lambda *a: calls.append(a)
         try:
             run_gate.LOG_FILE = os.path.join(self.tmp, "g.jsonl")
-            run_gate._log_run("gxgk_pc", "targeted", 2, 1, 100)
-            run_gate._log_run("gxgk_pc", "targeted", 2, 0, 100)
+            run_gate._log_run("demo_pc", "targeted", 2, 1, 100)
+            run_gate._log_run("demo_pc", "targeted", 2, 0, 100)
         finally:
             run_gate._notify_on_block = orig
             run_gate.LOG_FILE = self._saved[1] and os.path.join(self._saved[1], "gate_log.jsonl")
@@ -1025,12 +576,12 @@ class TestGuard(unittest.TestCase):
 
     def test_parse_args_non_self_gate_and_message(self):
         """非 self 模式（pre-commit hook 调用形态）：args[0]=gate 名，其余为消息。"""
-        sm, gate, msg = guard._parse_args(["gxgk_pc"])
+        sm, gate, msg = guard._parse_args(["demo_pc"])
         self.assertFalse(sm)
-        self.assertEqual(gate, "gxgk_pc")
+        self.assertEqual(gate, "demo_pc")
         self.assertEqual(msg, "")
-        sm, gate, msg = guard._parse_args(["gxgk_pc", "some", "message"])
-        self.assertEqual(gate, "gxgk_pc")
+        sm, gate, msg = guard._parse_args(["demo_pc", "some", "message"])
+        self.assertEqual(gate, "demo_pc")
         self.assertEqual(msg, "some message")
 
     def test_parse_args_msg_file(self):
@@ -1074,105 +625,3 @@ class TestGuard(unittest.TestCase):
             self.assertEqual(guard._in_protected(rel), want, rel)
 
 
-class TestDisabledRules(unittest.TestCase):
-    """gate 级关闭规则（`disabled_rules`）——2026-09-12 配置表开关。
-
-    触发场景：H5-UPLOAD（上传须带签名头）只对 gxgk 成立——全仓实扫 gxgk 108 处
-    buildUploadHeader、其余客户 0 处，其上传本来就不签名。全局启用会给它们制造
-    "按行豁免"噪声且理由为假。本用例锁三件事：①配置能读到 ②引擎真的过滤掉
-    ③没配的 gate 仍然拦（不能把 gxgk 的防护一起关掉）。
-    """
-
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="hdis_")
-        self._root = _config._HARNESS_ROOT
-        _config._HARNESS_ROOT = self.tmp                      # base config 也放临时目录
-        os.makedirs(os.path.join(self.tmp, "config"), exist_ok=True)
-        self.repo = os.path.join(self.tmp, "repo_h5")
-        os.makedirs(os.path.join(self.repo, "src"), exist_ok=True)
-        with open(os.path.join(self.tmp, "config", "harness.yaml"), "w", encoding="utf-8") as f:
-            f.write(f"repos:\n  off_h5: {self.repo}\n  on_h5: {self.repo}\n"
-                    "gates:\n"
-                    "  off_h5:\n    enabled: true\n    repo: off_h5\n    mode: strict\n"
-                    "    disabled_rules: [H5-UPLOAD]\n"
-                    "  on_h5:\n    enabled: true\n    repo: on_h5\n    mode: strict\n")
-        self.probe = os.path.join(self.repo, "src", "probe.vue")
-        with open(self.probe, "w", encoding="utf-8", newline="\n") as f:
-            f.write("<template><view /></template>\n<script>\nexport default {\n"
-                    "  m() { uni.uploadFile({ url: u, filePath: p }) }\n}\n</script>\n")
-
-    def tearDown(self):
-        _config._HARNESS_ROOT = self._root
-        _rmtree_force(self.tmp)
-
-    def test_rule_base_reads_disabled_rules(self):
-        from rule_base import disabled_rules
-        self.assertEqual(disabled_rules("off_h5", None, h5.LIB), {"H5-UPLOAD"})
-        self.assertEqual(disabled_rules("on_h5", None, h5.LIB), set())
-        # 按 repo 反查（未传 --gate 的场景）也要能取到
-        self.assertEqual(disabled_rules(None, self.repo, h5.LIB), {"H5-UPLOAD"})
-
-    def test_h5_upload_filtered_only_where_configured(self):
-        saved = (h5.GATE_NAME, h5.REPO, h5.SRC, h5.MODE)
-        try:
-            h5.GATE_NAME, h5.REPO, h5.SRC, h5.MODE = "off_h5", self.repo, os.path.join(self.repo, "src"), "strict"
-            off_problems = [p for p in h5.check_file(self.probe) if "上传调用确认" in p]
-            self.assertEqual(off_problems, [], "配置了 disabled_rules 的 gate 不该再报 H5-UPLOAD")
-            h5.GATE_NAME = "on_h5"          # 同仓、未关规则
-            on_problems = [p for p in h5.check_file(self.probe) if "上传调用确认" in p]
-            self.assertTrue(on_problems, "未配 disabled_rules 的 gate 必须照旧拦（gxgk 防护不能被连带关掉）")
-        finally:
-            h5.GATE_NAME, h5.REPO, h5.SRC, h5.MODE = saved
-
-    def test_gxgk_keeps_upload_rule(self):
-        """真实配置回归：gxgk_h5 不得被关闭 H5-UPLOAD（唯一需要签名的客户）。"""
-        saved = _config._HARNESS_ROOT
-        _config._HARNESS_ROOT = ROOT          # 回到真实 config
-        try:
-            from rule_base import disabled_rules
-            self.assertNotIn("H5-UPLOAD", disabled_rules("gxgk_h5", None, h5.LIB))
-            for gate in ("zhongxin_h5", "ntrx_h5", "keji_h5", "c712_h5", "c712v3_h5",
-                         "hanbogaoxin_h5", "zhongdj_h5", "hy_base_h5"):
-                self.assertIn("H5-UPLOAD", disabled_rules(gate, None, h5.LIB),
-                              f"{gate} 应关闭 H5-UPLOAD（该客户上传不签名）")
-        finally:
-            _config._HARNESS_ROOT = saved
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-class TestSfcStructureNoScriptFalsePositive(unittest.TestCase):
-    """PC-SFC 规则：**压根没有 <script> 块的 .vue 不算错**（2026-09-13 修复误报）。
-
-    来源：Trae 的模型在会话记忆里反馈「pc_code_check.py 存在规则 bug：任何 .vue 只要找不到
-    </script> 就报错，无论是否有 <script> 开标签」；三场景实测确认其说对了。
-    修复前：`if tag == "script" and not closes:` —— 没判断"有没有开标签"，
-    于是纯模板 .vue（只有 <template>）也被拦。真正的不闭合场景由紧随其后的
-    `opens and len(opens) > len(closes)` 覆盖，所以那条更宽的判断既多余又有害。
-    影响面：会误拦没有 script 块的纯展示组件（PC 端）。本类即该修复的证伪锁。
-    """
-
-    PURE_TEMPLATE = "<template>\n  <div class=\"a\">x</div>\n</template>\n"
-    UNCLOSED = "<template>\n  <div class=\"a\">x</div>\n</template>\n<script setup>\nconst a = 1\n"
-    NORMAL = "<template>\n  <div class=\"a\">x</div>\n</template>\n<script setup>\nconst a = 1\n</script>\n"
-    STYLE_ONLY = "<template>\n  <div class=\"a\">x</div>\n</template>\n<style scoped>\n.a{}\n</style>\n"
-
-    def test_pure_template_vue_passes(self):
-        """场景 A：只有 <template>（没有 script 块）→ 必须放行（修复前这里会误报）。"""
-        msg = pc.check_sfc_structure(self.PURE_TEMPLATE)
-        self.assertIsNone(msg, f"纯模板 .vue 被误报：{msg}")
-
-    def test_style_only_vue_passes(self):
-        """场景 D：有 template + style、无 script → 必须放行。"""
-        self.assertIsNone(pc.check_sfc_structure(self.STYLE_ONLY))
-
-    def test_unclosed_script_still_blocked(self):
-        """场景 B：真不闭合必须仍然拦（反向锁，防止修误报时把真问题也放过去）。"""
-        msg = pc.check_sfc_structure(self.UNCLOSED)
-        self.assertIsNotNone(msg, "真·未闭合的 <script> 必须继续拦")
-        self.assertIn("script", msg)
-
-    def test_normal_sfc_passes(self):
-        """场景 C：正常闭合 → 放行。"""
-        self.assertIsNone(pc.check_sfc_structure(self.NORMAL))

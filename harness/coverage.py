@@ -129,9 +129,8 @@ def _quick_from_anchor():
         print("  …还有 %d 条" % (len(blind) - 20))
     return 0
 
-ENDPOINT_BY_SCRIPT = {"pc_code_check.py": "pc", "h5_code_check.py": "h5",
-                      "backend_layer_check.py": "backend"}
-ENDPOINT_LABEL = {"pc": "PC(Vue)", "h5": "H5(UniApp)", "backend": "后端(.NET)"}
+ENDPOINT_BY_SCRIPT = {"example_code_check.py": "example"}
+ENDPOINT_LABEL = {"example": "示例(Example)"}
 
 
 # ---------------------------------------------------------------- 读取
@@ -183,25 +182,15 @@ def load_config():
 
 
 # loader 级（非 Rule 实例、由 loader 直接执行）的检查清单。
-# 第四轮 N-1：语法规则的探针早就埋好了，自评清单却漏了它——而它正是门禁史上第一次
-# 静默失效的那条规则（P0）。自评漏掉它 = 最该盯的传感器在报告里隐身。
-# ENC（编码卫生）同理：由 backend loader 经 encoding_ruleset 执行，也要在册。
-# 完整性不靠人眼：tests/test_coverage.py::TestStaticCatalog 会扫 checks/*.py 里所有
-# bump("<字面量>") 并对清单做集合包含断言，少一个就红。
-LOADER_LEVEL_CHECKS = {
-    "PC-SYNTAX":  ("PC 语法校验（node --check）", "pc"),
-    "PC-EOL":     ("行尾污染(PC)", "pc"),
-    "PC-SFC":     ("SFC 结构(SFC标签/属性)", "pc"),
-    "(读取失败)": ("文件读取失败", "pc"),
-    "H5-SYNTAX":  ("H5 语法校验（node --check）", "h5"),
-    "ENC":        ("编码卫生（utf-8-bom / 行尾按仓约定）", "backend"),
-}
+# 开源裁剪后示例门禁的 3 条规则全部是 Rule 实例，由 static_rules 从 example_ruleset
+# 自动收集；这里留空，等有真正的 loader 级检查（如语法校验）再登记。
+LOADER_LEVEL_CHECKS = {}
 
 
 def static_rules():
     """全部规则 ID → 名称/端（从 rulesets 现取，不维护第二份清单）。"""
     out = {}
-    for mod_name, endpoint in (("pc_ruleset", "pc"), ("h5_ruleset", "h5"), ("backend_ruleset", "backend")):
+    for mod_name, endpoint in (("example_ruleset", "example"),):
         try:
             mod = __import__(mod_name)
         except Exception:
@@ -209,9 +198,11 @@ def static_rules():
         for key, val in vars(mod).items():
             if key.endswith("_RULES") and isinstance(val, list):
                 for r in val:
-                    rid = getattr(r, "id", None)
+                    # 示例规则集用的是 rule_id（独立演示类），框架规则用 id —— 两种都认。
+                    rid = getattr(r, "id", None) or getattr(r, "rule_id", None)
                     if rid:
-                        out[rid] = {"name": getattr(r, "name", ""), "endpoint": endpoint}
+                        out[rid] = {"name": getattr(r, "name", getattr(r, "message", "")),
+                                    "endpoint": endpoint}
     # 非 Rule 实例、由 loader 直接执行的检查也计入（否则它们在自评里隐身）
     for rid, (name, endpoint) in LOADER_LEVEL_CHECKS.items():
         out.setdefault(rid, {"name": name, "endpoint": endpoint})
@@ -219,13 +210,7 @@ def static_rules():
 
 
 # 结构性「只可能被定向口径触发」的规则 —— 不打这个标，报告会把它们误读成「传感器坏了」。
-# R7：后端 loader 的全量扫描只喂 .cs（backend_layer_check.iter_cs_files），只有定向口径才会把
-#     非 .cs 文件交给它判定；实测两个后端仓 wwwroot 之外的非 .cs 代码文件 = 0 → 它「从未触发」
-#     是**真干净**。准确性由 tests/test_coverage.py::test_targeted_only_table_matches_loader 锁住
-#     （loader 的全量收集方式一改，锁就红，逼人回来改这张表）。
-TARGETED_ONLY = {
-    "R7": "只在定向口径可能触发：全量扫描只喂 .cs（backend_layer_check.iter_cs_files）",
-}
+TARGETED_ONLY = {}
 
 
 # ---------------------------------------------------------------- 聚合

@@ -1,6 +1,6 @@
 ---
 name: agentguard
-description: "改 AgentGuard 任一客户×三端仓库代码时用：跑统一门禁（MCP 工具 / CLI / auto-gate 任一入口），改码后必须过门禁才能算完成。触发词：进 gxgk/hy/hy-hzy 仓库改代码、门禁、代码规范检查、提交被拦。"
+description: "改受管仓库代码时用：跑统一门禁（MCP 工具 / CLI / auto-gate 任一入口），改码后必须过门禁才能算完成。触发词：门禁、代码规范检查、提交被拦、黄金范式。"
 ---
 
 # agentguard —— 统一门禁使用规范（跨 Agent 通用）
@@ -9,16 +9,17 @@ description: "改 AgentGuard 任一客户×三端仓库代码时用：跑统一�
 > 取值二选一：① 设环境变量 `AGENTGUARD_DIR=<你的路径>`（旧名 `HARNESS_DIR` 兼容）；② 在工程里执行 `sh <HARNESS>/sandbox/where.sh` 直接打印。
 > 门禁脚本内部一律用相对路径定位资源，**clone 到任何目录都能跑**；只有本机的编辑器/客户端钩子配置需要写绝对路径。
 
-适用于在多客户（gxgk / hy / hy-hzy）× 三端（PC Vue / H5 uniapp / .NET 后端）仓库改代码的
-任何 AI agent。规则是代码库的硬边界，不是建议。
+适用于任何接入了 AgentGuard 的代码仓库。规则是代码库的硬边界，不是建议。
 
 ## 改码前先加载黄金范式（关键）
-要写/改任一客户×三端的代码前，先读对应端的**黄金范式样板再动手**（照抄已验收风格，而非凭空写）：
-- 范式索引：`<HARNESS>/golden-patterns/index.md`
-- 后端先读 `golden-patterns/backend/backend_api_authority.md`（真实基类/主接口 GetApiPageData），
-  再看 `backend/` 下对应 1-3 份；PC 读 `golden-patterns/pc/`；H5 读 `golden-patterns/h5/`（含组件手册）。
-- 改存量业务（审核/监督/证书/树选择）读 `golden-patterns/endtoend/` 对应端到端范本。
-- 范式是"参照系"，具体字段/参数以 05 文档和真实代码为准，别当教条硬套。
+写/改代码前，先读**黄金范式**里已验收的写法，照抄而不是凭空写：
+- 入口：`<HARNESS>/golden-patterns/index.md`（按任务列出可照抄骨架：请求层 / 列表页 / 表单弹窗 /
+  后端分层 / 校验 / 日志 / 配置，以及业务端到端范本）
+- 完整参考实现：`<HARNESS>/golden-patterns/reference/`；正面样板会跑示例 gate 自证。
+- 被门禁拦下时，命中输出里的 `📖 See:` 会直接给出一份范式的仓库相对路径 —— 顺着它读。
+- 团队自己的范式放在 `golden-patterns/patterns/<端或主题>/` 或 `golden-patterns/endtoend/` 下，
+  规则类上写 `see = "golden-patterns/…"` 即可对接；造新范式先读 `templates/00_范式制造模板.md`。
+- 范式是"参照系"，具体字段/参数以真实代码为准，别当教条硬套。
 
 ## 什么时候跑门禁
 - 改完任何受管仓库的代码（新建 / 修改 `.vue` / `.js` / `.ts` / `.cs`）后。
@@ -71,17 +72,16 @@ python <HARNESS>/harness/agents/auto-gate.py --repo <端仓库绝对路径>
 - 不要删端仓库的 pre-commit 钩子（会被 harness_guard 拦截）。
 
 ## 合规写法被拦时：行内豁免（唯一合法出口）
-有些规则机械判不出来（例：gxgk 的上传要求带签名头，但签名构造在 `buildUploadHeader()` 里，
-`uni.uploadFile` 那一行看不出所以然）。这时**不要改规则、不要删代码绕过**，在命中行的
-**本行或紧邻上一行**加标记：
+有些规则机械判不出来（例：某台设备的固定地址由硬件决定，配置里改不了）。这时**不要改规则、
+不要删代码绕过**，在命中行的**本行或紧邻上一行**加标记：
 ```js
-// harness-ok: H5-UPLOAD gxgk 上传已走 buildUploadHeader 签名
-uni.uploadFile({ url: u, filePath: p })
+// harness-ok: NO-HARDIP 设备发现地址由硬件铭牌固定，不可配置
+const DEVICE_PROBE = "192.168.100.1"
 ```
 - 规则 ID 必须写对（写成别的规则名不生效——设计上不允许一句话静默所有规则）
 - 理由写在标记后面：标记会留在 diff 里，人工复核看得见
 - 只在"确实是合规写法"时用；能改代码改合规就别加标记
-- **先看这条规则对你这个客户是否适用**（客户专属规则会用 `disabled_rules` 关掉，例：`H5-UPLOAD` 只对 gxgk 成立）
+- **先看这条规则对当前仓库是否适用**（仓/客户专属规则会用 `disabled_rules` 关掉）
 - 被一条明显不适用的规则拦住 → 报给 harness 负责人改配置，别硬加标记
 
 ## 门禁什么时候会自动跑（run_on）
@@ -122,10 +122,10 @@ python <HARNESS>/agentguard/cli.py done --repo <端仓库根>
 - 配置体检：`python harness/run_gate.py --validate`（改完 harness.yaml 跑；CI 用 `--structure-only`）
 - 零依赖守卫：`tests/test_stdlib_only.py`——引擎层只许标准库
 
-## 规则从哪看
+## 规则与范式从哪看
 - gate 策略：`<HARNESS>/config/harness.yaml`
-- 各端规则：`<HARNESS>/checks/*.py`（PC / H5 / 后端 三套）
-- PC 组件白名单：`<HARNESS>/checks/components_allowlist.yaml`
+- 规则实现：`<HARNESS>/checks/`（规则集与对应入口脚本）
+- 黄金范式：`<HARNESS>/golden-patterns/index.md`
 - 工程地图：`<HARNESS>/AGENTS.md`
 
 ## 记住

@@ -60,7 +60,7 @@ python <HARNESS>/agentguard/cli.py check <你改过的文件>
 
 ```bash
 python <HARNESS>/sandbox/audit_reconcile.py            # 全部端仓，近 14 天
-python <HARNESS>/sandbox/audit_reconcile.py --since 7d --gate gxgk_pc
+python <HARNESS>/sandbox/audit_reconcile.py --since 7d --gate example
 ```
 
 产物 `reports/reconcile_<时间戳>.md`：四分类（✅ 有记录 / ◻ 早于台账期 / ⚠ 无记录 / ⛔ 存在非通过记录）+ **全部受管仓**的钩子体检 + `.git/config` 修改时间佐证。
@@ -166,7 +166,7 @@ claude plugin marketplace remove agentguard-tools
 
 > 完全内部使用；构建产物含本机绝对路径，不入仓库（仓库只存模板 + 构建器）。
 >
-> 平台边界：在受管运行时（如 AutoClaw 桌面端）上，宿主插件安装需**由人执行**——agent 发起会被写权限边界拦截（见 `docs/packaging/evidence/e1_openclaw_install.txt`）。
+> 平台边界：在受管运行时（如 AutoClaw 桌面端）上，宿主插件安装需**由人执行**——agent 发起会被写权限边界拦截。
 
 ## 7. 已知限制（诚实版）
 

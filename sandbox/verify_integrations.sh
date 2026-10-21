@@ -3,9 +3,9 @@
 # verify_integrations.sh —— 可重复的「AI 客户端 × 门禁」端到端验证
 #
 # 用法：
-#   sh sandbox/verify_integrations.sh                 # 默认 gate=gxgk_pc，跑全部可用客户端
-#   sh sandbox/verify_integrations.sh hy_pc           # 换受测 gate（会解析出它的仓库路径）
-#   sh sandbox/verify_integrations.sh gxgk_pc claude codex   # 只跑指定客户端
+#   sh sandbox/verify_integrations.sh                 # 默认 gate=example，跑全部可用客户端
+#   sh sandbox/verify_integrations.sh <gate>          # 换受测 gate（会解析出它的仓库路径）
+#   sh sandbox/verify_integrations.sh example claude codex   # 只跑指定客户端
 #
 # 每个客户端一趟：
 #   1. 在受测仓新建含 3 处违规的探针文件（纯 LF 行尾 + console.log + 空壳 v-auth）
@@ -35,7 +35,7 @@ nat() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else (cd "$1" && pwd -W 2>/dev/null || pwd); fi
 }
 
-GATE="${1:-gxgk_pc}"
+GATE="${1:-example}"
 shift 2>/dev/null || true
 TOOLS="${*:-claude opencode codebuddy codex}"
 TMP="${LOCALAPPDATA:-/tmp}/Temp"

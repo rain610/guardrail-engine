@@ -92,20 +92,20 @@ class TestCritical4SentinelOnRealCommitPath(unittest.TestCase):
 
         没有这条，下面那条"拦住了"就无法区分是哨兵按判据工作，还是夹具恒拦。
         """
-        r = _run([PY, self.eng.hook, "gxgk_pc", "--repo", self.end.path], cwd=self.eng.path)
+        r = _run([PY, self.eng.hook, "demo_pc", "--repo", self.end.path], cwd=self.eng.path)
         self.assertEqual(r.returncode, 0,
                          "干净工程仓被哨兵误拦（误报型灾难）：rc=%d\n%s"
                          % (r.returncode, r.stdout + r.stderr))
 
     # ---- ① 真实入口：走 harness/hooks/pre-commit.py 全链路 ------------------------
     def test_real_precommit_entry_blocks_and_names_the_file(self):
-        """`python pre-commit.py gxgk_pc --repo <端仓>` + 工程仓脏 → rc=1，且点名文件。
+        """`python pre-commit.py demo_pc --repo <端仓>` + 工程仓脏 → rc=1，且点名文件。
 
         这是端仓提交的真实形状：cwd 是**被提交仓**，调用方通过 --repo 把该事实传给门禁。
         修前 rc=0（哨兵放行 → 端仓无暂存文件 → 直接 return 0），且**一个字都不说**。
         """
         probe = self.eng.make_dirty()
-        r = _run([PY, self.eng.hook, "gxgk_pc", "--repo", self.end.path], cwd=self.eng.path)
+        r = _run([PY, self.eng.hook, "demo_pc", "--repo", self.end.path], cwd=self.eng.path)
         self.assertEqual(r.returncode, 1,
                          "端仓提交未被哨兵拦截：rc=%d\n%s" % (r.returncode, r.stdout + r.stderr))
         out = (r.stdout or "") + (r.stderr or "")
@@ -133,7 +133,7 @@ class TestCritical4SentinelOnRealCommitPath(unittest.TestCase):
         若哪天有人把 cwd 推断重新叠加上去，端仓提交会再次被判成本仓提交。
         """
         self.eng.make_dirty()
-        r = _run([PY, self.eng.guard, "gxgk_pc", "--repo", self.end.path], cwd=self.eng.path)
+        r = _run([PY, self.eng.guard, "demo_pc", "--repo", self.end.path], cwd=self.eng.path)
         self.assertEqual(r.returncode, 1,
                          "cwd=工程根 把端仓提交劫持成了 self 模式：%s" % (r.stdout + r.stderr))
         self.assertNotIn("按 self 模式把关", (r.stdout or "") + (r.stderr or ""))
@@ -142,7 +142,7 @@ class TestCritical4SentinelOnRealCommitPath(unittest.TestCase):
     def test_cwd_inference_still_works_without_repo_arg(self):
         """不带 `--repo` 时仍按 cwd 推断：端仓 cwd → 拦（rc=1），工程根 cwd → 放行（rc=0）。"""
         self.eng.make_dirty()
-        r_end = _run([PY, self.eng.guard, "gxgk_pc"], cwd=self.end.path)
+        r_end = _run([PY, self.eng.guard, "demo_pc"], cwd=self.end.path)
         self.assertEqual(r_end.returncode, 1,
                          "无 --repo 时 cwd 推断失效（老装法的钩子会漏拦）：%s"
                          % (r_end.stdout + r_end.stderr))

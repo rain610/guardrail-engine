@@ -82,7 +82,7 @@ sh ~/.codex/codex-go.sh exec "在 src/ 下建个含 console.log 的 .vue，做�
 
 ## 实测：门禁触发可靠、结论回灌**不稳定**（2026-09-13，两次对照）
 
-用 `sandbox/verify_integrations.sh gxgk_pc codex` 连跑两次，同一条探针、同一个模型
+用 `sandbox/verify_integrations.sh <受测 gate> codex` 连跑两次，同一条探针、同一个模型
 （deepseek-v4.1-flash via opencode-go），结果不同：
 
 | 次 | 探针写入 | 钩子执行（留档可见） | 门禁日志 | 模型最终回答 |

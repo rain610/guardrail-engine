@@ -25,7 +25,7 @@ def _load():
 J = _load()
 
 
-def rows(*rcs, gate="gxgk_pc"):
+def rows(*rcs, gate="demo_pc"):
     return "\n".join(json.dumps({"ts": "2026-09-13T00:00:0%d" % i, "gate": gate, "rc": rc,
                                   "rules": {"PC-CONSOLE": {"error": 1}}} if rc else
                                  {"ts": "2026-09-13T00:00:0%d" % i, "gate": gate, "rc": rc, "rules": {}})

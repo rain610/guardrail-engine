@@ -275,12 +275,13 @@ class TestD3AcceptanceGate(unittest.TestCase):
 class TestD4HeuristicBoundary(unittest.TestCase):
     def test_regex_rules_tagged(self):
         sys.path.insert(0, os.path.join(ROOT, "checks"))
-        found = []
-        for mod_name in ("pc_ruleset", "h5_ruleset", "backend_ruleset"):
-            mod = __import__(mod_name)
-            found += [o.id for n in dir(mod) for o in [getattr(mod, n)]
-                      if isinstance(o, type) and getattr(o, "heuristic", False) and getattr(o, "id", "")]
-        self.assertGreaterEqual(len(set(found)), 8, "单行正则规则必须被标为启发式（当前 %s）" % sorted(set(found)))
+        import example_ruleset as E
+        tagged = sorted(r.rule_id for r in E.EXAMPLE_RULES if getattr(r, "heuristic", False))
+        regex_ids = sorted(r.rule_id for r in E.EXAMPLE_RULES if r.pattern.pattern)
+        self.assertEqual(tagged, regex_ids,
+                         "单行正则规则必须全部标为启发式：标记 %s / 正则规则 %s"
+                         % (tagged, regex_ids))
+        self.assertGreaterEqual(len(tagged), 2, "示例规则集至少应有 2 条单行正则规则")
 
     def test_selfcheck_reports_boundary(self):
         r = subprocess.run([sys.executable, "checks/harness_self_check.py"], cwd=ROOT,
@@ -294,7 +295,7 @@ class TestD5AuditEvidenceStrength(unittest.TestCase):
         self.assertIn("线索级", src, "审计工具必须声明证据强度（时间窗匹配不足以自证）")
 
     def test_docs_warn_against_overclaiming(self):
-        src = _read("README_推广接入.md")
+        src = _read("README.md")
         self.assertIn("证据强度", src)
         self.assertIn("不要写成", src, "文档要明确禁止表述为「提交可自证」")
 
@@ -345,7 +346,7 @@ class TestD6GuardSelfModeNoDeadlock(unittest.TestCase):
         d = tempfile.mkdtemp(prefix="d6-")
         try:
             subprocess.run(["git", "init", "-q", "."], cwd=d, capture_output=True)
-            rc, out = self._guard(["gxgk_pc"], cwd=d)
+            rc, out = self._guard(["demo_pc"], cwd=d)
             # 工程仓此时可能有未提交门禁文件（跑测试时常有）→ 期望仍是 1；若干净则 0，都算对，
             # 关键是**不能**因为 cwd 是别处就打印 self 模式。
             self.assertNotIn("按 self 模式把关", out, "端仓 cwd 不得被当成 self 模式")

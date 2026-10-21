@@ -66,7 +66,7 @@ class _StubbedGuard(unittest.TestCase):
         tmp = tempfile.mkdtemp(prefix="b7-")
         try:
             sys.stdout = sys.stderr = buf
-            sys.argv = ["harness_guard.py", "gxgk_pc"]
+            sys.argv = ["harness_guard.py", "demo_pc"]
             os.chdir(tmp)                  # 非工程根 → 不触发 self 模式识别
             rc = harness_guard.main()
         finally:
@@ -151,7 +151,7 @@ class TestRealNonGitEngineBlocks(unittest.TestCase):
             # reports/gate_log.jsonl 里写探针记录 —— N-2 实测污染过 124 条）。本用例只跑哨兵、
             # 哨兵不写台账，但隔离是这一层的约定，不该靠"我知道它不写"来省。
             r = subprocess.run([sys.executable, os.path.join(eng, "checks", "harness_guard.py"),
-                                "gxgk_pc", "--repo", end],
+                                "demo_pc", "--repo", end],
                                cwd=d, capture_output=True, text=True, encoding="utf-8",
                                errors="replace", timeout=120,
                                env=dict(os.environ,

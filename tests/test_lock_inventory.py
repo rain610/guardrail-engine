@@ -79,7 +79,6 @@ class TestLockInventory(unittest.TestCase):
         key = {
             "test_review_v9_batch1.py": [
                 "test_rel_and_changed_lines_use_worktree_basis",
-                "test_basis_is_actually_used_backend_enc",       # V10-4 行为锁（M1 变异必须红）
                 "test_syntax_probe_is_false_without_node",       # V10-3 精确判据（M7）
                 "test_dispatcher_passes_hook_rc_through",
                 "test_commitmsg_chain_finds_backup_in_common_dir",
@@ -90,8 +89,8 @@ class TestLockInventory(unittest.TestCase):
                 "test_custom_hookspath_hooks_are_backed_up",
                 "test_worktree_install_backs_up_into_common_dir",
                 "test_dispatcher_finds_backup_in_worktree",
+                "test_archives_previous_value",                 # 原 test_review_v9_batch2.py，随模块并入
             ],
-            "test_review_v9_batch2.py": ["test_archives_previous_value"],
             # 自保（评审 v11 §3-1）：看守自己也要被看守 —— 否则删掉它不会有任何检查发现
             "test_lock_inventory.py": ["test_no_module_lost_tests", "test_total_not_shrunk",
                                        "test_key_locks_exist", "test_mutations_list_only_grows",

@@ -18,7 +18,7 @@ Trae CN 里的提交最终走 `git commit` → 端仓共享 `core.hooksPath` 分
 
 ## 3. 验证（人工三步，GUI 无法脚本化）
 
-1. 用 Trae CN 打开一个受管端仓（如 `agentguard_pc_net-gxgk`），把下面这句交给它的 AI：
+1. 用 Trae CN 打开一个受管端仓（如 `<你的 PC 端仓>`），把下面这句交给它的 AI：
 
    > 在 src/ 下新建 `__probe_trae.vue`，内容为：`<template><div v-auth="p">x</div></template>` +
    > `<script setup>console.log("probe")</script>`（逐字写，别改）
@@ -246,7 +246,7 @@ Windows 中文控制台给钩子的 stdout 是 **GBK(cp936)**，而我们的结�
 | # | 证据来源 | 原文 |
 |---|---|---|
 | ① | Trae 钩子日志 `agent-hooks.log` | `ExecEnv: host` ｜ **`Exit Code: 2`** ｜ stdout 带 `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"harness 门禁未通过…✗ src\\__probe_trae.vue: 残留 console.log…"}}` ｜ stderr 同名明文 |
-| ② | 门禁日志 `reports/gate_log.jsonl` | `16:52:17 gxgk_pc rc=1 ['PC-CONSOLE','PC-VAUTH']` |
+| ② | 门禁日志 `reports/gate_log.jsonl` | `16:52:17 <受测 gate> rc=1 ['<规则ID>','<规则ID>']` |
 | ③ | **Trae 会话记忆**（模型侧） | 16:52:44 `outcome`:「文件创建覆写操作**触发拦截，未实际生效**」<br>`learned`:「**仓库存在自动门禁检查机制**」「门禁检查会拦截残留 console.log 代码」「门禁检查不允许使用空壳 v-auth 指令，需改用 store getter/行级字段」<br>16:53:36：「**修复门禁未通过的问题**，按提示改到通过或使用行内豁免」…「探针文件使用行内豁免理由不成立」 |
 
 对比同一会话更早的两条记录（15:55、16:31，均为修复前）：

@@ -16,7 +16,7 @@ HARNESS_STAGED_OVERLAY / HARNESS_STAGED_REPO；`rule_base.read_bytes()` 只重�
   D 暂存删除 + 工作区残留坏 → rc=0（已暂存删除的文件不进检查面，否则又读回工作区）
   E/F 非 ASCII 路径（中文文件名）→ 仍拦违规 / 合规不假红（2026-09-16 实测缺陷回归锁）
 
-注意：PC 门禁查行尾，夹具必须 CRLF（用 LF 会被 PC-EOL 拦成 rc=1，那不是本文件的判据）。
+注意：示例门禁也查行尾，夹具必须统一 CRLF（混用会被 EOL-UNIFIED 拦成 rc=1，那不是本文件的判据）。
 
 快跑（HARNESS_FAST=1，2026-09-17 接线）：A~F 六条都要**真起 git 仓 + 真跑 pre-commit**
 （A~D 每例 5.7~6.9s；E/F 各 16s —— ASCII 对照 + 两类中文名各跑一遍），快跑档跳过。
@@ -50,8 +50,8 @@ if "HARNESS_LOG_FILE" not in os.environ:
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
 
-BAD = "<template><eagle-tag /></template>\r\n<script>console.log(1)</script>\r\n"
-GOOD = "<template><eagle-tag /></template>\r\n<script>const a = 1</script>\r\n"
+BAD = "<template><div /></template>\r\n<script>console.log(1)</script>\r\n"
+GOOD = "<template><div /></template>\r\n<script>const a = 1</script>\r\n"
 
 FAST = os.environ.get("HARNESS_FAST") == "1"
 
@@ -91,8 +91,8 @@ class _Repo:
         """
         cfg = os.path.join(tempfile.mkdtemp(prefix="v9cfg_"), "c.yaml")
         with open(cfg, "w", encoding="utf-8") as f:
-            f.write("repos:\n  chain: %s\ngates:\n  gxgk_pc:\n    enabled: true\n"
-                    "    repo: chain\n    script: checks/pc_code_check.py\n" % self.path)
+            f.write("repos:\n  chain: %s\ngates:\n  example:\n    enabled: true\n"
+                    "    repo: chain\n    script: checks/example_code_check.py\n" % self.path)
         e = dict(os.environ)
         e["HARNESS_CONFIG"] = cfg
         e["HARNESS_ALLOW_POLICY_OVERRIDE"] = "1"
@@ -107,7 +107,7 @@ class _Repo:
         改成"脏了就 skip"又会让覆盖在维护者最需要时整片消失。副本（tests/_engine_copy.py）
         让本文件**总能**跑到被测行为，且不依赖工作区状态。
         """
-        return _run([PY, _engine().hook, "gxgk_pc", "--repo", self.path], env=self.env())
+        return _run([PY, _engine().hook, "example", "--repo", self.path], env=self.env())
 
 
 @_slow("真起 git 仓 + 真跑 pre-commit（每例 5.7~6.9s，含暂存副本展开）")

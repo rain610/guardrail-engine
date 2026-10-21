@@ -23,26 +23,45 @@ jobs:
 
       - name: Verify zero dependencies
         run: |
-          python -c "
-          import ast, sys, os
-          for root, dirs, files in os.walk('checks'):
-              for f in files:
-                  if f.endswith('.py'):
-                      path = os.path.join(root, f)
-                      with open(path) as fh:
-                          tree = ast.parse(fh.read())
-                      for node in ast.walk(tree):
-                          if isinstance(node, ast.Import):
-                              for alias in node.names:
-                                  if alias.name not in sys.stdlib_module_names:
-                                      print(f'FAIL: {path} imports {alias.name}')
-                                      sys.exit(1)
-                          elif isinstance(node, ast.ImportFrom):
-                              if node.module and node.module.split('.')[0] not in sys.stdlib_module_names:
-                                  print(f'FAIL: {path} imports {node.module}')
-                                  sys.exit(1)
-          print('OK: all imports are stdlib')
-          "
+          python - <<'PY'
+          import ast, os, sys
+
+          # 与 tests/test_stdlib_only.py 同判据：标准库 ∪ 本工程同目录 .py
+          # （只比 stdlib 会把 example_ruleset / _config 这类本地模块误判成第三方）
+          SCAN_DIRS = ["checks", "harness", "harness/hooks", "harness/agents", "agentguard"]
+          local = set()
+          for d in SCAN_DIRS:
+              if os.path.isdir(d):
+                  local.update(fn[:-3] for fn in os.listdir(d) if fn.endswith(".py"))
+
+          stdlib = set(getattr(sys, "stdlib_module_names", ()))
+          offenders = []
+          for d in SCAN_DIRS:
+              if not os.path.isdir(d):
+                  continue
+              for fn in sorted(os.listdir(d)):
+                  if not fn.endswith(".py"):
+                      continue
+                  path = os.path.join(d, fn)
+                  with open(path, encoding="utf-8") as fh:
+                      tree = ast.parse(fh.read())
+                  for node in ast.walk(tree):
+                      if isinstance(node, ast.Import):
+                          mods = [a.name.split(".")[0] for a in node.names]
+                      elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                          mods = [node.module.split(".")[0]]
+                      else:
+                          continue
+                      for m in mods:
+                          if m not in stdlib and m not in local:
+                              offenders.append(f"{path}: {m}")
+          if offenders:
+              print("FAIL: third-party imports found:")
+              for o in offenders:
+                  print("  " + o)
+              sys.exit(1)
+          print("OK: all imports are stdlib or in-project modules")
+          PY
 
       - name: Validate config structure
         run: |
@@ -54,7 +73,12 @@ jobs:
 
       - name: Run unit tests
         run: |
-          python -m unittest discover -s tests -v
+          set -o pipefail
+          python -W error::ResourceWarning -m unittest discover -s tests -v 2>&1 | tee /tmp/unittest.log
+          if grep -qE "ResourceWarning|Exception ignored in" /tmp/unittest.log; then
+            echo "发现未关闭的句柄泄漏（见上方日志）" >&2
+            exit 1
+          fi
 
   lint:
     runs-on: ubuntu-latest

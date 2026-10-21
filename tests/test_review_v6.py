@@ -7,7 +7,6 @@ K1 是 P1（按行过滤坐标系错位），核心是**双向**行为锁：
 夹具都带 git 真仓 + 真 run_gate（端到端），不用纯函数模拟——K1 恰恰是
 "函数各自正确、坐标不一致"的缺陷，纯函数锁抓不住。
 """
-import io
 import os
 import pathlib
 import re
@@ -62,148 +61,6 @@ FAST = os.environ.get("HARNESS_FAST") == "1"
 
 def _slow(reason):
     return unittest.skipIf(FAST, "快速模式（HARNESS_FAST=1）跳过%s" % reason)
-
-
-class GateFixture:
-    """密闭 git 夹具：临时仓 + 临时 gate 配置 + 真跑 run_gate。"""
-
-    def __init__(self, gate, legacy=False, eol="crlf", ignored=False):
-        self.d = tempfile.mkdtemp(prefix="v6-")
-        self.repo = os.path.join(self.d, "repo")
-        os.makedirs(os.path.join(self.repo, "src"))
-        subprocess.run(["git", "init", "-q"], cwd=self.repo, capture_output=True)
-        self.cfg = os.path.join(self.d, "cfg.yaml")
-        with io.open(self.cfg, "w", encoding="utf-8", newline="") as f:
-            f.write("repos:\n  t: %s\ngates:\n  t:\n    enabled: true\n    repo: t\n"
-                    "    script: checks/%s_code_check.py\n    run_on: [pre_commit, post_edit]\n%s"
-                    % (self.repo.replace("\\", "/"), gate, "    legacy_baseline: true\n" if legacy else ""))
-        # 旧锁 test_tests_set_harness_log_file（N-2 血案）：凡调 run_gate 的测试都必须隔离日志，
-        # 否则探针记录会写进真实 reports/gate_log.jsonl。
-        self.log = os.path.join(self.d, "gate_log.jsonl")
-        self.env = dict(os.environ, HARNESS_CONFIG=self.cfg, PYTHONUTF8="1", HARNESS_LOG_FILE=self.log)
-        self.eol = eol
-        self.f = os.path.join(self.repo, "src", "a.vue")
-        if ignored:
-            with io.open(os.path.join(self.repo, ".gitignore"), "w", encoding="utf-8", newline="") as f:
-                f.write("dist/\n")
-            os.makedirs(os.path.join(self.repo, "dist"))
-            self.f = os.path.join(self.repo, "dist", "b.vue")
-
-    def write(self, script_body, tpl="  <div>h</div>"):
-        txt = "<template>\n%s\n</template>\n<script setup>\n%s\n</script>\n" % (tpl, script_body)
-        if self.eol == "crlf":
-            txt = txt.replace("\n", "\r\n")
-        with io.open(self.f, "w", encoding="utf-8", newline="") as f:
-            f.write(txt)
-
-    def commit(self, msg="base"):
-        subprocess.run(["git", "add", "-A"], cwd=self.repo, capture_output=True)
-        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", msg],
-                       cwd=self.repo, capture_output=True)
-
-    def stage(self):
-        subprocess.run(["git", "add", "-A"], cwd=self.repo, capture_output=True)
-
-    def run(self):
-        r = subprocess.run([sys.executable, "harness/run_gate.py", "t", self.f], capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", env=self.env, timeout=180)
-        self.last_out = (r.stdout or "") + (r.stderr or "")
-        return r.returncode
-
-    def cleanup(self):
-        _rmtree_force(self.d)
-
-
-class TestK1LineCoordinateAlignment(unittest.TestCase):
-    """K1（P1）：命中行号必须是**文件绝对行号**，才能与 changed_lines 比较。"""
-
-    def test_script_line_offset_is_absolute_not_segment_relative(self):
-        import pc_code_check as PC
-        from pc_ruleset import ConsoleLogRule
-        import rule_base
-        c = "<template>\n  <div>h</div>\n</template>\n<script setup>\nconsole.log(1)\n</script>\n"
-        off = PC.script_line_offset(c)
-        self.assertEqual(off, 3, "偏移量 = <script> 段内容起点之前的换行数")
-        hits = ConsoleLogRule()._find_hits(PC.extract_script(c), off)
-        self.assertEqual([h[0] for h in hits], [5], "命中行号应为文件绝对行号 5（不是段内 2）")
-        kept, dropped = rule_base.filter_hits_by_lines(hits, frozenset({5}))
-        self.assertEqual(len(kept), 1, "改的是第 5 行 → 命中必须保留（漏报侧）")
-        kept2, dropped2 = rule_base.filter_hits_by_lines(hits, frozenset({2}))
-        self.assertEqual(len(kept2), 0, "只改第 2 行（模板行）→ 命中必须丢弃（误报侧）")
-
-    @_slow("真起密闭 git 仓 + 真跑 run_gate（2.7s）")
-    def test_pc_tracked_file_changed_line_violation_blocks(self):
-        """端到端漏报侧：普通门 + 已跟踪文件改出 console.log → rc=1（修复前 rc=0）。"""
-        fx = GateFixture("pc", eol="crlf")
-        try:
-            fx.write("const a = 1;\nconsole.log(1);")
-            fx.commit()
-            fx.write("const a = 2;\nconsole.log(2);")     # 第 5/6 行都改，含新违规
-            self.assertEqual(fx.run(), 1, "改动行里的违规必须拦（rc=1），输出=%s" % fx.last_out[:200])
-            fx.stage()
-            self.assertEqual(fx.run(), 1, "提交期口径同样必须拦")
-        finally:
-            fx.cleanup()
-
-    @_slow("真起密闭 git 仓 + 真跑 run_gate（1.8s）")
-    def test_pc_legacy_untouched_existing_violation_not_blocked(self):
-        """端到端误报侧：legacy 门只改模板行、存量 console.log 不动 → rc=0。"""
-        fx = GateFixture("pc", legacy=True, eol="crlf")
-        try:
-            fx.write("const a = 1;\nconsole.log(1);")
-            fx.commit()
-            fx.write("const a = 1;\nconsole.log(1);", tpl="  <div>changed</div>")
-            self.assertEqual(fx.run(), 0, "存量违规未改动时不得被拦（否则编辑期处处误报），输出=%s" % fx.last_out[:200])
-        finally:
-            fx.cleanup()
-
-    @_slow("真起密闭 git 仓 + 真跑 run_gate（1.7s）")
-    def test_h5_tracked_file_changed_line_violation_blocks(self):
-        fx = GateFixture("h5", eol="lf")
-        try:
-            fx.write("const a = 1;\nconsole.log(1);")
-            fx.commit()
-            fx.write("const a = 2;\nconsole.log(2);")
-            self.assertEqual(fx.run(), 1, "H5 同款：改动行违规必须拦，输出=%s" % fx.last_out[:200])
-        finally:
-            fx.cleanup()
-
-    @_slow("真起密闭 git 仓 + 真跑 run_gate（1.6s）")
-    def test_script_at_file_top_still_blocks(self):
-        """坐标系偏移=0 的形态（script 在第 1 行）也不能回归。"""
-        fx = GateFixture("pc", eol="crlf")
-        try:
-            top = '<script setup>\nconst a = 1; console.log(1);\n</script>\n<template>\n  <div>h</div>\n</template>\n'
-            with io.open(fx.f, "w", encoding="utf-8", newline="") as f:
-                f.write(top.replace("\n", "\r\n"))
-            fx.commit()
-            with io.open(fx.f, "w", encoding="utf-8", newline="") as f:
-                f.write(top.replace("a = 1; console.log(1)", "a = 2; console.log(2)").replace("\n", "\r\n"))
-            self.assertEqual(fx.run(), 1, "script 在文件首行时改行违规仍须拦")
-        finally:
-            fx.cleanup()
-
-
-@_slow("真起密闭 git 仓 + 真跑 run_gate（两侧各 1.2~1.3s，类里没有更便宜的例）")
-class TestQ1IgnoredNewFileContract(unittest.TestCase):
-    """Q1：`.gitignore` 命中的新文件"放行"是**契约**（不是漏洞），钉住它。"""
-
-    def test_ignored_new_file_is_skipped(self):
-        fx = GateFixture("pc", legacy=True, eol="crlf", ignored=True)
-        try:
-            fx.write("console.log(1);")
-            self.assertEqual(fx.run(), 0, ".gitignore 命中的新文件按既有语义放行（构建产物不制造噪声）")
-        finally:
-            fx.cleanup()
-
-    def test_force_added_ignored_file_is_checked(self):
-        fx = GateFixture("pc", legacy=True, eol="crlf", ignored=True)
-        try:
-            fx.write("console.log(1);")
-            subprocess.run(["git", "add", "-f", "dist/b.vue"], cwd=fx.repo, capture_output=True)
-            self.assertEqual(fx.run(), 1, "`git add -f` 之后就是会进提交的代码 → 必须拦")
-        finally:
-            fx.cleanup()
 
 
 class TestK2NoDeprecationWarning(unittest.TestCase):
@@ -342,27 +199,6 @@ class TestK8HarnessRootWithoutGate(unittest.TestCase):
             self.assertIn("auto-gate.py", (r.stderr or ""), "根在但实现缺失必须出声")
         finally:
             _rmtree_force(d)
-
-
-@_slow("真起密闭 git 仓 + 真跑 run_gate（单例 2.9s）")
-class TestL3LogRulesInvariant(unittest.TestCase):
-    """L3：空数据 → 记录**无** rules 键（反向锁；正向锁在 test_coverage）。"""
-
-    def test_clean_file_has_no_rules_key_and_violation_has_one(self):
-        fx = GateFixture("pc", eol="crlf")
-        try:
-            fx.write("const a = 1;")                     # 干净
-            fx.commit()
-            fx.run()
-            fx.write("const a = 2;\nconsole.log(1);")   # 违规（改动行）
-            fx.run()
-            import json
-            recs = [json.loads(l) for l in pathlib.Path(fx.log).read_text(encoding="utf-8").splitlines() if l.strip()]
-            self.assertGreaterEqual(len(recs), 2, "夹具应产生两条记录")
-            self.assertNotIn("rules", recs[0], "干净运行不得写 rules 键（空 dict 视为无数据）")
-            self.assertIn("rules", recs[1], "有触发必须写 rules")
-        finally:
-            fx.cleanup()
 
 
 class TestQ5AcceptedLossFrozen(unittest.TestCase):

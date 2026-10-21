@@ -240,8 +240,8 @@ class TestWarningsAreAggregated(unittest.TestCase):
 
     def _cfg(self):
         """两个已启用 gate：一个填了真路径、一个留空（+ 引擎注入的 harness_self）。"""
-        return {"repos": {"harness_self": ROOT, "gxgk_pc": ROOT, "hy_pc": ""},
-                "gates": {"gxgk_pc": {"enabled": True, "repo": "gxgk_pc"},
+        return {"repos": {"harness_self": ROOT, "demo_pc": ROOT, "hy_pc": ""},
+                "gates": {"demo_pc": {"enabled": True, "repo": "demo_pc"},
                           "hy_pc": {"enabled": True, "repo": "hy_pc"}}}
 
     def test_one_line_not_one_per_gate(self):

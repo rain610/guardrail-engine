@@ -20,7 +20,7 @@
 
 用法：
     python sandbox/acceptance_check.py                 # 检查全部已配置 gate
-    python sandbox/acceptance_check.py gxgk_pc         # 只检查一个
+    python sandbox/acceptance_check.py example         # 只检查一个
     python sandbox/acceptance_check.py --json          # 机器可读（CI/报告用）
 退出码：0=全部通过；1=有 gate 未通过。
 """
@@ -202,7 +202,7 @@ def check_gate(gate_name, cfg_all, log_path):
                 repos_block = "repos:\n" + "".join("  %s: %s\n" % (k, _root) for k in _keys)
                 body = (repos_block +
                         "gates:\n  zzz_accept_probe:\n    enabled: true\n    repo: %s\n"
-                        "    script: checks/pc_code_check.py\n"
+                        "    script: checks/example_code_check.py\n"
                         % ("zzz_no_such_repo_key" if viol else _ok_repo))
                 with io.open(cfg, "w", encoding="utf-8", newline="") as f:
                     f.write(body)

@@ -4,14 +4,13 @@
 
 设计源头
 ================================================================================
-· CHANGELOG "新客户一律 legacy_baseline: true（存量豁免，新代码照拦）"
+· 历史内部约定 "新客户一律 legacy_baseline: true（存量豁免，新代码照拦）"
 · AGENTS.md 第 33 行同条纪律
 · harness.yaml 第 78-86 行评审 v13 注释：「声明了但没消费方读」= 空承诺
 
 本批做的事（2026-09-21）
 ================================================================================
-把 11 → 12 个老仓（gxgk_pc/h5/backend / hy_pc/h5/backend /
-hy_base_pc/h5/backend / hy_hzy_pc/h5/backend）补齐 `legacy_baseline: true`，
+把 11 → 12 个老仓（各客户端的 pc/h5/backend 三端系列）补齐 `legacy_baseline: true`，
 与 21 个新仓对齐。**目的不是改拦截行为**（按行过滤主防线未动），
 而是把「存量违规进台账可观测」这条链路打通——
 否则 12 老仓的存量命中**永远不写台账**，
@@ -102,7 +101,7 @@ class TestLegacyBaselineConsistency(unittest.TestCase):
         self.assertEqual(
             missing, [],
             "以下 gate 未声明 legacy_baseline（必须是显式 true/false；"
-            "未写 = 默认 false = 与全仓门禁锁不一致，CHANGELOG "
+            "未写 = 默认 false = 与全仓门禁锁不一致，历史内部约定 "
             "「新客户一律 legacy_baseline: true」纪律）：\n  - "
             + "\n  - ".join(missing),
         )

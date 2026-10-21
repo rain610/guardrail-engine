@@ -139,7 +139,7 @@ echo ""
 
 # ---------- 2/4 门禁端到端探针 ----------
 echo "--- 2/4 门禁端到端探针（R9 违规→拦 / 修复→放行）---"
-# 选 gate：优先 gxgk_backend（成熟、无 legacy_baseline——legacy 仓会把 R9 降 info
+# 选 gate：优先成熟、无 legacy_baseline 的后端 gate（legacy 仓会把 R9 降 info
 # 让探针假失败），回退任一「启用 + 非 legacy + 有 RMC/Eagle.RMC.Entities 目录」的后端 gate。
 PROBE_INFO=$($HARNESS_PY - "$HARNESS_WIN" <<'PYEOF'
 import sys, os
@@ -345,7 +345,7 @@ echo ""
 echo "--- 3b/4 guard 挂死探针（管道 stdin 不 EOF，须 2s 内返回）---"
 # 外部评审实测 P0：guard 旧版在 stdin 非 tty 时无条件 sys.stdin.read()，GUI/CI 触发
 # hook 时 stdin 是保持打开的管道 → 永久阻塞，commit 静默挂死。此探针是该 bug 的永久回归锁。
-GUARD_OUT=$(sleep 30 | timeout 2 $HARNESS_PY "$HARNESS_WIN/checks/harness_guard.py" gxgk_pc 2>&1)
+GUARD_OUT=$(sleep 30 | timeout 2 $HARNESS_PY "$HARNESS_WIN/checks/harness_guard.py" example 2>&1)
 GRC=$?
 if [ "$GRC" = "124" ]; then
     fail "guard 被管道 stdin 挂死（2s 超时强杀）——GUI/CI commit 会静默卡死，立即修 _commit_msg() 的 stdin 读取"

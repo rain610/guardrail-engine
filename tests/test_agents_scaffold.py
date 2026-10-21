@@ -483,7 +483,7 @@ class TestVaultRootNeverShipsAsAMachinePath(_Fixture):
 # 它的夹具 `REAL_VAULT_LINE` 是 `知识库：` 开头的**搬迁**行 —— 走的正是 `_target_lines`
 # 里唯一一处调过 `portable()` 的分支。于是出现过一个「锁是绿的、缺陷照常出货」的现场：
 # 首行标题 / `## 项目` 块 / 留守行三处都只做 `rstrip()`，里面带知识库根就**逐字进产物**。
-# 7 个客户仓（gxgk / hy_hzy 三端 + hanbogaoxin_backend）是头一回踩到。
+# 7 个客户仓（多个客户端的三端系列）是头一回踩到。
 VAULT_STAY_LINE = ("工单必读在 `D:/KnowledgeVault/concepts/customers/ntrx/00_工单必读.md`，"
                    "先看它再动手")
 # ⚠ 这里**不能**再带一个 `## 项目` 块：那两个夹具都得留在"本仓独有 ≤1 行"的候选区里

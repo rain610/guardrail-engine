@@ -13,11 +13,15 @@ r"""外部评审 v13（2026-09-16）第三批落地回归锁 —— 静默通过
   中 15   「已登记但 enabled: false」返回 rc=0，与「跑了且通过」在渲染和台账里都不可区分。
   中 16   台账 entry 字段：两个入口 setdefault（外层值永远胜出）、两个入口压根不设。
   中 20   `_config` 对 git 文件名 `.strip()` → 首尾带空格的合法文件名被改成不存在的路径。
+
+开源裁剪（2026-10-20）：pc / h5 / backend 三个业务门禁脚本随客户仓一起删除，高 7 中
+直接驱动它们的 7 个用例随之失效（对应的 fail-closed 实现也已不存在）。仍然保留的是与
+具体端点无关的**收集器语义**（暂存后删除、真删除两条边界），以及其余四项缺陷 ——
+它们的反向对照统一改用 `checks/example_code_check.py`（开源版唯一可执行的规则脚本）。
 """
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -75,7 +79,7 @@ def _vue(script="let x = 1;", vfor='  <div v-for="i in list" :key="i">{{ i }}</d
 
 
 # 快跑（HARNESS_FAST=1，2026-09-17 接线）：本文件的慢在**每例现建 git 仓 / 临时工程 +
-# 真起子进程跑 run_gate / cli.py**（实测墙钟 27.5s，20 例里 13 例 ≥1s，合计 22.3s）。
+# 真起子进程跑 run_gate / cli.py**（开源裁剪后 13 例实测约 8.5s，多数 ≥1s）。
 # 装饰判据落到类上时同样用「该类有单例 ≥1s」：TestZhong15DisabledGateIsNotPass（2 例共
 # 1.6s，最慢 0.81s）**不接** —— 省不下多少秒，而它钉的是「disabled 的 gate 不许被记成 pass」。
 FAST = os.environ.get("HARNESS_FAST") == "1"
@@ -83,13 +87,6 @@ FAST = os.environ.get("HARNESS_FAST") == "1"
 
 def _slow(reason):
     return unittest.skipIf(FAST, "快速模式（HARNESS_FAST=1）跳过%s" % reason)
-
-
-# 后端样本：命名合规（R5/R6 不命中）+ 独占用 using（R1 之类不命中）——让 rc 只反映被测规则
-CS_CLEAN = ("using System;\nnamespace Eagle.RMC.Controller\n{\n"
-            "    public class TestController\n    {\n"
-            "        public void QueryPage()\n        {\n"
-            "            int a = 1;\n        }\n    }\n}\n")
 
 
 class _Repo:
@@ -193,7 +190,7 @@ class TestSevere5McpGateNameWhitelist(_Fixture):
 
     def test_flag_like_gate_name_is_rejected_without_touching_ledger(self):
         os.environ["HARNESS_CONFIG"] = self._cfg_path(
-            [("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")])
+            [("v13b3_ex", "checks/example_code_check.py", "    mode: strict")])
         os.environ["HARNESS_LOG_FILE"] = self.ledger
         mcp = self._mcp()
         for bad in ("--list", "-l", "-h", "--summary"):
@@ -207,21 +204,25 @@ class TestSevere5McpGateNameWhitelist(_Fixture):
 
     def test_unknown_gate_name_is_rejected(self):
         os.environ["HARNESS_CONFIG"] = self._cfg_path(
-            [("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")])
+            [("v13b3_ex", "checks/example_code_check.py", "    mode: strict")])
         mcp = self._mcp()
         text, is_err = mcp.tool_run_gate({"gate": "v13b3_does_not_exist"})
         self.assertTrue(is_err, text)
         self.assertIn("unknown gate", text)
 
     def test_whitelist_does_not_wedge_the_real_path(self):
-        """反向对照：白名单不能把正常 gate 一起挡掉（否则上面两条可能只是"全拦了"）。"""
+        """反向对照：白名单不能把正常 gate 一起挡掉（否则上面两条可能只是"全拦了"）。
+
+        开源版用示例门禁当「正常 gate」：违规 console.log 必须照旧 rc=1 BLOCKED。
+        """
         self.repo.commit("src/a.vue", _vue("let x = 1;"))
         self.repo.loose("src/bad.vue", _vue('console.log("leak");'))
-        cfg = self._cfg_path([("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")])
+        cfg = self._cfg_path([("v13b3_ex", "checks/example_code_check.py",
+                               "    mode: strict")])
         os.environ["HARNESS_CONFIG"] = cfg
         os.environ["HARNESS_LOG_FILE"] = self.ledger
         mcp = self._mcp()
-        text, is_err = mcp.tool_run_gate({"gate": "v13b3_pc",
+        text, is_err = mcp.tool_run_gate({"gate": "v13b3_ex",
                                           "files": [self.repo.file("src/bad.vue")]})
         self.assertFalse(is_err, text)
         self.assertIn("rc=1", text)
@@ -238,7 +239,7 @@ class TestZhong15DisabledGateIsNotPass(_Fixture):
     DISABLED = "    enabled: false\n"
 
     def _cfg(self):
-        return self._cfg_path([("v13b3_off", "checks/pc_code_check.py", self.DISABLED)])
+        return self._cfg_path([("v13b3_off", "checks/example_code_check.py", self.DISABLED)])
 
     def test_ledger_marks_it_skipped(self):
         r = self._run_gate("v13b3_off", env=self._env(self._cfg()))
@@ -260,119 +261,20 @@ class TestZhong15DisabledGateIsNotPass(_Fixture):
         self.assertFalse(is_err, "未启用不是调用错误，不该报 isError：%s" % text)
 
 
-# ============================================================ 高 7：不存在的入参不再静默通过
-@_slow("每例现建 git 仓 + 真跑 run_gate 子进程（8 例 10.6s，无一例 <0.9s）")
-class TestGao7MissingTargetsFailClosed(_Fixture):
-    """高 7：传了路径、一个都没匹配上 —— 与「确实没改动」必须可区分。"""
+# ============================================================ 高 7：改动文件收集的边界
+class TestChangedFilesCollection(_Fixture):
+    """高 7 在开源裁剪后的存活部分：与端点无关的「什么算存在」边界。
 
-    def _pc(self, args, cfg=None):
-        return _sh([PY, os.path.join(CHECKS, "pc_code_check.py"), "--gate", "v13b3_pc",
-                    "--repo", self.repo.path] + list(args),
-                   env=self._env(cfg or self._cfg_path(
-                       [("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")])))
-
-    def test_pc_all_missing_is_rc2(self):
-        self.repo.commit("src/a.vue", _vue())
-        r = self._pc([self.repo.file("src/不存在.js")])
-        self.assertEqual(r.returncode, 2,
-                         "不存在的入参被静默跳过 → rc=0「全部通过」\n" + (r.stdout or ""))
-        self.assertIn("未检查任何文件", r.stdout)
-
-    def test_pc_partial_missing_counts_only_real_files(self):
-        self.repo.commit("src/a.vue", _vue('console.log("leak");'))
-        r = self._pc([self.repo.file("src/a.vue"), self.repo.file("src/不存在.js")])
-        self.assertIn("跳过不存在的路径", r.stdout, "部分跳过必须出声：\n" + (r.stdout or ""))
-        self.assertIn("针对性检查：1 个文件", r.stdout,
-                      "头行的文件数必须是真的检查数量：\n" + (r.stdout or ""))
-        self.assertEqual(r.returncode, 1, "真文件里的违规照旧要拦\n" + (r.stdout or ""))
-
-    def test_h5_all_missing_is_rc2(self):
-        self.repo.commit("src/a.vue", _vue().replace("\r\n", "\n"))
-        r = _sh([PY, os.path.join(CHECKS, "h5_code_check.py"), "--gate", "v13b3_h5",
-                 "--repo", self.repo.path, self.repo.file("src/不存在.vue")],
-                env=self._env(self._cfg_path(
-                    [("v13b3_h5", "checks/h5_code_check.py", "    mode: strict")])))
-        self.assertEqual(r.returncode, 2, (r.stdout or "") + (r.stderr or ""))
-        self.assertIn("未检查任何文件", r.stdout)
-
-    def _be(self, cfg, args):
-        return _sh([PY, os.path.join(CHECKS, "backend_layer_check.py"), "--gate", "v13b3_be",
-                    "--repo", self.repo.path] + list(args), env=self._env(cfg))
-
-    def _be_cfg(self):
-        return self._cfg_path([("v13b3_be", "checks/backend_layer_check.py",
-                                "    mode: loose\n    encoding: utf-8")])
-
-    def test_backend_missing_target_does_not_degrade_to_full_scan(self):
-        """后端这条最阴：丢弃入参 → target_files 空 → 退全量扫描 → R5/R6 从 error 降为观察项。
-
-        「检查强度悄悄变了」比「没检查」更难发现：输出里仍然有一行结果，rc 也仍是 0。
-        """
-        self.repo.commit("RMC/C.cs", CS_CLEAN)
-        r = self._be(self._be_cfg(), [self.repo.file("RMC/不存在.cs")])
-        self.assertEqual(r.returncode, 2,
-                         "不存在的后端入参被静默丢弃 → 退成全量观察模式\n" + (r.stdout or ""))
-        self.assertIn("未检查任何文件", r.stdout)
-        self.assertNotIn("全量扫描", r.stdout, "退化成了全量扫描（R5/R6 降级）")
-
-    def test_backend_non_code_target_is_rc2(self):
-        """存在但不在检查面内的文件（.md）同样不能算「检查过了」。"""
-        self.repo.commit("docs/readme.md", "# hi\n")
-        r = self._be(self._be_cfg(), [self.repo.file("docs/readme.md")])
-        self.assertEqual(r.returncode, 2, r.stdout or "")
-        self.assertIn("跳过不存在/非代码的入参", r.stdout)
-
-    def test_backend_real_target_still_targeted(self):
-        """反向对照：真代码文件照旧走 targeted（且不因新解析把自己误判成"没传参"）。"""
-        self.repo.commit("RMC/C.cs", CS_CLEAN)
-        r = self._be(self._be_cfg(), [self.repo.file("RMC/C.cs")])
-        self.assertIn("targeted 1 个文件", r.stdout, r.stdout or "")
-        self.assertIn("error 拦新代码", r.stdout)
-        self.assertEqual(r.returncode, 0, (r.stdout or "") + (r.stderr or ""))
-
-    # -- 上面五条锁的是「该拦没拦」；下面两条锁的是这套 rc=2 语义**自己**造出来的假红。 --
-    # rc=2 是拿「路径不存在」当判据的，那么「什么算存在」就变成了规则的一部分：
-    # 判错了，第一次提交就会被自己的门禁挡住。两个方向各锁一条。
-
-    def test_staged_then_deleted_file_is_still_checked(self):
-        """porcelain `AD`：已 `git add`、又从工作区删掉 —— index 里有、工作区没有。
-
-        这类路径 `--diff-filter=d` **不会**排除（相对 HEAD 它是新增），pre-commit 照常
-        把它交给检查器。若「存在」按工作区判，就等于因为"文件不在磁盘上"而拒绝检查一份
-        **明确在提交里的**内容 → 假 rc=2，整次提交被自己的门禁挡住。
-        判据必须跟着「检查器将要打开的那个文件」走 —— 提交期就是暂存副本。
-        """
-        self.repo.commit("src/a.vue", _vue("let x = 1;"))
-        add = "src/new.vue"
-        self.repo.loose(add, _vue('console.log("leak");'))
-        _git(self.repo.path, "add", "--", add)
-        os.remove(self.repo.file(add))            # AD：工作区没了，index 里还在
-        self.assertFalse(os.path.exists(self.repo.file(add)),
-                         "夹具失效：这个文件本该只存在于 index 里")
-        self.assertIn("AD", _git(self.repo.path, "status", "--porcelain", "-z").stdout,
-                      "夹具没造出 AD 状态")
-
-        overlay = os.path.join(self.tmp, "overlay")
-        os.makedirs(overlay)
-        ci = _git(self.repo.path, "checkout-index", "-f",
-                  "--prefix=%s" % (overlay.replace("\\", "/").rstrip("/") + "/"), "--", add)
-        self.assertEqual(ci.returncode, 0, (ci.stdout or "") + (ci.stderr or ""))
-        env = self._env(self._cfg_path(
-            [("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")]),
-            {"HARNESS_STAGED_OVERLAY": overlay,
-             "HARNESS_STAGED_REPO": os.path.abspath(self.repo.path)})
-        r = self._run_gate("v13b3_pc", [self.repo.file(add)], env=env)
-        out = (r.stdout or "") + (r.stderr or "")
-        self.assertNotIn("未检查任何文件", out,
-                         "提交里带着的文件被当成「路径不存在」→ 假 rc=2 拦提交\n" + out)
-        self.assertEqual(r.returncode, 1, "暂存副本里的违规必须照旧拦下\n" + out)
-        self.assertIn("残留 console.log", out)
+    原先还锁 pc / h5 / backend 三个脚本的 fail-closed（不存在或非目标的入参 rc=2、
+    不得退化成全量扫描、暂存后删除的文件仍要检查）；三个脚本随客户仓删除，
+    对应的实现与用例一起移除。剩下这条锁的是收集器本身，任何端点都要遵守。
+    """
 
     def test_deleted_file_is_not_collected(self):
-        """反方向：**真的删除**（tracked → 工作区删掉）不该被交到检查器手上。
+        """**真的删除**（tracked → 工作区删掉）不该被交到检查器手上。
 
         删除的文件没有内容可查，但路径照样出现在 `diff --name-only` 里；收集端漏了这一层，
-        高 7 的 rc=2 就会把「删掉一个 .vue」变成一次假的配置错误拦截。
+        「路径不存在」就会被下游判成配置错误，把「删掉一个文件」变成一次假拦截。
         """
         self.repo.commit("src/a.vue", _vue())
         self.repo.commit("src/b.vue", 'let b = 1;\n')
@@ -396,8 +298,8 @@ class TestZhong14ScriptMustStayInsideRoot(_Fixture):
     def test_absolute_script_outside_root_is_refused(self):
         evil = os.path.join(self.tmp, "evil.py")
         _write(evil, "print('pwned')\n")
-        cfg = self._cfg_path([("v13b3_pc", evil.replace("\\", "/"), "    mode: strict")])
-        r = self._run_gate("v13b3_pc", env=self._env(cfg))
+        cfg = self._cfg_path([("v13b3_ex", evil.replace("\\", "/"), "    mode: strict")])
+        r = self._run_gate("v13b3_ex", env=self._env(cfg))
         out = (r.stdout or "") + (r.stderr or "")
         self.assertEqual(r.returncode, 2, "根外脚本被执行了（或至少没被拒）\n" + out)
         self.assertIn("工程根之外", out)
@@ -407,8 +309,9 @@ class TestZhong14ScriptMustStayInsideRoot(_Fixture):
     def test_relative_script_inside_root_still_runs(self):
         """反向对照：根内相对路径照旧（别把正常配置一起拒了）。"""
         self.repo.commit("src/a.vue", _vue('console.log("leak");'))
-        cfg = self._cfg_path([("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")])
-        r = self._run_gate("v13b3_pc", [self.repo.file("src/a.vue")], env=self._env(cfg))
+        cfg = self._cfg_path([("v13b3_ex", "checks/example_code_check.py",
+                               "    mode: strict")])
+        r = self._run_gate("v13b3_ex", [self.repo.file("src/a.vue")], env=self._env(cfg))
         self.assertEqual(r.returncode, 1, (r.stdout or "") + (r.stderr or ""))
         self.assertNotIn("工程根之外", r.stdout)
 
@@ -429,7 +332,8 @@ class TestZhong16LedgerEntryIsTheRealEntry(_Fixture):
     def test_auto_gate_records_itself_and_keeps_upstream(self):
         self.repo.commit("src/a.vue", _vue("let x = 1;"))
         self.repo.loose("src/b.vue", _vue("let y = 2;"))
-        cfg = self._cfg_path([("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")])
+        cfg = self._cfg_path([("v13b3_ex", "checks/example_code_check.py",
+                               "    mode: strict")])
         r = _sh([PY, os.path.join(AGENTS, "auto-gate.py"), "--repo", self.repo.path],
                 env=self._env(cfg, {"HARNESS_ENTRY": "cli"}))
         self.assertIn(r.returncode, (0, 1), (r.stdout or "") + (r.stderr or ""))
@@ -439,8 +343,9 @@ class TestZhong16LedgerEntryIsTheRealEntry(_Fixture):
         """post-edit 原先**根本不设** HARNESS_ENTRY → 编辑期的判定在台账里没有来源。"""
         self.repo.commit("src/a.vue", _vue("let x = 1;"))
         self.repo.loose("src/b.vue", _vue("let y = 2;"))
-        cfg = self._cfg_path([("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")])
-        r = _sh([PY, os.path.join(HOOKS, "post-edit.py"), "v13b3_pc", "--repo", self.repo.path],
+        cfg = self._cfg_path([("v13b3_ex", "checks/example_code_check.py",
+                               "    mode: strict")])
+        r = _sh([PY, os.path.join(HOOKS, "post-edit.py"), "v13b3_ex", "--repo", self.repo.path],
                 env=self._env(cfg, {"HARNESS_ENTRY": "cli"}))
         self.assertIn(r.returncode, (0, 1), (r.stdout or "") + (r.stderr or ""))
         self._assert_entry("post-edit")
@@ -490,13 +395,14 @@ class TestZhong20FilenameSpacesSurvive(_Fixture):
         """端到端：带空格的未跟踪违规文件，编辑期门禁必须拦下（修复前是 rc=0「无改动」）。"""
         self.repo.commit("src/a.vue", _vue("let x = 1;"))
         self.repo.loose(self.SPACED, 'console.log("leak");\n')
-        cfg = self._cfg_path([("v13b3_pc", "checks/pc_code_check.py", "    mode: strict")])
-        r = _sh([PY, os.path.join(HOOKS, "post-edit.py"), "v13b3_pc", "--repo", self.repo.path],
+        cfg = self._cfg_path([("v13b3_ex", "checks/example_code_check.py",
+                               "    mode: strict")])
+        r = _sh([PY, os.path.join(HOOKS, "post-edit.py"), "v13b3_ex", "--repo", self.repo.path],
                 env=self._env(cfg))
         out = (r.stdout or "") + (r.stderr or "")
         self.assertEqual(r.returncode, 1,
                          "带空格的违规文件全链路静默通过（strip → 路径不存在 → 跳过）\n" + out)
-        self.assertIn("残留 console.log", out)
+        self.assertIn("NO-CONSOLE", out)
 
 
 if __name__ == "__main__":

@@ -76,45 +76,9 @@ class TestG1LegacyNewFileNotDowngraded(unittest.TestCase):
         self.assertTrue(i > 0, "rule_base 找不到按行口径的 legacy 降级条件（改结构请同步更新本锁）")
         self.assertIn("is_new_file", src[i:i + 200],
                       "降级条件里必须带 is_new_file 判据")
-        for rel, ruleset in (("checks/pc_ruleset.py", "PC"), ("checks/h5_ruleset.py", "H5")):
-            self.assertNotIn("def severity", _read(rel),
-                             "%s ruleset 又自己实现了一份 severity —— 补遗 B 收敛后不该再有；"
-                             "保留两份实现就等于「改一处另两处不跟」的旧病复发" % ruleset)
-
-    def test_check_scripts_populate_is_new_file(self):
-        """**行为锁**（2026-09-15 从源码文本锁升级；起因：评审 v3 把提交期口径从
-        is_untracked 换成 is_new_in_index 后，文本锁失配——它只证明"写了那行字"）。
-
-        真正的契约是行为：未跟踪的新文件 → ctx.is_new_file 必须为 True（否则 legacy 门
-        会把新代码当存量降级）；已提交的文件 → False。
-        """
-        for k in ("HARNESS_STAGED_OVERLAY", "HARNESS_STAGED_REPO"):
-            os.environ.pop(k, None)
-        repo = tempfile.mkdtemp(prefix="v5new_")
-        subprocess.run(["git", "-C", repo, "init", "-q"], capture_output=True)
-        subprocess.run(["git", "-C", repo, "config", "user.email", "t@t"], capture_output=True)
-        subprocess.run(["git", "-C", repo, "config", "user.name", "t"], capture_output=True)
-        body = "<template>\n  <div>h</div>\n</template>\n<script>\nconst a = 1\n</script>\n"
-        old_p = os.path.join(repo, "old.vue")
-        new_p = os.path.join(repo, "new.vue")
-        with io.open(old_p, "w", encoding="utf-8", newline="") as f:
-            f.write(body)
-        subprocess.run(["git", "-C", repo, "add", "old.vue"], capture_output=True)
-        subprocess.run(["git", "-C", repo, "commit", "-qm", "init"], capture_output=True)
-        with io.open(new_p, "w", encoding="utf-8", newline="") as f:
-            f.write(body)
-
-        sys.path.insert(0, os.path.join(ROOT, "checks"))
-        for mod_name in ("pc_code_check", "h5_code_check"):
-            mod = __import__(mod_name)
-            mod.REPO, mod.MODE, mod.TARGETED = repo, "strict", True
-            ctx_new = mod.build_ctx(new_p, "strict")
-            ctx_old = mod.build_ctx(old_p, "strict")
-            self.assertTrue(ctx_new.is_new_file,
-                            "%s：未跟踪新文件必须 is_new_file=True（否则 legacy 门把新代码当存量降级）"
-                            % mod_name)
-            self.assertFalse(ctx_old.is_new_file,
-                             "%s：已提交的文件必须 is_new_file=False" % mod_name)
+        self.assertNotIn("def severity", _read("checks/example_ruleset.py"),
+                         "规则集又自己实现了一份 severity —— 收敛后不该再有；"
+                         "保留两份实现就等于「改一处另一处不跟」的旧病复发")
 
 
 class TestG2DispatcherFailClosed(unittest.TestCase):
@@ -342,9 +306,9 @@ class TestG8CoverageMissingRuleData(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("cov", os.path.join(ROOT, "harness", "coverage.py"))
         C = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(C)
-        recs = [{"ts": "2026-09-13T20:00:00", "gate": "gxgk_pc", "rc": 1, "scope": "targeted", "ms": 10,
+        recs = [{"ts": "2026-09-13T20:00:00", "gate": "demo_pc", "rc": 1, "scope": "targeted", "ms": 10,
                  "rules": {"PC-CONSOLE": {"error": 1}}},
-                {"ts": "2026-09-13T20:01:00", "gate": "gxgk_pc", "rc": 0, "scope": "targeted", "ms": 9}]
+                {"ts": "2026-09-13T20:01:00", "gate": "demo_pc", "rc": 0, "scope": "targeted", "ms": 9}]
         rep = C.build_report(recs, {}, {})
         self.assertEqual(rep.get("n_no_rule_data"), 1, "缺规则级数据的条数必须被统计")
         self.assertIn("缺规则级数据", C.render_text(rep, "fake.jsonl"),

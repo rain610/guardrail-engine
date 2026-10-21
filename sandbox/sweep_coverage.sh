@@ -39,7 +39,17 @@ fi
 # ------------------------------------------------------------------------------
 
 cd "$(dirname "$0")/.." || exit 1
-GATES="hy_pc hy_h5 hy_hzy_pc hy_hzy_h5 gxgk_pc gxgk_h5 gxgk_backend"
+# gate 清单从配置读，不硬编码客户仓名：启用即纳入，新增 gate 不用改本脚本。
+GATES=$($HARNESS_PY - 2>/dev/null <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.path.join(os.getcwd(), "harness"))
+from _config import all_gates
+# 仓库级自检 gate（harness_self）不吃 --all，扫的是整个工程仓，排除。
+print(" ".join(n for n, g in sorted(all_gates().items())
+               if g.get("enabled")
+               and os.path.basename(g.get("script") or "") != "harness_self_check.py"))
+PYEOF
+)
 for g in $GATES; do
     printf '=== %s ===\n' "$g"
     # N-3（第四轮）：先取退出码再 tail —— 直接 `... | tail -2` 后取 $? 拿到的是 tail 的码（恒 0），

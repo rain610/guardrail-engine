@@ -144,19 +144,19 @@ ELECTRON_RUN_AS_NODE=1 "D:/Program Files/ZCode/ZCode.exe" "D:/Program Files/ZCod
    ```
    密钥**不落配置文件**，只在代理进程里注入（与 `~/.codex/get-key.py` 同一套原则）。
 
-**端到端实测结果（2026-09-13，`sandbox/verify_integrations.sh gxgk_pc zcode`）**：
+**端到端实测结果（2026-09-13，`sandbox/verify_integrations.sh <受测 gate> zcode`；内部端仓实测，gate/规则名以占位符代称）**：
 
 ```
 ▶ zcode（强制型）
   探针写入: yes ｜ 门禁被触发: yes ｜ 结论回灌模型: yes
-  日志: gxgk_pc targeted rc=1 ['PC-EOL','PC-CONSOLE','PC-VAUTH']
+  日志: <受测 gate> targeted rc=1 ['<规则ID>','<规则ID>','<规则ID>']
 zcode: ✅ 通过（门禁触发 + 结论回灌）；清场校验通过
 ```
 
 模型最终回复的原话（说明结论确实进了模型）：
 
 > 创建后**确实遇到了一次自动门禁检查**（由 harness 在写入后自动触发，不是我手动跑的）……
-> `harness 门禁未通过` / `PC 门禁 [strict] 针对性检查：1 个文件` / `❌ 发现 3 个阻断级问题`
+> `harness 门禁未通过` / `端门禁 [strict] 针对性检查：1 个文件` / `❌ 发现 3 个阻断级问题`
 
 **副产品**：ZCode 现在也进了 `verify_integrations.sh`（客户端参数写 `zcode`），
 与 claude / opencode / codebuddy / codex 并列，可一条命令复验。

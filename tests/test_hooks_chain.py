@@ -16,9 +16,7 @@ D:\d\...）导致 hook「装好但永远打不开脚本」——现有 47 例单
 运行：python -m unittest discover -s tests  （与单测一起跑；全部用临时目录，不碰真实端仓）
 快跑（跳过链路集成，只跑单测，约 6s（全量 ~60s））：HARNESS_FAST=1 python -m unittest discover -s tests
 """
-import io
 import os
-import re
 import sys
 import json
 import shutil
@@ -52,7 +50,6 @@ from _tmpclean import rmtree_force as _rmtree_force  # noqa: E402
 # 实测存量 1193 份 / 441 MB，只能靠数目录才发现。走强删助手。
 _LOG_TMPDIR = _mkdtemp("harness-testlog-")
 os.environ["HARNESS_LOG_FILE"] = os.path.join(_LOG_TMPDIR, "gate_log.jsonl")
-from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS = os.path.join(ROOT, "harness", "hooks")
@@ -70,7 +67,7 @@ PY = sys.executable
 #     pre_edit_always_passes / run_gate_disabled_gate_still_skips_rc0（0.52~0.60s），
 #     以及 2026-09-18 跨平台批次 2 补的 `--list` 汇总两向锁（0.50 / 0.32s，各起一次
 #     run_gate 子进程但**不建仓**，判据是 stdout 文本，故便宜）—— 后两条判的正是
-#     "换了机器、33 条路径一条都不在"这个形态，**恰恰只在换机器那次运行里才有价值**，
+#     "换了机器、配置的路径一条都不在"这个形态，**恰恰只在换机器那次运行里才有价值**，
 #     挂 _slow 等于把它从唯一需要它的场景里拿掉。
 #     类级会把它们一起清掉，而便宜锁的全部价值就是"改坏了编辑期立刻知道"。
 #     ★ **两种量法的坑（本批实测）**：同一例**单跑**与**在同一类里跑**能差一倍 ——
@@ -158,27 +155,34 @@ def _run(cmd, cwd=None, stdin_text=None, env=None):
                           env=env, timeout=120)
 
 
-_CLIENT_KEYS = []
+_CLIENT_REPO_KEYS = []
 
 
-def _client_gate_keys():
-    """客户 gate 键（不含 harness_self）—— 从 `--list` **自己的输出**反查，不写死清单。
+def _client_repo_keys():
+    """客户端 gate 引用的 repo 键（不含 harness_self）—— 从配置反查，不写死清单。
 
-    两个刻意的选择：
-      · 不写死：gate 数在长（本仓一年里 3→34），写死的清单是漂移源，而漂移的后果是
-        「用例还在绿、但它已经没在测那件事」。
-      · 不 `import _config`：那是**模块级可变状态**（`_config._HARNESS_ROOT` 会被别的用例
-        改指到自己的夹具目录），谁先跑谁说了算 —— 用别人的夹具配置来构造本用例的前提，
-        正是本仓反复记过的「测试之间互相投毒」。走子进程拿真实输出则没有这个口子。
+    注意反查的是 **gate.repo 指向的键**，不是 gate 名 —— 共享配置里两者可以不同名
+    （`example` → `example_repo`），按 gate 名写覆盖层会写到一个没人引用的键上，
+    用例于是"还在绿、但已经没在测那件事"。
+
+    为什么走子进程而不是本进程 `import _config`：那是**模块级可变状态**
+    （`_config._HARNESS_ROOT` 会被别的用例改指到自己的夹具目录），谁先跑谁说了算 ——
+    用别人的夹具配置来构造本用例的前提，正是本仓反复记过的「测试之间互相投毒」。
     结果进程内缓存一次（只读）。
     """
-    if not _CLIENT_KEYS:
-        r = _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "--list"])
-        for line in r.stdout.splitlines():
-            m = re.match(r"\s*\[ON \]\s+(\S+):", line)
-            if m and m.group(1) != "harness_self":
-                _CLIENT_KEYS.append(m.group(1))
-    return _CLIENT_KEYS
+    if not _CLIENT_REPO_KEYS:
+        code = (
+            "import json,sys;sys.path.insert(0, sys.argv[1]);"
+            "from _config import load;"
+            "cfg=load();"
+            "keys={(v.get('repo') or '') for k,v in (cfg.get('gates') or {}).items()"
+            " if k != 'harness_self'};"
+            "print(json.dumps(sorted(keys - {''})))"
+        )
+        r = _run([PY, "-c", code, os.path.join(ROOT, "harness")])
+        out = (r.stdout or "").strip().splitlines()
+        _CLIENT_REPO_KEYS.extend(json.loads(out[-1]) if out else [])
+    return _CLIENT_REPO_KEYS
 
 
 @_slow("慢速链路集成（本类全部真起临时 git 仓并装 hook）")
@@ -201,7 +205,7 @@ class TestInstallHooksScript(unittest.TestCase):
         """核心回归锁（2026-09-12 hooksPath 模式）：装完后 core.hooksPath 指向共享
         hooks-dir，且该目录下的分发器与 pre-commit.py 都能被 python 实际打开——
         防 MSYS 路径形态差异导致的「配好了但永远执行不到」假安装。"""
-        r = _run(["sh", os.path.join(SANDBOX, "install_hooks.sh"), "gxgk_pc"],
+        r = _run(["sh", os.path.join(SANDBOX, "install_hooks.sh"), "example"],
                  cwd=self.repo.path)
         self.assertEqual(r.returncode, 0, r.stderr)
         # 1) hooksPath 已写入仓库 config，且指向 harness 共享 hooks-dir
@@ -229,16 +233,13 @@ class TestInstallHooksScript(unittest.TestCase):
         if not _SH:
             self.skipTest("Git Bash sh 不可用（PATH 无 sh 且未找到 Git for Windows 固定安装位）")
         """hook 整链：staged 一个违规 .vue → sh 执行 hook → 退出码 1。"""
-        self.assertEqual(_run(["sh", os.path.join(SANDBOX, "install_hooks.sh"), "gxgk_pc"],
+        self.assertEqual(_run(["sh", os.path.join(SANDBOX, "install_hooks.sh"), "example"],
                               cwd=self.repo.path).returncode, 0)
-        # 让这个临时仓变成 config 里 gxgk_pc 的仓库？不行——config 指向真实端仓。
-        # 改用 hook 对 run_gate 的真实调用链：run_gate 按 gate 找 config repo，
-        # 临时仓 staged 文件不在 config repo 里 → pre-commit.py 的 --cached 收集走 config repo。
-        # 因此这里直接验证「hook 脚本本身可执行且退出码语义正确」：
+        # 这里直接验证「hook 脚本本身可执行且退出码语义正确」：
         hook = self._hook_path()
         r = _run(["sh", hook], cwd=self.repo.path)
-        # gxgk_pc gate 指向真实端仓（干净）→ 门禁跑通放行 rc=0；
-        # 本夹具用的是**未纳管的临时仓**，所以"查不了"是常态 → fail-closed 返回 2。
+        # 共享分发器按 cwd 识别 gate；本夹具用的是**未纳管的临时仓**，
+        # 所以"查不了"是常态 → fail-closed 返回 2。
         # 评审 v9（Codex P2-1）后分发器**透传**原退出码（2=CONFIG_ERROR / 1=BLOCKED），
         # 而旧实现在这里把 2 压成 1 —— 断言跟着更新为接受 2，并强制要求**有解释输出**，
         # 防止"静默非 0"（那才是真问题）。
@@ -332,8 +333,8 @@ class TestProtectedPathContract(unittest.TestCase):
             sys.path.insert(0, ROOT)
         from checks.harness_guard import _in_protected
 
-        for rel in ("checks/pc_code_check.py",                 # 规则实现
-                    "checks/components_allowlist.yaml",        # 权威清单
+        for rel in ("checks/example_code_check.py",            # 规则实现
+                    "checks/example_ruleset.py",               # 规则集
                     "config/harness.yaml",                     # 策略配置
                     "integrations/hooks/agentguard-gate.py"):  # ★ 本次漂移的那一类
             self.assertTrue(_in_protected(rel), "%s 应属受保护文件（保护循环会拦未提交改动）" % rel)
@@ -444,20 +445,20 @@ class TestHookChain(unittest.TestCase):
     @_slow("真起临时 git 仓 + 真跑 pre-commit 分发器（1.3s）")
     def test_pre_commit_clean_repo_passes(self):
         """干净临时仓（HARNESS_CONFIG 指向它）→ pre-commit.py 放行 rc=0。
-        2026-09-11 密闭化：不再碰真实 gxgk_h5 仓（原版违反本文件头部注释）。"""
+        2026-09-11 密闭化：不再碰真实端仓（原版违反本文件头部注释）。"""
         self._skip_if_engine_dirty()
-        r = _run([PY, os.path.join(HOOKS, "pre-commit.py"), "gxgk_pc",
+        r = _run([PY, os.path.join(HOOKS, "pre-commit.py"), "example",
                   "--repo", self.repo.path], env=self._cfg_env())
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def _cfg_env(self):
-        """生成临时 HARNESS_CONFIG：gxgk_pc gate 指向 self.repo.path（临时仓）。
+        """生成临时 HARNESS_CONFIG：example gate 指向 self.repo.path（临时仓）。
         让链路测试在任何装了 Python+git 的机器确定性可跑，不绑真实仓路径。"""
         cfg = os.path.join(self.tmpcfg, "c.yaml")
         with open(cfg, "w", encoding="utf-8") as f:
-            f.write(f"repos:\n  chain_pc: {self.repo.path}\n"
-                    "gates:\n  gxgk_pc:\n    enabled: true\n    repo: chain_pc\n"
-                    "    script: checks/pc_code_check.py\n")
+            f.write(f"repos:\n  chain_repo: {self.repo.path}\n"
+                    "gates:\n  example:\n    enabled: true\n    repo: chain_repo\n"
+                    "    script: checks/example_code_check.py\n")
         env = dict(os.environ)
         env["HARNESS_CONFIG"] = cfg
         # 2026-09-15（CI 回归修复）：夹具配置会**改已注册 gate 的策略字段**（repo/script），
@@ -485,26 +486,26 @@ class TestHookChain(unittest.TestCase):
         2026-09-11 密闭化：探针写临时仓，不再 git add 真实仓 index。"""
         self._skip_if_engine_dirty()
         self.repo.write("src/__chain_probe__.vue",
-                        "<template><eagle-tag /></template>\n<script>console.log(1)</script>\n")
+                        "<template><div /></template>\n<script>console.log(1)</script>\n")
         g = self.repo.git("add", "src/__chain_probe__.vue")
         self.assertEqual(g.returncode, 0)
-        r = _run([PY, os.path.join(HOOKS, "pre-commit.py"), "gxgk_pc",
+        r = _run([PY, os.path.join(HOOKS, "pre-commit.py"), "example",
                   "--repo", self.repo.path], env=self._cfg_env())
         self.assertEqual(r.returncode, 1, "违规 staged 未被拦截")
         self.assertIn("__chain_probe__.vue", r.stdout)
         # 2026-09-15 回归锁（CI 假绿/假红根因）：显式给了 --repo，cwd 纠偏**不得**劫持 gate。
         # 起因：工程仓注册成 harness_self 后，cwd=工程根的调用被纠偏成自检 gate →
         # 本机表现为 rc=0 假绿（staged 违规被拿去跑自检），CI 表现为 rc=2 假红。
-        self.assertNotIn("worktree 纠偏: gxgk_pc ->", r.stdout,
+        self.assertNotIn("worktree 纠偏: example ->", r.stdout,
                          "显式 --repo 的调用被 cwd 纠偏劫持（会把别的 gate 的规则套到本仓）")
-        self.assertIn("跑门禁 gxgk_pc", r.stdout,
+        self.assertIn("跑门禁 example", r.stdout,
                       "实际跑的不是指定的 gate（--repo 权威性被破坏）")
 
     @_slow("真起临时 git 仓 + 真跑 post-edit 入口（1.0s）")
     def test_post_edit_empty_changes_passes(self):
         """空改动护栏：无改动仓 → post-edit.py rc=0（防误触发全量扫描）。
         2026-09-11 密闭化：用临时空仓 + HARNESS_CONFIG。"""
-        r = _run([PY, os.path.join(HOOKS, "post-edit.py"), "gxgk_pc",
+        r = _run([PY, os.path.join(HOOKS, "post-edit.py"), "example",
                   "--repo", self.repo.path], env=self._cfg_env())
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
@@ -513,51 +514,14 @@ class TestHookChain(unittest.TestCase):
         """未跟踪违规新文件（AI 常见路径）→ post-edit.py rc=1。
         2026-09-11 密闭化：用临时仓 + HARNESS_CONFIG，不碰真实仓。"""
         self.repo.write("src/__chain_probe2__.vue", "<script>console.log(9)</script>\n")
-        r = _run([PY, os.path.join(HOOKS, "post-edit.py"), "gxgk_pc",
+        r = _run([PY, os.path.join(HOOKS, "post-edit.py"), "example",
                   "--repo", self.repo.path], env=self._cfg_env())
         self.assertEqual(r.returncode, 1, "未跟踪违规文件未被拦截")
         self.assertIn("__chain_probe2__.vue", r.stdout)
 
     def test_pre_edit_always_passes(self):
-        r = _run([PY, os.path.join(HOOKS, "pre-edit.py"), "gxgk_pc"])
+        r = _run([PY, os.path.join(HOOKS, "pre-edit.py"), "example"])
         self.assertEqual(r.returncode, 0)
-
-    def test_pre_edit_prints_paradigm_pointer(self):
-        """M3（2026-09-19）：pre-edit 除了「方案已确认」，还要打印**该端的范式入口**。
-
-        为什么只报「端」不报具体那一份：pre-edit 的签名是 `<gate名>`，**拿不到文件路径**
-        （post-edit 拿得到，所以两者是互补的两个编辑期反馈点）。拿不到任务就无从知道
-        是列表页还是上传，所以它报端级三行，具体读哪份由端级模板里的「按任务 → 必读」表决定。
-
-        锁三件事：
-        ① 三个端各自指的端级模板**在磁盘上真的存在**。模板被改名/搬走后钩子只会打个 ✗，
-           而 rc 仍是 0（本钩子设计上永不阻断），于是「提示没了」这种静默失效没人会察觉 ——
-           这条就是防它（对照：GLOBAL_AGENTS.md 当年正是这么静默死掉的，见 2026-09-19 M1）。
-        ② 真跑 CLI：输出里确实带该端模板路径，且没有 ✗（模板齐全）。
-        ③ 端从 checks/file_types.kind_of() 推，**不另写映射**。所以认不出的 gate 名必须走
-           兜底分支「认不出端点」—— 不许瞎猜一个端（猜错比不报更坏：钩子让你读 H5 范式、
-           门禁却按 PC 规则拦你）。
-
-        计时取舍（本文件头有「两种量法」的说明，这条例外说明如下）：本条**只起 2 个子进程**。
-        三个端的模板存在性是**纯文件系统断言**，不需要起进程；而「每个端都打印自己的模板」
-        这一层由①（三份都在）+ `kind_of` 自身的锁（tests/test_review_v8.py）共同覆盖，
-        为此多起 2 次 Python 要 ~0.6s（Windows 上每次启动 ~0.29s），买不到额外信息。
-        实测 2 跑 ≈0.6s，与 pre_edit_always_passes（0.52~0.60s）同档，故不挂 _slow。"""
-        ends = (("gxgk_pc", "pc"), ("c712_h5", "h5"), ("hy_backend", "backend"))
-        # ① 三份端级模板都得在（防「钩子还在、提示已静默失效」）
-        for _, kind in ends:
-            tpl = os.path.join(ROOT, "golden-patterns", "templates", "AGENTS_%s_slim.md" % kind)
-            self.assertTrue(os.path.isfile(tpl), "端级模板不存在：%s" % tpl)
-        # ② 真跑一次 CLI（pc 端）
-        r = _run([PY, os.path.join(HOOKS, "pre-edit.py"), "gxgk_pc"])
-        self.assertEqual(r.returncode, 0, "pre-edit 必须恒放行")
-        out = (r.stdout or "").replace("\\", "/")
-        self.assertIn("AGENTS_pc_slim.md", out, "未打印 pc 端端级模板指针：%s" % out)
-        self.assertNotIn("✗", out, "范式入口有缺失（模板被改名/搬走？）：%s" % out)
-        # ③ 认不出端 → 兜底提示，不猜端
-        r = _run([PY, os.path.join(HOOKS, "pre-edit.py"), "no_such_end"])
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("认不出端点", r.stdout or "")
 
     @_slow("真跑 run_gate（类内计时 1.2s；★ 见文件头关于两种量法的说明）")
     def test_run_gate_unregistered_gate_rc2(self):
@@ -577,7 +541,7 @@ class TestHookChain(unittest.TestCase):
         with open(cfg, "w", encoding="utf-8") as f:
             f.write("repos:\n  ghost_pc: D:/nonexistent_repo_xyz\n"
                     "gates:\n  ghost_pc:\n    enabled: false\n    repo: ghost_pc\n"
-                    "    script: checks/pc_code_check.py\n")
+                    "    script: checks/example_code_check.py\n")
         env["HARNESS_CONFIG"] = cfg
         try:
             r = subprocess.run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "ghost_pc"],
@@ -598,7 +562,7 @@ class TestHookChain(unittest.TestCase):
         with open(cfg, "w", encoding="utf-8") as f:
             f.write("repos:\n  ghost_pc: D:/nonexistent_repo_xyz\n"
                     "gates:\n  ghost_pc:\n    enabled: true\n    repo: ghost_pc\n"
-                    "    script: checks/pc_code_check.py\n")
+                    "    script: checks/example_code_check.py\n")
         env["HARNESS_CONFIG"] = cfg
         try:
             r = subprocess.run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "ghost_pc"],
@@ -609,14 +573,16 @@ class TestHookChain(unittest.TestCase):
             _rmtree(tmpcfg)
 
     def _list_with_repos(self, tmpcfg, target):
-        """写一份「所有客户 gate 的 repo 都指向 target」的覆盖层，跑 `run_gate.py --list`。
+        """写一份「客户端 gate 引用的 repo 键都指向 target」的覆盖层，跑 `run_gate.py --list`。
 
         `HARNESS_CONFIG` 是**覆盖层**（deep merge 到共享 config 之上），所以只需给 repos 段。
         """
+        keys = _client_repo_keys()
+        self.assertTrue(keys, "共享配置里没有可覆盖的 repo 键，本用例前提不成立")
         cfg = os.path.join(tmpcfg, "c.yaml")
         with open(cfg, "w", encoding="utf-8") as f:
             f.write("repos:\n" + "".join(
-                "  %s: %s\n" % (k, target.replace("\\", "/")) for k in _client_gate_keys()))
+                "  %s: %s\n" % (k, target.replace("\\", "/")) for k in keys))
         env = dict(os.environ)
         env["HARNESS_CONFIG"] = cfg
         return _run([PY, os.path.join(ROOT, "harness", "run_gate.py"), "--list"], env=env)
@@ -625,7 +591,7 @@ class TestHookChain(unittest.TestCase):
         """repos **都配了**、但本机一条都不存在 → `--list` 必须汇总出声，不许静默。
 
         2026-09-18（跨平台批次 2 补齐）：这是同事换盘符 / 换用户名 / 在 WSL 上 clone 之后
-        最常见的形态 —— 配置看起来是配好的，而逐行打出来的 33 个 `@ D:/...` 里**没有一行
+        最常见的形态 —— 配置看起来是配好的，而逐行打出来的 `@ D:/...` 里**没有一行
         是真的**。此前 `--list` 只逐行列路径、一句汇总都没有，正是本批要消灭的「静默失效」。
         判据看**磁盘**（不是「配置里写没写」），与 `--validate` 的 ⊘ 同源。
         """
@@ -640,7 +606,7 @@ class TestHookChain(unittest.TestCase):
             _rmtree(tmpcfg)
 
     def test_list_stays_quiet_when_every_configured_repo_exists(self):
-        """阴性对照：那 33 条路径**全都在**时，上面那句汇总一个字都不许出现。
+        """阴性对照：那些路径**全都在**时，上面那句汇总一个字都不许出现。
 
         没有这条，把汇总写成无条件的也会绿 —— 而那句提示天天出现的话，换来的不是「知道」
         而是**不再读**，与漏报是同一种失败（`_config._policy_notice_once` 的 docstring
@@ -663,10 +629,19 @@ class TestHookChain(unittest.TestCase):
         self.assertIn("不在 harness 受管仓库", r.stdout)
 
     def test_exit_code_contract_documented_matches(self):
-        """退出码契约与 AGENTS.md 文档一致（防文档漂移）。"""
+        """退出码契约与 AGENTS.md 文档一致（防文档漂移）。
+
+        只锁语义不锁排版：文档会重排（反引号/顿号/换行），而 0/1/2/3 的含义
+        是跨三个入口（CLI / hook / auto-gate）的硬契约，漂了就是调用方误判。
+        """
         with open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8") as fh:
             doc = fh.read()
-        self.assertIn("0=通过 / 1=门禁拦截 / 2=配置错 / 3=非受管仓库", doc)
+        line = next((l for l in doc.splitlines() if "退出码" in l), "")
+        self.assertTrue(line, "AGENTS.md 缺少退出码契约")
+        for code, meaning in (("0", "通过"), ("1", "拦截"),
+                              ("2", "配置错"), ("3", "非受管仓")):
+            self.assertIn(f"`{code}` {meaning}", line,
+                          "AGENTS.md 退出码契约漂移（缺 %s=%s）：%s" % (code, meaning, line))
 
 
 # P0-3 探针追加的那一行（**字节**形态）。追加与还原**共用这一份常量**：
@@ -690,7 +665,7 @@ class TestSentinelBlocksDirtyEngine(unittest.TestCase):
     """
 
     # 受保护文件（_in_protected 返回 True）。只追加一行无害注释，tearDown 必还原。
-    PROBE = "checks/pc_code_check.py"
+    PROBE = "checks/example_code_check.py"
 
     def setUp(self):
         self.repo = _TmpGitRepo()           # 与工程仓无关的临时端仓，作为 guard 的 cwd
@@ -729,8 +704,8 @@ class TestSentinelBlocksDirtyEngine(unittest.TestCase):
 
         ★ 2026-09-30 竞态修复：**不再「读回原字节 + open(..., "wb") 整写」**。
         那个写法是**先截断后写**，截断与实际写入之间有一个窗口，读者在窗口里读到
-        **0 字节**。这不是纸面推理：`checks/pc_code_check.py` 正是别的测试要读的文件
-        （`test_entry_level.py` 读它断言缺 node 告警的接线），两者并行时读者就落在窗口里。
+        **0 字节**。这不是纸面推理：探针文件正是本套件反复 import / 执行的脚本，
+        两者并行时读者就落在窗口里。
         2026-09-30 的现场原文：`TestSyntaxSensorNotSilent::test_node_missing_must_announce`
         报 `AssertionError: 'warn_node_missing_once' not found in ''` —— 读到的就是**空串**
         （该模块那一跑 63 例 / 286.8s / failures=1）。这类假红的形状是**负载相关**：
@@ -785,7 +760,7 @@ class TestSentinelBlocksDirtyEngine(unittest.TestCase):
         于是任何人带着别的受保护文件改动跑套件，都会在**正确行为**下拿到红灯。
 
         `include_probe=True`：连探针文件自身也算进去。还原不再动工作区之后，开发者若在
-        `checks/pc_code_check.py` 上有未提交改动，它就是"脏"的 —— 此时"干净工程仓"这个前提
+        `checks/example_code_check.py` 上有未提交改动，它就是"脏"的 —— 此时"干净工程仓"这个前提
         同样不成立，调用方应据此 skip 而不是把红灯记到哨兵头上。
         """
         if ROOT not in sys.path:
@@ -806,12 +781,12 @@ class TestSentinelBlocksDirtyEngine(unittest.TestCase):
 
     def test_sentinel_blocks_dirty_engine_from_end_repo(self):
         """工程仓门禁文件未提交 + 从端仓 cwd 调 guard（非 self）→ rc=1 拦截。"""
-        r = _run([PY, os.path.join(ROOT, "checks", "harness_guard.py"), "gxgk_pc"],
+        r = _run([PY, os.path.join(ROOT, "checks", "harness_guard.py"), "example"],
                  cwd=self.repo.path)
         self.assertEqual(r.returncode, 1,
                          "哨兵未拦截脏工程仓（门禁可被静默弱化）: %s"
                          % (r.stdout + r.stderr))
-        self.assertIn("pc_code_check.py", (r.stdout or "") + (r.stderr or ""),
+        self.assertIn("example_code_check.py", (r.stdout or "") + (r.stderr or ""),
                       "拦截输出未指出被改动的受保护文件")
 
     def test_sentinel_passes_with_maintenance_tag(self):
@@ -837,7 +812,7 @@ class TestSentinelBlocksDirtyEngine(unittest.TestCase):
         if dirty:
             self.skipTest("工程仓另有未提交的受保护文件，本断言的隐含前提（整仓干净）不成立："
                           + ", ".join(dirty))
-        r = _run([PY, os.path.join(ROOT, "checks", "harness_guard.py"), "gxgk_pc"],
+        r = _run([PY, os.path.join(ROOT, "checks", "harness_guard.py"), "example"],
                  cwd=self.repo.path)
         self.assertEqual(r.returncode, 0,
                          "干净工程仓被哨兵误拦（误报型灾难）: %s"
@@ -917,7 +892,7 @@ class TestProbeRestoreNeverExposesEmptyFile(unittest.TestCase):
             # 直接借用真实那套 setUp/还原逻辑（同一个对象、同两个属性），不另抄一份：
             # 抄一份就会各自漂移，而本锁要钉的恰恰是**那个**实现的并发行为。
             t = TestSentinelBlocksDirtyEngine("test_sentinel_clean_engine_passes")
-            t._probe = os.path.join(td, "pc_code_check.py")
+            t._probe = os.path.join(td, "example_code_check.py")
             t._orig = body
             with open(t._probe, "wb") as f:
                 f.write(body)

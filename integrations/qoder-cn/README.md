@@ -144,7 +144,7 @@ qoderclicn -p "<提示词>" -w <仓库> --permission-mode bypass_permissions
 ```
 
 **✅ 已登录 + 已实跑**（2026-09-13）：设备授权登录成功（`status` → `Username: 魏中雨 / Login Method: browser`），
-随后 `sh sandbox/verify_integrations.sh gxgk_pc qoder` 得到：
+随后 `sh sandbox/verify_integrations.sh <受测 gate> qoder` 得到：
 
 ```
 ▶ qoder（强制型）
@@ -263,7 +263,7 @@ Hook [...gate.py qoder PostToolUse] stdout:  harness 门禁未通过…  ← 结
 
 ### 7.4 改完的实测结果（同日 18:28，H5 端）
 
-`sh sandbox/verify_integrations.sh gxgk_h5 qoder` →
+`sh sandbox/verify_integrations.sh <受测 H5 gate> qoder` →
 
 ```
 qoder: ✅ 通过（门禁触发 + 结论回灌）     清场校验通过

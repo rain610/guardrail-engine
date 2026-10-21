@@ -2,8 +2,9 @@
 """P2-2 下半段：对「从未运行」的 gate 逐个客户仓跑 acceptance 并留档。
 
 判据与留档口径（与评审 v9 一致）：四项证据（hook / probe / clean / syntax）+ 台账留档才算"上线"。
-本脚本只跑 acceptance_check 并落一份可提交报告，不修改任何客户仓。
+本脚本只跑 acceptance_check 并落一份本机报告（`reports/` 已 gitignore），不修改任何客户仓。
 """
+import datetime
 import io
 import json
 import os
@@ -19,7 +20,7 @@ for _s in (sys.stdout, sys.stderr):
 
 # 工程根由**本文件位置**推导（2026-09-18 批次 5）：原先写死 `D:/Rain/project/agentguard`，
 # 同事机器上必然指错。范式同 sandbox/install_shim.py、integrations/plugins/build_plugin.py。
-# 四处锚点（config/ reports/ sandbox/ docs/）全在本工程同树内，推导完全等价。
+# 三处锚点（config/ reports/ sandbox/）全在本工程同树内，推导完全等价。
 R = pathlib.Path(__file__).resolve().parent.parent
 
 # 仓→路径改从**生效配置**读（2026-09-18 批次 5，修批次 2 的连带遗漏）：
@@ -80,7 +81,10 @@ for g in never:
 out.append("\n## 汇总\n\n| gate | 结果 | 仓库 |\n|---|---|---|\n")
 for g, s, p in summary:
     out.append("| %s | %s | `%s` |\n" % (g, s, p))
-(R / "docs/reports/acceptance-2026-09-15.md").write_text("".join(out), encoding="utf-8", newline="")
+out_dir = R / "reports"
+out_dir.mkdir(parents=True, exist_ok=True)
+(out_dir / ("acceptance-%s.md" % datetime.date.today().isoformat())).write_text(
+    "".join(out), encoding="utf-8", newline="")
 
 print("[acceptance] 对象 %d 个（从未运行）；本机有仓并已跑 %d 个"
       % (len(never), sum(1 for _g, s, _p in summary if s.startswith("rc="))))

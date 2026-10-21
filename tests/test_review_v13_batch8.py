@@ -51,7 +51,7 @@ sys.path.insert(0, HARNESS_LIB)
 from _engine_copy import EngineCopy            # noqa: E402
 
 BASE_YAML = os.path.join(ROOT, "config", "harness.yaml")
-GATE = "hy_pc"                                 # base 里 enabled: true 的普通端 gate
+GATE = "example"                               # base 里 enabled: true 的示例 gate
 # 快跑（HARNESS_FAST=1）：本文件的慢在**链路集成**（现建工程副本 + 真跑 run_gate 子进程），
 # 纯逻辑那几类（信号复位 / 标记作用域 / mark 列）是文件读取与函数调用，快跑档照跑。
 FAST = os.environ.get("HARNESS_FAST") == "1"
@@ -173,7 +173,7 @@ class TestWeakenedRecordedInLedger(_Engine):
 
     def test_other_gates_override_is_not_marked(self):
         """③ 只标自己：别的 gate 的覆盖不能标到这一行头上（那等于说假话）。"""
-        other = "gxgk_pc" if GATE != "gxgk_pc" else "hy_pc"
+        other = "harness_self"
         self._write_local("gates:\n  %s:\n    mode: loose\n" % other)
         rc, out, rows = self._run({"HARNESS_ALLOW_POLICY_OVERRIDE": "1"})
         self.assertEqual(len(rows), 1, "%s\n%s" % (rows, out))
@@ -212,7 +212,7 @@ class TestWeakenMarks(_EnvGuard):
         self._config.load()
         self.assertEqual(self.run_gate._weaken_marks(GATE),
                          ["policy_override:gates.%s.mode" % GATE])
-        self.assertEqual(self.run_gate._weaken_marks("gxgk_pc"), [],
+        self.assertEqual(self.run_gate._weaken_marks("harness_self"), [],
                          "别的 gate 的覆盖不得标到这一行")
 
     def test_clean_config_returns_empty(self):

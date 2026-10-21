@@ -65,7 +65,7 @@ python -c "import shutil; print('node :', shutil.which('node') or '✗ 未找到
 ## 零、先 clone 引擎仓（**包内没有引擎，这一步在包外**）
 
 安装包里只有"壳"：CLI 轮子、插件市场 bundle、几支工具脚本、文档。**门禁引擎不在包里** ——
-规则、配置、钩子、黄金范式全在公司 GitLab 的 `agentguard` 仓库里。这是**有意**的：
+规则、配置、钩子、黄金范式全在 `agentguard` 引擎仓里。这是**有意**的：
 提交钩子 / MCP 注册 / 编辑期 shim 全都**指向仓库**，引擎一更新你这边就是新的，不用重装包
 （见「五」那张表的头四行）。所以包里**永远装不出**引擎来，得先 clone 一次。
 
@@ -84,7 +84,7 @@ python "<本包目录>\bootstrap.py" --check  # 只体检（git 在不在 / 目�
 > 它做的事就是下面这条命令，自己敲也一样（换地址 / 走 SSH 时用这个）：
 >
 > ```bash
-> git clone https://resources.ehsway.com:8929/developer/agentguard.git
+> git clone https://github.com/rain610/agentguard.git
 > ```
 
 - 下面全文的 `<HARNESS>` 指的就是**clone 出来的那个目录**。
@@ -100,7 +100,8 @@ python "<本包目录>\bootstrap.py" --check  # 只体检（git 在不在 / 目�
   `<HARNESS>/agentguard/mcp.py` 在不在，不在就直接退出并报
   `✗ 在 X 下没找到 agentguard/mcp.py`（若那个目录**根本不存在**，它还会顺手把
   clone 命令打给你）。看到这句先回头看本节 —— 那是这一步没做，不是路径拼错。
-- **拿不到仓库权限**：找 harness 负责人开内网 GitLab 权限（各客户业务仓也在同一个实例上）。
+- **拿不到仓库权限**：公开源在 `github.com/rain610/agentguard`；内网/私有镜像用
+  `bootstrap.py --url <地址>` 换源，访问权限找对应仓库的管理员。
 
 ### 第 1 步：把 repos 填成本机路径（**不做 = 本机零受管**）
 
@@ -206,10 +207,9 @@ agentguard --help
 
   前两样按各客户端的方式配 hook，配置位置见 `integrations/<客户端>/README.md`。
 
-  **第三样（全局守则）为什么在这一步**：三份端级模板
-  （`golden-patterns/templates/AGENTS_{pc,h5,backend}_slim.md`）都指向它，而它此前**没有生成者**
-  —— 只有 `sandbox/bootstrap_agent_env.sh` 会写它，那支脚本不在安装流程里、也没有任何调用方，
-  于是照本文做完，「端级模板指着的那个文件」根本不存在。装 shim 这一步是**必然会跑到**的一步，
+  **第三样（全局守则）为什么在这一步**：它此前**没有生成者** —— 只有
+  `sandbox/bootstrap_agent_env.sh` 会写它，那支脚本不在安装流程里、也没有任何调用方，
+  于是照本文做完，各 AI 工具自动加载的入口路由根本不存在。装 shim 这一步是**必然会跑到**的一步，
   所以由它顺带渲染。
 
   ⚠ 它跟另外两样**不一样**，两点要知道：

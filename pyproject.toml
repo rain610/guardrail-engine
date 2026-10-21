@@ -12,7 +12,7 @@ readme = "README.md"
 # 3.11 以下从未测试 —— 别再写 >=3.8（那会让用户装完撞 AttributeError）。
 requires-python = ">=3.11"
 authors = [{ name = "agentguard" }]
-license = { text = "Internal use (license decision pending)" }
+license = { text = "MIT" }
 dynamic = ["version"]
 
 [project.scripts]

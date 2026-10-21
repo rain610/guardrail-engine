@@ -332,11 +332,11 @@ TOOLS = [
                         "Targeted: pass `gate` (+ optional `files`). Auto-detect: pass `repo` (a repository directory). "
                         "Return codes: 0=PASS; 1=BLOCKED (fix the reported ❌ findings, do not bypass); "
                         "2=config/registry error; 3=repository not managed. "
-                        "Example: {\"repo\": \"D:/work/myrepo\"} or {\"gate\": \"gxgk_pc\", \"files\": [\"src/a.vue\"]}."),
+                        "Example: {\"repo\": \"D:/work/myrepo\"} or {\"gate\": \"example\", \"files\": [\"src/a.vue\"]}."),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "gate": {"type": "string", "description": "Gate name from harness_list_gates, e.g. gxgk_pc."},
+                "gate": {"type": "string", "description": "Gate name from harness_list_gates, e.g. example."},
                 "files": {"type": "array", "items": {"type": "string"},
                           "description": "Files to check (absolute or relative to the gate repo). Optional when gate scans all."},
                 "repo": {"type": "string", "description": "Repository directory for auto gate detection (alternative to gate)."},

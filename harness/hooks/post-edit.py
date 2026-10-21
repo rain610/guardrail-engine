@@ -41,7 +41,7 @@ def main():
         if i + 1 < len(args):
             repo_override = args[i + 1]
             args = args[:i] + args[i + 2:]
-    gate_name = args[0] if args else "gxgk_pc"
+    gate_name = args[0] if args else "example"
     files = args[1:]
     sys.path.insert(0, HARNESS)
     from _config import gate, changed_files_ex

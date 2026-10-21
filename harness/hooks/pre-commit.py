@@ -46,7 +46,7 @@ def main():
     #   ① 显式 argv[1]（旧 install_hooks.sh 拷贝模式 / 手动调用 / 单测）
     #   ② 无参（core.hooksPath 共享分发器模式）→ 必须靠 cwd 纠偏识别 gate；
     #      纠偏失败 = 该仓未纳管 → 打印指引后 rc=2（fail-closed），绝不 fallback 到
-    #      某个默认 gate 误跑别人的规则（旧默认 gxgk_pc 是 zhongxin 事故的根源之一）。
+    #      某个默认 gate 误跑别人的规则（旧默认 gate 是某次误跑事故的根源之一）。
     gate_name = sys.argv[1] if len(sys.argv) > 1 else None
     rest = sys.argv[2:] if gate_name else sys.argv[1:]
     repo_override = None
@@ -71,7 +71,7 @@ def main():
         cwd_gate, cwd_repo = _mod._find_gate(os.getcwd())
         # 2026-09-15（CI 回归修复）：**显式 --repo 是权威，cwd 纠偏不得劫持它**。
         # 起因：工程仓自己注册成 harness_self 后（2026-09-14 自检 gate），任何 cwd=工程根的
-        # 调用——测试夹具、工具、单测——都被纠偏成 harness_self：传进来的 gxgk_pc 及其
+        # 调用——测试夹具、工具、单测——都被纠偏成 harness_self：传进来的端 gate 及其
         # staged 违规文件被拿去跑自检 → rc=0 **假绿**（本机复现；CI 上因 config repo 不存在
         # 表现为 rc=2 假红）。cwd 纠偏只服务于「hooksPath 分发器 / worktree」场景，
         # 那种调用**不带 --repo**；带 --repo 说明调用方已明确指定目标仓。

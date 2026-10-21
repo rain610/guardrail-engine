@@ -21,7 +21,7 @@ agentguard 统一门禁调度器（对标 Codex hooks / exec 接口）
   python harness/run_gate.py --summary [最近N条]     # 聚合 reports/gate_log.jsonl（默认500）
   python harness/run_gate.py --validate              # 配置体检:遍历全部gate验证路径/脚本/ruleset(改完yaml跑一次)
 
-gate 名示例：gxgk_pc / gxgk_h5 / gxgk_backend / hy_pc / hy_h5 / hy_backend / hy_hzy_pc ...
+gate 名示例：example / harness_self（端仓库自定义的 gate 名同样适用）
 退出码：0=通过，1=门禁拦截，2=配置错误
 
 可观测性（2026-09-03；2026-09-29 起月度分片）：每次真实执行检查后追加一行 JSON 到
@@ -618,7 +618,7 @@ def _rule_ids_for_script(script_rel):
     """
     base = os.path.basename(script_rel or "")
     ep = {"pc_code_check.py": "pc", "h5_code_check.py": "h5",
-          "backend_layer_check.py": "backend"}.get(base)
+          "backend_layer_check.py": "backend", "example_code_check.py": "example"}.get(base)
     if not ep:
         return None
     try:
@@ -1013,16 +1013,16 @@ def main():
         return 2
 
     # 组装命令：把相对文件转成绝对（相对仓库根），并注入 --repo
-    # 2026-09-09: 同时注入 --gate —— 脚本默认 GATE_NAME=gxgk_backend，不传会导致
-    # gate 级配置（encoding/legacy_baseline 等）全部读到 gxgk 的（zhongxin 首启暴露）。
+    # 2026-09-09: 同时注入 --gate —— 端脚本可能硬编码 GATE_NAME 默认值，不传会导致
+    # gate 级配置（encoding/legacy_baseline 等）全部读到别的 gate 的（首启暴露）。
     cmd = [sys.executable, script, "--repo", repo]
     # 2026-09-16 修复（评审 v13 严重 1）：上面那句"同时注入 --gate"**当时只对
     # backend_layer_check.py 生效**（条件里写死了脚本名）。后果：PC/H5 走 run_gate
     # ——也就是 pre-commit / post-edit / auto-gate / CLI / MCP 的**全部**真实入口——
-    # 时 GATE_NAME 一直停在脚本里硬编码的 gxgk_pc/gxgk_h5，load_policy 读的是别家 gate 的
+    # 时 GATE_NAME 一直停在脚本里硬编码的端 gate 名，load_policy 读的是别家 gate 的
     # mode / disabled_rules / legacy_baseline / line_ending；而 rule_base.disabled_rules
     # 是"按名查到了就返回"，按 repo 反查的兜底分支因此永不执行（PC/H5 侧）。
-    # 实测后果：10 个非 gxgk H5 gate 的 `disabled_rules: [H5-UPLOAD]` 静默失效（存量
+    # 实测后果：10 个其它 H5 gate 的 `disabled_rules: [H5-UPLOAD]` 静默失效（存量
     # 51 处 uni.uploadFile 调用会被拦）；ntrx_pc 声明 mode: loose 却按 strict 拦存量组件引用。
     # 端脚本集合取自 checks/registry.py 的 ENDPOINT_SCRIPTS（唯一数据源，不另维护一份清单）；
     # harness_self_check.py 这类非端脚本不受影响（它不解析 argv，塞 --gate 没有意义）。
@@ -1130,7 +1130,7 @@ def main():
     #     副本、auto-gate 三个分支要么带 --all 要么带非空文件、doctor/demo 传单个文件、
     #     sweep 显式 --all、acceptance 传 probe 文件、CI 走 --validate。
     #   · 走到这一形态的是**手敲**：台账里 8 条贵得离谱的 targeted/files=0 行
-    #     （hy_hzy_backend 2×1275s、gxgk_backend 3×405s、gxgk_pc 78s…）entry 字段全为空
+    #     （实测某些 gate 2×1275s、3×405s、78s…）entry 字段全为空
     #     ＝ 直接调 run_gate.py（经 CLI/MCP/钩子的行都带 entry）—— 正是本守卫要拦的形态。
     #   · 两个入口**点名自己的意图**（同批改；argv 语义不变，脚本判据 is_full 本来就含它）：
     #     cli.py `run <gate>` 与 mcp.py `{gate}` 在不传文件时以前也是全量，现在由它们显式补

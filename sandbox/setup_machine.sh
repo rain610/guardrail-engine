@@ -161,6 +161,8 @@ echo "--- 门禁自检（每端抽 1 个 gate 跑 auto-gate 验证链路）---"
 # 会变成"看着在跑、其实没数"）。需要计数请用 `grep -c` 在循环外重算（参照 doctor.sh 的 N_HOOK_* 模式）。
 echo "$GATES" | while IFS="$(printf '\t')" read -r GATE REPO STATUS; do
     [ -z "$GATE" ] && continue
+    # 评审 C-1：Python 输出在 Windows 上以 \r\n 结尾，命令替换后比较恒假 → 先裁 \r。
+    STATUS=${STATUS%$'\r'}
     [ "$STATUS" = "OK" ] || continue
     cd "$REPO" && $HARNESS_PY "$HARNESS_WIN/harness/agents/auto-gate.py" >/dev/null 2>&1 \
       && echo "  ✅ $GATE: auto-gate 链路正常" \

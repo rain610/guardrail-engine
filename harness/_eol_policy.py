@@ -8,8 +8,8 @@
 11 条 CRLF）。它是"这份代码应该是什么行尾"这个**从未被复量的假设**，而它的优先级高于事实：
 
     # 本仓检出的实际行尾（维护者自己的 Windows 机器上）
-    git -C .../agentguard_mobile_net-gxgk ls-files --eol -- src | awk '{print $2}' | sort | uniq -c
-    #   → 1732 w/crlf / 27 w/lf          ← 而 gate gxgk_h5 声明的是 line_ending: LF
+    git -C <某个 H5 端仓> ls-files --eol -- src | awk '{print $2}' | sort | uniq -c
+    #   → 1732 w/crlf / 27 w/lf          ← 而该 gate 声明的是 line_ending: LF
     # 台账里那 1489 条 H5-CRLF 错误就是它的产物：**纯行尾误报，今天就在 Windows 上发生**。
 
 同事换盘符 / 换用户名 / 在 WSL 上 clone，只会让它更严重（Linux 检出是 LF，而 PC gate 声明
@@ -64,7 +64,7 @@ CRLF → 每一个文件都被判"行尾异常"）。所以修法不是换个新
 ================================================================================
   · `eol_text.index_eol_map()` 取的是 **`i/`（索引侧）**，回答"git 会把它**存**成什么"；
     本模块要 **`w/`（工作树侧）**，回答"它现在**躺**在盘上是什么"。行尾门禁读的是磁盘字节，
-    所以必须比工作树侧 —— 拿索引侧比，gxgk_h5 那 1732 个 CRLF 照样全红（它 `i/lf w/crlf`）。
+    所以必须比工作树侧 —— 拿索引侧比，那个 H5 仓那 1732 个 CRLF 照样全红（它 `i/lf w/crlf`）。
   · 位置也是硬约束：不能放 `sandbox/`（`tests/_engine_copy.py` 只拷 `checks/ harness/ config/`
     三棵子树，"工程副本"里根本没有 sandbox/），也不能 `import eol_text`
     （`tests/test_stdlib_only.py` 只收引擎层模块 → 会走 find_spec 失败分支判"疑似第三方"）。
@@ -241,7 +241,7 @@ def resolve(repo, gate_cfg, endpoint_default, gate_name=""):
         # 而**变了**"（`auto` 的失效形态是**静默翻转**：整仓重检出之后门禁跟着换了期望值，
         # 不报错、不提示，看起来一切正常）：
         #   · Windows 上的 PC 仓 → 检出 CRLF == 端默认 CRLF → 静默（日常，占绝大多数）；
-        #   · Windows 上的 H5 仓 → 检出 CRLF ≠ 端默认 LF → **出声**（gxgk_h5 那 1489 条误报的成因）；
+        #   · Windows 上的 H5 仓 → 检出 CRLF ≠ 端默认 LF → **出声**（某个 H5 仓那 1489 条误报的成因）；
         #   · Linux/WSL 上的 PC 仓 → 检出 LF ≠ 端默认 CRLF → **出声**（同事在 WSL 上最需要的那句）。
         # 为什么不"每次解析都报一条"：日常形态永远相同，每提交一行不变的话换来的不是"知道"
         # 而是**不再读** —— 那与把它删掉是同一种失败（`_config._policy_notice_once` 的

@@ -290,7 +290,7 @@ class TestInstrumentationEndToEnd(unittest.TestCase):
         self.cfg = os.path.join(self.dir, "cfg.yaml")
         with open(self.cfg, "w", encoding="utf-8", newline="") as f:
             f.write("repos:\n  t_pc: %s\ngates:\n  t_pc:\n    enabled: true\n    repo: t_pc\n"
-                    "    script: checks/pc_code_check.py\n    src: src\n    mode: strict\n"
+                    "    script: checks/example_code_check.py\n    src: src\n    mode: strict\n"
                     "    run_on: [pre_commit, post_edit]\n" % self.repo.replace("\\", "/"))
         self.file = os.path.join(self.repo, "src", "demo.vue")
         self.log = os.path.join(self.dir, "log.jsonl")
@@ -300,20 +300,20 @@ class TestInstrumentationEndToEnd(unittest.TestCase):
 
     def test_check_script_writes_stats_when_asked(self):
         stats = os.path.join(self.dir, "stats.json")
-        r = _run([PY, os.path.join(ROOT, "checks", "pc_code_check.py"), "--gate", "t_pc",
+        r = _run([PY, os.path.join(ROOT, "checks", "example_code_check.py"), "--gate", "t_pc",
                   "--repo", self.repo, self.file],
                  env={"HARNESS_STATS_FILE": stats, "HARNESS_CONFIG": self.cfg})
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertTrue(os.path.exists(stats), "设了 HARNESS_STATS_FILE 就该写出统计")
         with open(stats, encoding="utf-8") as f:
             data = json.load(f)
-        self.assertIn("PC-CONSOLE", data["rules"], data)
+        self.assertIn("NO-CONSOLE", data["rules"], data)
         self.assertEqual(data["gate"], "t_pc")
         self.assertEqual(data["scope"], "targeted")
 
     def test_no_stats_file_when_not_asked(self):
         """零影响契约：不设环境变量 → 不产生任何统计文件。"""
-        r = _run([PY, os.path.join(ROOT, "checks", "pc_code_check.py"), "--gate", "t_pc",
+        r = _run([PY, os.path.join(ROOT, "checks", "example_code_check.py"), "--gate", "t_pc",
                   "--repo", self.repo, self.file], env={"HARNESS_CONFIG": self.cfg})
         self.assertEqual(r.returncode, 1)
         stray = [f for f in os.listdir(self.dir) if f.startswith("harness_stats")]
@@ -326,7 +326,7 @@ class TestInstrumentationEndToEnd(unittest.TestCase):
         with open(self.log, encoding="utf-8") as f:
             rec = json.loads(f.readline())
         self.assertIn("rules", rec, "run_gate 应把子进程统计并入运行记录")
-        self.assertIn("PC-CONSOLE", rec["rules"])
+        self.assertIn("NO-CONSOLE", rec["rules"])
         self.assertEqual(rec["gate"], "t_pc")
 
     def test_coverage_main_json_smoke(self):
@@ -349,23 +349,21 @@ class TestInstrumentationEndToEnd(unittest.TestCase):
 
 
 class TestStaticCatalog(unittest.TestCase):
-    """静态清单必须覆盖三端（否则某些规则在自评里隐身）。"""
+    """静态清单必须覆盖示例规则集（否则某些规则在自评里隐身）。"""
 
-    def test_three_endpoints_present(self):
+    def test_example_rules_present(self):
         rules = COV.static_rules()
         eps = {v["endpoint"] for v in rules.values()}
-        self.assertTrue({"pc", "h5", "backend"}.issubset(eps), eps)
-        for rid in ("PC-CONSOLE", "H5-CONSOLE", "R9"):
+        self.assertEqual(eps, {"example"}, eps)
+        for rid in ("NO-CONSOLE", "NO-HARDIP", "EOL-UNIFIED"):
             self.assertIn(rid, rules)
 
     def test_loader_level_checks_included(self):
-        """第四轮 N-1：loader 级检查必须都在册。
-
-        原来这条只断言 PC-EOL——结果语法规则（PC-SYNTAX/H5-SYNTAX）和编码卫生（ENC）都不在清单里，
-        而语法规则正是门禁史上第一次静默失效的那条。断言太窄 = 缺口看不见。"""
+        """loader 级检查（非 Rule 实例）也必须在册，否则在报告里隐身。"""
         rules = COV.static_rules()
-        for rid in ("PC-EOL", "PC-SFC", "PC-SYNTAX", "H5-SYNTAX", "ENC", "(读取失败)"):
-            self.assertIn(rid, rules, f"{rid} 是 loader 级检查，必须在自评清单里，否则在报告里隐身")
+        # 示例门禁现在没有 loader 级检查（3 条全是 Rule 实例），清单应为空而不报错。
+        self.assertEqual(COV.LOADER_LEVEL_CHECKS, {})
+        self.assertIn("EOL-UNIFIED", rules, "行尾检查是示例门禁的实际规则，必须在自评清单里")
 
     def test_all_loader_level_bump_ids_are_in_catalog(self):
         """机械锁（不靠人眼）：checks/*.py 里所有 `bump("<字面量>")` 的 ID 都必须在清单里。
@@ -391,19 +389,13 @@ class TestStaticCatalog(unittest.TestCase):
                          f"这些 loader 级埋点 ID 不在自评清单里（会在报告里隐身）："
                          f"{ {m: where[m] for m in missing} }")
 
-    def test_targeted_only_table_matches_loader(self):
-        """④ 口径标注不能"写死就不管"：R7 之所以只在定向可触发，是因为后端全量扫描只喂 .cs。
-        loader 的收集方式一改，这张表就过时 → 锁红。"""
-        with open(os.path.join(ROOT, "checks", "backend_layer_check.py"), encoding="utf-8") as f:
-            src = f.read()
-        self.assertIn("def iter_cs_files", src)
-        self.assertIn("iterable = target_files if target_files else iter_cs_files(ROOT)", src,
-                      "后端全量扫描的取文件方式变了 —— TARGETED_ONLY 里 R7 的说明需要重新核对")
-        self.assertIn("R7", COV.TARGETED_ONLY)
-        self.assertIn("R7", COV.render_text(COV.build_report(
-            [{"ts": "2026-09-12T10:00:00", "gate": "t", "scope": "targeted", "rc": 0, "ms": 1, "files": 1, "rules": {"R7": {"error": 1}}}],   # K4：空 dict 现在算"无数据"，夹具须给真规则数据
-            {"t": {"enabled": True, "endpoint": "backend", "disabled": [], "repo": "r"}},
-            {"R7": {"name": "非 .cs 进后端仓", "endpoint": "backend"}})))
+    def test_targeted_only_table_is_consistent(self):
+        """口径标注不能"写死就不管"：表里每个 ID 都必须是清单里的真规则。"""
+        self.assertEqual(COV.TARGETED_ONLY, {},
+                         "开源裁剪后没有「只在定向口径可能触发」的规则；新增请同时补 loader 依据")
+        catalog = set(COV.static_rules())
+        self.assertEqual(sorted(set(COV.TARGETED_ONLY) - catalog), [],
+                         "TARGETED_ONLY 里出现了清单外的规则 ID")
 
     def test_extra_rules_surfaced(self):
         """第四轮 N-4：清单外数据不许静默丢弃，必须单独成表。"""
@@ -613,7 +605,7 @@ class TestIsolationAndScripts(unittest.TestCase):
                      # test_review_v9_batch2 6.6~8.0s）。落点见各文件头的"快跑"注释：
                      # 4 条方法级 + 1 条类级 + 5 条方法级 + 2 个类级 + 1 条类级
                      "test_upgrade_path.py", "test_review_v9_batch3.py", "test_upgrade.py",
-                     "test_review_v13_batch1.py", "test_review_v9_batch2.py",
+                     "test_review_v13_batch1.py",
                      # 2026-09-17 批 6：快跑档**结束最晚的那根杆**（争用下 22.8~26.2s）。
                      # 44 例摊薄型（只 2 例 ≥1s = 3.5s），**方法级装饰 1 条**：中C 的端到端
                      # 后果锁；disableability 那条 2.01s 是**唯一牙齿**、刻意留跑（见上文批 6）

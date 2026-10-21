@@ -28,12 +28,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _tmpclean import rmtree_force as _rmtree_force      # noqa: E402
 
 # 快跑（HARNESS_FAST=1，2026-09-17 批 4 接线）：本文件慢在**真起 git 仓 + 真跑
-# `git diff -U0` + 真起子进程跑 pc_code_check.py**（每条一个临时仓、几次子进程），
-# 接线前完全没接（全文 0 处 HARNESS_FAST），快跑档单跑 6.5~8.2s。
-# 落点 = **两个类都类级**：5 例里 4 例 ≥1s，唯一"没到线"的那条是 0.979s —— 与 1.006s 的
-# 那条是同一种形状、同一笔开销，**按 1s 线切开等于按噪声切**（见 test_coverage.py 名单锁
-# docstring 的第三条量法坑：这条线在用例挤在 1s 附近的文件上不重复）。类里没有"便宜且
-# 值得在快跑档留着"的锁，故类级。
+# `git diff -U0`**（每条一个临时仓、几次 git 子进程）。开源裁剪后只剩 3 例，仍全部 ≥1s。
+# 落点 = 类级：三条形状锁共享同一笔 git 开销，没有"便宜且值得在快跑档留着"的锁。
 # ★ 本文件还是变异 M38 的**载体**（把 test_no_newline_marker_does_not_shift_lines 改名成
 #   `_disabled_*`）—— 但 M38 的判据在 `test_lock_inventory.py`，数的是源码里 `def test_`
 #   的**条数**（静态正则），不看谁被装饰、谁被跳过；且冒烟的 `run()` 钉死全严格档。
@@ -50,7 +46,6 @@ def _slow(reason):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = os.path.join(ROOT, "checks")
-PY = sys.executable
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -123,7 +118,7 @@ class _Fixture(unittest.TestCase):
         return sorted(self.rb.compute_changed_lines(self.repo.path, rel))
 
 
-@_slow("真起 git 仓 + 真跑 git diff -U0（5 例里 4 例 ≥1s，最便宜的一条也 0.98s）")
+@_slow("真起 git 仓 + 真跑 git diff -U0（3 例，每例 ≥1s）")
 class TestChangedLinesHunkShapes(_Fixture):
     """严重 3 单元锁：三种被"前缀判定"坑到的 hunk 形状。"""
 
@@ -155,53 +150,6 @@ class TestChangedLinesHunkShapes(_Fixture):
         self.repo.stage("src/plain.js", "l1\nl2\nl3\n")
         self.assertEqual(self._changed("src/plain.js"), [2, 3],
                          "无行尾换行标记被当内容行 → 后续行号整体偏移")
-
-
-@_slow("真起子进程跑 pc_code_check.py 的端到端假放行锁（2 例 1.65 / 1.77s）")
-class TestFalsePassEndToEnd(_Fixture):
-    """严重 3 的行为锁：真实入口必须拦住"紧跟在 `--` 删除行之后的新增违规"。"""
-
-    def _cfg(self):
-        cfg = os.path.join(self.tmp, "cfg.yaml")
-        _write(cfg, "repos:\n  chain: %s\ngates:\n  v13:\n    enabled: true\n"
-                    "    repo: chain\n    script: checks/pc_code_check.py\n"
-                    % self.repo.path.replace("\\", "/"))
-        return {"HARNESS_CONFIG": cfg,
-                "HARNESS_LOG_FILE": os.path.join(self.tmp, "gate_log.jsonl"),
-                "HARNESS_STATS_FILE": os.path.join(self.tmp, "stats.json")}
-
-    def _run_pc(self, path):
-        return _sh([PY, os.path.join(CHECKS, "pc_code_check.py"),
-                    "--gate", "v13", "--repo", self.repo.path, path], env=self._cfg())
-
-    def test_new_violation_after_dashdash_deletion_blocks(self):
-        """`--x;` 被替换成 console.log → 新增行在改动范围内 → 必须拦下。
-
-        旧实现：changed_lines=[7]，命中行 6 被滤掉 → rc=0（**假放行**）。
-        """
-        self.repo.commit("src/a.vue", HDR + '--x;' + FOOT)
-        self.repo.stage("src/a.vue", HDR + 'console.log("leak");' + FOOT)
-        f = self.repo.file("src/a.vue")
-        r = self._run_pc(f)
-        out = (r.stdout or "") + (r.stderr or "")
-        self.assertEqual(r.returncode, 1,
-                         "新增的 console.log 被行号偏移滤掉了（假放行）\n" + out[-800:])
-        self.assertIn("console.log", out, "拦下的理由应当是 console.log 规则本身")
-
-    def test_preexisting_violation_outside_change_does_not_block(self):
-        """反向对照：存量违规在改动范围之外 → 必须放行。
-
-        没有这条，上面那条的 rc=1 可能只是"整文件口径"的假象（changed_lines 为空时
-        会退回整文件扫描）——存量放行成立，才证明按行过滤真的在工作。
-        """
-        self.repo.commit("src/a.vue", HDR + 'console.log("old");' + FOOT)
-        self.repo.stage("src/a.vue", HDR.replace("let x = 2;", "let x = 3;")
-                        + 'console.log("old");' + FOOT)
-        f = self.repo.file("src/a.vue")
-        r = self._run_pc(f)
-        out = (r.stdout or "") + (r.stderr or "")
-        self.assertEqual(r.returncode, 0,
-                         "存量（未改动行）上的 console.log 不该拦：说明按行过滤没生效\n" + out[-800:])
 
 
 if __name__ == "__main__":

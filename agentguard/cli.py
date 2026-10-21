@@ -622,7 +622,7 @@ def cmd_done(a):
     凭证只含机器生成的字段（gate/repo/rc/files/ts/h），不含任何自由文本 —— 注入边界不变。
     不带 --repo 时用**调用方 cwd** 识别仓库（在端仓根目录直接跑即可）。
     ★ 2026-10-15 修（CodeBuddy 实测）：旧实现子进程默认 cwd=工程仓，在端仓里跑会被误判成
-    harness_self 并打出 rc=0 **假凭证** —— 挑错仓比不产凭证更危险（见 CHANGELOG 10-15g）。
+    harness_self 并打出 rc=0 **假凭证** —— 挑错仓比不产凭证更危险。
     """
     cmd = [_py(), os.path.join(ROOT, "harness", "agents", "auto-gate.py")]
     if getattr(a, "repo", None):

@@ -11,6 +11,11 @@ r"""评审 v3 批次 3 回归锁：接入验收门 ⑤ syntax 传感器 + regist
 
 判据环境无关：容器里没有端仓时 ① 会 ❌（属环境，不是缺陷），但 ⑤ 用**密闭夹具**与端仓无关 ——
 因此 ⑤ 为假时必须有说明，而不是凭环境直接放过（也不许静默）。
+
+开源裁剪（2026-10-20）：业务 gate 已随客户仓删除，pc/h5 的两向探针用例
+（`test_pc_gate_syntax_probe_is_two_way` / `test_pc_gate_syntax_is_true_when_node_present`）
+失去被测对象，连同实现一起移除。保留 harness_self 的「无语法层 → None 且必须写明原因」，
+它锁的是验收报告不得沉默这一通用契约。
 """
 import json
 import os
@@ -30,10 +35,9 @@ if "HARNESS_LOG_FILE" not in os.environ:
     os.environ["HARNESS_LOG_FILE"] = os.path.join(_mkdtemp("harness-v9b3log-"),
                                                  "gate_log.jsonl")
 
-# 快跑（HARNESS_FAST=1，2026-09-17 批 4 接线）：本文件慢在**真跑 acceptance_check.py**
-# （每条起 1~3 个子进程、真扫 gate），接线前完全没接（全文 0 处 HARNESS_FAST），
-# 快跑档单跑 10.2~17.5s。
-# 落点：只给 TestAcceptanceSyntaxSensor 加**类级**（4.31 / 3.96 / 1.49s，类里没有 <1s 的例）；
+# 快跑（HARNESS_FAST=1，2026-09-17 批 4 接线）：本文件原先慢在**真跑 acceptance_check.py**
+# （每条起 1~3 个子进程、真扫 gate）。开源裁剪后只剩 harness_self 一条验收例（实测 <1s），
+# 快跑档仍按类跳过：验收链要起子进程扫真仓，不是纯内存契约。
 # 另一个类 TestRegistryValidateThreeStates 只有一条 0.43s，**不动**（它是"改坏了立刻知道"的
 # 便宜契约锁，留着当快跑档的前哨）。
 FAST = os.environ.get("HARNESS_FAST") == "1"
@@ -54,7 +58,7 @@ def _accept(gate):
     return r, (json.loads(r.stdout) if r.stdout.strip().startswith("[") else [])
 
 
-@_slow("真跑 acceptance_check.py（类里 3 例 4.31 / 3.96 / 1.49s，没有更便宜的例）")
+@_slow("真跑 acceptance_check.py（类里剩 1 例，要起子进程扫真仓）")
 class TestAcceptanceSyntaxSensor(unittest.TestCase):
     def test_self_gate_marks_syntax_not_applicable(self):
         r, rows = _accept("harness_self")
@@ -64,29 +68,6 @@ class TestAcceptanceSyntaxSensor(unittest.TestCase):
         self.assertIsNone(row["syntax"], "工程仓自检 gate 没有 node 语法层 → ⑤ 应为 None（不适用）")
         self.assertTrue(any("不适用" in n for n in row["notes"]),
                         "⑤ 不适用时必须写明原因，不能沉默：%s" % row["notes"])
-
-    def test_pc_gate_syntax_probe_is_two_way(self):
-        """pc 端 ⑤ 必须能判定；若判为假，备注里必须给出探针的两次 rc（不是静默 False）。"""
-        r, rows = _accept("gxgk_pc")
-        if not rows:
-            self.skipTest("没有 gxgk_pc gate（配置裁剪）：%s" % (r.stdout + r.stderr)[-120:])
-        row = rows[0]
-        self.assertIn("syntax", row)
-        if row["syntax"] is False:
-            self.assertTrue(any("syntax 传感器可疑" in n for n in row["notes"]),
-                            "⑤ 为假却没有任何说明（node 缺失/断言失败都被吞了）：%s" % row["notes"])
-
-    def test_pc_gate_syntax_is_true_when_node_present(self):
-        """本机有 node 时 ⑤ 必须为真 —— 这是这条锁的核心价值（反向：node 坏了要变红）。"""
-        import shutil as _sh
-        if not _sh.which("node"):
-            self.skipTest("本机没有 node（⑤ 的正确行为是报可疑并拦，用上一条锁覆盖）")
-        r, rows = _accept("gxgk_pc")
-        if not rows:
-            self.skipTest("没有 gxgk_pc gate")
-        self.assertTrue(rows[0]["syntax"],
-                        "有 node 时 syntax 两向探针未通过（合规必须放行、坏语法必须拦）：%s"
-                        % rows[0]["notes"])
 
 
 class TestRegistryValidateThreeStates(unittest.TestCase):

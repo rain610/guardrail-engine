@@ -23,6 +23,8 @@ AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交�
 | "门禁跑没跑"说不清 | 每次判定写台账，可查看运行摘要与规则覆盖度 |
 | 引入工具链的依赖成本 | **零第三方依赖**，只用 Python 标准库 |
 
+引擎层**不依赖任何个人** skill / 工具：同事 clone 下来即可运行。
+
 ## 前置条件
 
 | 依赖 | 最低版本 | 用途 |
@@ -51,16 +53,19 @@ repos:
 
 ### 3. 定义规则
 
-在 `checks/` 目录创建规则集，或使用自带的 3 条示例规则：
+在 `checks/` 目录创建规则集，或直接参考自带的 3 条示例规则（`checks/example_ruleset.py`）：
 
 ```python
 # checks/my_ruleset.py
-from rule_base import Rule
+from example_ruleset import Rule
 
-class NoConsoleLog(Rule):
-    rule_id = "NO-CONSOLE"
-    pattern = r'console\.log\s*\('
-    message = "禁止 console.log 残留"
+NO_TODO = Rule(
+    rule_id="NO-TODO",
+    severity="block",
+    pattern=r'\bTODO\b',
+    message="禁止 TODO 注释残留",
+    fix_hint="实现或删除 TODO",
+)
 ```
 
 ### 4. 注册 gate
@@ -112,8 +117,38 @@ python sandbox/install_shim.py
 运行示例规则：
 
 ```bash
-python checks/example_code_check.py --all
+python checks/example_code_check.py --repo . --all
 ```
+
+## 黄金范式：拦截之后的下一步
+
+门禁只回答「这行不能这么写」。规则还可以带一条 `see` 指针，把「那该怎么写」送到被拦的那一刻：
+
+```text
+  ❌ src/logger.js:3 [NO-CONSOLE] 禁止 console.log 残留（调试代码不应进入提交）
+     FIX: 删除 console.log 行，改用统一日志封装（见范式）
+     📖 See: golden-patterns/patterns/cross-cutting/logging.md
+```
+
+但黄金范式不只是「一条 lint 的修法」。它是一个按任务组织的**代码骨架库**：
+
+| 要写什么 | 读哪篇 |
+|---|---|
+| 请求层（token / 响应壳 / 401 / 错误提示） | [`patterns/web/request-layer.md`](golden-patterns/patterns/web/request-layer.md) |
+| 列表页（后端分页 / 筛选 / 批量 / 行操作） | [`patterns/web/list-page.md`](golden-patterns/patterns/web/list-page.md) |
+| 表单弹窗（新增编辑共用 / 校验 / 提交锁） | [`patterns/web/form-dialog.md`](golden-patterns/patterns/web/form-dialog.md) |
+| 后端分层（Controller / Repository / 软删 / 分页） | [`patterns/backend/controller-repository.md`](golden-patterns/patterns/backend/controller-repository.md) |
+| 校验与错误（400/404/500、不吞异常） | [`patterns/backend/validation-and-errors.md`](golden-patterns/patterns/backend/validation-and-errors.md) |
+| 日志 / 配置 | [`logging.md`](golden-patterns/patterns/cross-cutting/logging.md)、[`config-and-env.md`](golden-patterns/patterns/cross-cutting/config-and-env.md) |
+| 从零做一个业务模块 | [`endtoend/task-management.md`](golden-patterns/endtoend/task-management.md) |
+
+- 入口：[`golden-patterns/index.md`](golden-patterns/index.md)
+- 参考实现：[`golden-patterns/reference/`](golden-patterns/reference/)（正面样板会跑示例 gate 自证）
+- 造自己的范式：[`golden-patterns/templates/00_范式制造模板.md`](golden-patterns/templates/00_范式制造模板.md)
+
+给规则挂范式只需两步：把**已验收**的写法放进 `golden-patterns/`，在规则类上写
+`see = "golden-patterns/…"`。路径一律仓库相对；规则与范式一起评审 —— 范式是参照系，
+不是绕过规则的许可。
 
 ## 架构
 
@@ -143,18 +178,27 @@ python checks/example_code_check.py --all
 
 ## 规则模型
 
-所有规则继承 `checks/rule_base.py` 的 `Rule` 基类：
+引擎侧统一基类是 `checks/rule_base.py` 的 `Rule`：
 
 ```python
 class Rule:
-    rule_id: str
-    severity_default: str  # "block" | "warn" | "info"
-    pattern: str           # 正则模式
+    id: str
+    name: str = ""
+    severity_default: Severity = Severity.ERROR
+
+    def applicable(self, ctx) -> bool:    # 该规则是否适用于此文件
+        ...
 
     def check(self, ctx) -> list[Finding]:
         """返回违规列表"""
         ...
+
+    def severity(self, ctx) -> Severity:  # 双态钩子，默认返回 severity_default
+        ...
 ```
+
+`checks/example_ruleset.py` 是更轻的实例式写法（`Rule(rule_id, severity, pattern, message, fix_hint)`），
+适合单行正则型规则；需要按文件类型收窄、或多态判定严重级别时用 `rule_base.Rule` 子类。
 
 ### 规则类型
 
@@ -209,6 +253,9 @@ gates:
 | 接入自检 | `sh sandbox/doctor.sh` |
 | 快速测试 | `python sandbox/run_tests.py --fast` |
 | 全量测试 | `python sandbox/run_tests.py --full` |
+| 紧急旁路（留痕） | `python agentguard/cli.py bypass --repo <端仓> --reason "≥10 字的原因"` |
+
+> `bypass` 只是**声明留痕入口，不是权限闸**：它不拦任何提交，也不改变门禁判定。
 
 ## 退出码
 
@@ -218,6 +265,15 @@ gates:
 | `1` | 门禁拦截 | 按输出修复 |
 | `2` | 配置错误 | 检查配置 |
 | `3` | 非受管仓库 | 跳过 |
+
+## 审计证据强度
+
+`sandbox/audit_reconcile.py` 拿台账对照提交历史，匹配用的是**时间窗**而不是提交内容指纹。
+因此它的产物是**线索级**证据：只能说明"提交前后本机跑过同一 gate 且通过"，不能证明
+"这次提交的内容被检查过"。
+
+- 可用于人工复核与追责线索；
+- **不要写成**"提交可自证"，也不要对外宣称已满足强制审计。
 
 ## 扩展
 
@@ -232,6 +288,19 @@ gates:
 1. 在 `config/harness.yaml` 添加 gate 配置
 2. 在 `checks/registry.py` 登记 `gate -> script`
 3. 运行配置体检：`python harness/run_gate.py --validate`
+
+### 行内豁免
+
+合规写法被规则误报时，在命中行或紧邻上一行的**注释**里写标记：
+
+```js
+// harness-ok: NO-CONSOLE 调试日志已用条件封装
+if (DEBUG) console.log("debug info")
+```
+
+- 行内豁免：`harness-ok: <规则ID> <理由>`（适用端：示例 gate）
+- 字符串字面量里的标记不算；规则 ID 必须写对，理由必填。
+- 规则集通过 `rule_base.inline_waiver()` 接入同一判据。
 
 ## 与 AGENTS.md 的关系
 
@@ -250,21 +319,30 @@ gates:
 | Codex | AGENTS.md + hooks |
 | OpenCode | AGENTS.md |
 | CodeBuddy | AGENTS.md |
-| Qoder | AGENTS.md |
+| Trae CN | AGENTS.md |
+| Qoder CN | AGENTS.md |
+| ZCode | AGENTS.md |
 | 其他 MCP 宿主 | MCP 服务 |
 
 ## 测试
 
 ```bash
-# 快速测试
+# 快速测试（编辑回路；跳过真打包/真安装/真 git 链路，本机约 50s）
 python sandbox/run_tests.py --fast
 
-# 全量测试
+# 全量测试（提交前/CI；含真打包/真安装/真 git 链路）
 python sandbox/run_tests.py --full
 
 # 单元测试
 python -m unittest discover -s tests
 ```
+
+发布链（`.github/workflows/release.yml`）与每日定时（`.github/workflows/nightly.yml`）
+还会跑三类慢闸门：变异冒烟（105 条变异，验证锁真的会红）、真打包后的真产物锁、
+干净 venv 安装并执行 `agentguard --version`（轮子只含壳，需用 `AGENTGUARD_DIR`
+指向引擎检出）。本机复现：先 `python sandbox/pack_release.py`，再跑
+`python tests/test_release_artifact.py TestRealArtifactPasses -v`；venv 安装命令见
+`.github/workflows/release.yml` 的「干净 venv 安装冒烟」步骤。
 
 ## 文档
 

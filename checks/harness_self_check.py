@@ -10,7 +10,7 @@
   ② 引擎层与打包壳零第三方依赖（AST 扫 harness/ checks/ sandbox/ agentguard/，
      用 sys.stdlib_module_names 判定）
   ③ 分发器完整性：hooks-dir 分发器 + hooks/pre-commit.py 都在位（G2 的周期自检）
-  ④ 组件 allowlist 健康（v8/C4：解析失败会让组件规则静默失效）
+  ④ 规则能力边界：单行正则规则必须自报 heuristic，并在自检输出里可见
   ⑤ 配置结构：每个 gate 的 script 必须存在（repo 路径缺失只算 ⚠ —— 同事机器上多数端仓本来就不在）
 
 输出约定与其它 check 脚本一致：❌ 阻断级（rc=1）/ ⚠ 提示（不阻断）/ 通过打印 ✅ 摘要。
@@ -153,26 +153,14 @@ def check_guard_call_site():
         problems.append("⑥ pre-commit.py 未调用 harness_guard（保护循环形同虚设）")
 
 
-def check_allowlists():
-    """④ 组件 allowlist 健康（v8/C4：解析失败 → 组件规则静默失效）。"""
-    for mod_name, rel in (("pc_ruleset", "checks/pc_ruleset.py"), ("h5_ruleset", "checks/h5_ruleset.py")):
-        try:
-            import importlib
-            m = importlib.import_module(mod_name)
-            errs = getattr(m, "ALLOWLIST_ERRORS", None)
-            if errs:
-                problems.append("④ %s 的 allowlist 不健康：%s" % (mod_name, errs[0]))
-        except Exception as e:
-            warns.append("④ 无法加载 %s（%r）——组件规则本次未校验" % (rel, e))
-
-
 def heuristic_rules():
     """标记为启发式的规则（单行正则类）：能挡已知事故，但不保证覆盖多行/别名/生成代码。
 
     评审 v8 / Codex P2：把"能力边界"从口头承诺变成报告里的一行事实。
+    规则既可能是类（`class XxxRule(Rule)`），也可能是 Rule 实例（示例规则集），两种都收。
     """
     ids = []
-    for mod_name in ("pc_ruleset", "h5_ruleset", "backend_ruleset"):
+    for mod_name in ("example_ruleset",):
         try:
             import importlib
             mod = importlib.import_module(mod_name)
@@ -180,8 +168,15 @@ def heuristic_rules():
             continue
         for n in dir(mod):
             o = getattr(mod, n)
-            if isinstance(o, type) and getattr(o, "heuristic", False) and getattr(o, "id", ""):
-                ids.append(o.id)
+            if isinstance(o, type):
+                if getattr(o, "heuristic", False) and getattr(o, "id", ""):
+                    ids.append(o.id)
+            elif isinstance(o, (list, tuple)):
+                for it in o:
+                    if getattr(it, "heuristic", False):
+                        rid = getattr(it, "id", "") or getattr(it, "rule_id", "")
+                        if rid:
+                            ids.append(rid)
     return sorted(set(ids))
 
 
@@ -257,10 +252,9 @@ def main():
     check_stdlib_only()
     check_dispatcher()
     check_guard_call_site()
-    check_allowlists()
     check_config()
 
-    print("harness 自检 [strict]：UTF-8 兜底 / 零依赖 / 分发器 / allowlist / 配置结构")
+    print("harness 自检 [strict]：UTF-8 兜底 / 零依赖 / 分发器 / 能力边界 / 配置结构")
     _h = heuristic_rules()
     if _h:
         print("  ℹ 启发式（单行正则）规则 %d 条：%s —— 命中即提示，多行/别名/生成代码等边界建议人工判定"

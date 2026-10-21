@@ -16,6 +16,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _tmpclean import mkdtemp_cleanup as _mkdtemp    # noqa: E402
+from _tmpclean import rmtree_force as _rmtree_force  # noqa: E402
 
 # 2026-09-21：模块级 mkdtemp 没有 setUp/tearDown 可挂 —— 原先每跑一次留一个空目录
 # （实测存量 v9b3log 272 / v9b2log 201 / v9log 219 份）。走进程退出强删助手。
@@ -75,7 +76,7 @@ def _write_original(hooks_dir):
     return p
 
 
-def _cfg_env(repo, gate="gxgk_pc", script="checks/pc_code_check.py"):
+def _cfg_env(repo, gate="demo_pc", script="checks/example_code_check.py"):
     cfg = os.path.join(tempfile.mkdtemp(prefix="v9b2cfg_"), "c.yaml")
     with open(cfg, "w", encoding="utf-8") as f:
         f.write("repos:\n  chain: %s\ngates:\n  %s:\n    enabled: true\n    repo: chain\n"
@@ -97,7 +98,7 @@ class TestCustomHooksPathIsNotSwallowed(unittest.TestCase):
         _git(self.repo, "config", "core.hooksPath", self.custom)
 
     def test_custom_hookspath_hooks_are_backed_up(self):
-        r = _sh([os.path.join(ROOT, "sandbox", "install_hooks.sh"), "gxgk_pc"], cwd=self.repo)
+        r = _sh([os.path.join(ROOT, "sandbox", "install_hooks.sh"), "demo_pc"], cwd=self.repo)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn(self.custom.replace("\\", "/")[-20:], r.stdout.replace("\\", "/"),
                       "安装输出没说明枚举来源是自定义 hooksPath：\n" + r.stdout)
@@ -122,7 +123,7 @@ class TestChainInvokesOriginal(unittest.TestCase):
         self.env = _cfg_env(self.repo)
 
     def test_dispatcher_chains_original_then_gate(self):
-        r0 = _sh([os.path.join(ROOT, "sandbox", "install_hooks.sh"), "gxgk_pc"], cwd=self.repo,
+        r0 = _sh([os.path.join(ROOT, "sandbox", "install_hooks.sh"), "demo_pc"], cwd=self.repo,
                  env=self.env)
         self.assertEqual(r0.returncode, 0, r0.stdout + r0.stderr)
         # 真触发分发器（git hook run 会走 core.hooksPath）
@@ -143,7 +144,7 @@ class TestWorktreeBackupUsesCommonDir(unittest.TestCase):
         g = _git(main, "worktree", "add", "-q", "-b", "wtb", wt)
         self.assertEqual(g.returncode, 0, g.stderr)
 
-        r = _sh([os.path.join(ROOT, "sandbox", "install_hooks.sh"), "gxgk_pc"], cwd=wt,
+        r = _sh([os.path.join(ROOT, "sandbox", "install_hooks.sh"), "demo_pc"], cwd=wt,
                 env=_cfg_env(wt))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         backed = os.path.join(main, ".git", "agentguard-original-hooks", "pre-commit")
@@ -159,7 +160,7 @@ class TestWorktreeBackupUsesCommonDir(unittest.TestCase):
         wt = os.path.join(tempfile.mkdtemp(prefix="v9b2wt2_"), "wt")
         _git(main, "worktree", "add", "-q", "-b", "wtb2", wt)
         env = _cfg_env(wt)
-        _sh([os.path.join(ROOT, "sandbox", "install_hooks.sh"), "gxgk_pc"], cwd=wt, env=env)
+        _sh([os.path.join(ROOT, "sandbox", "install_hooks.sh"), "demo_pc"], cwd=wt, env=env)
         r = subprocess.run(["git", "hook", "run", "pre-commit"], capture_output=True, text=True,
                            encoding="utf-8", errors="replace", cwd=wt,
                            stdin=subprocess.DEVNULL, env=env, timeout=120)
@@ -167,6 +168,54 @@ class TestWorktreeBackupUsesCommonDir(unittest.TestCase):
         self.assertIn("[chain] 调用端仓原有 pre-commit", out,
                       "worktree 提交时分发器没找到备份（备份查找没走 common-dir）：\n" + out)
         self.assertIn(MARKER, out, "原 hook 在 worktree 场景没跑：\n" + out)
+
+
+@unittest.skipIf(not SH, "sh 不可用")
+@_slow("真起两个临时 git 仓 + 真跑 install_hooks.sh 两遍（单例 6.57s）")
+class TestHooksPathArchive(unittest.TestCase):
+    """V9-10：安装脚本必须把**安装前的 core.hooksPath 值**落档（此前只备份文件、只打印来源）。
+
+    从 test_review_v9_batch2.py 迁来（那个模块的业务探针已随开源裁剪删除，
+    但这条锁的对象是通用的 sandbox/install_hooks.sh，与业务规则无关）。
+    """
+
+    def _run(self, cmd, cwd=None):
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", stdin=subprocess.DEVNULL, timeout=180)
+
+    def _mk(self):
+        d = tempfile.mkdtemp(prefix="v9hp_")
+        self.addCleanup(_rmtree_force, d)
+        self._run(["git", "init", "-q"], cwd=d)
+        return d
+
+    def _archive_text(self, repo):
+        for root, _dirs, files in os.walk(repo):
+            if "PREVIOUS-hooksPath.txt" in files:
+                return os.path.join(root, "PREVIOUS-hooksPath.txt")
+        return None
+
+    def test_archives_previous_value(self):
+        inst = os.path.join(ROOT, "sandbox", "install_hooks.sh")
+        # 场景 A：本来没设置 → 存档写明 <未设置>
+        a = self._mk()
+        self._run([SH, inst, "example"], cwd=a)
+        p = self._archive_text(a)
+        self.assertIsNotNone(p, "安装后没有 hooksPath 值存档（V9-10 回归）")
+        with open(p, encoding="utf-8") as f:
+            self.assertIn("未设置", f.read())
+        # 场景 B（要点）：本来有**自定义** hooksPath → 原值必须被记下来
+        b = self._mk()
+        custom = os.path.join(b, "my-hooks")            # 自定义 hooks 目录（相对路径写法）
+        os.makedirs(custom, exist_ok=True)
+        self._run(["git", "config", "core.hooksPath", "my-hooks"], cwd=b)
+        self._run([SH, inst, "example"], cwd=b)
+        p2 = self._archive_text(b)
+        self.assertIsNotNone(p2)
+        with open(p2, encoding="utf-8") as f:
+            txt2 = f.read()
+        self.assertIn("my-hooks", txt2, "自定义 hooksPath 的原值没被落档：\n%s" % txt2)
+        self.assertIn("还原", txt2)
 
 
 if __name__ == "__main__":

@@ -44,7 +44,7 @@ python integrations/plugins/build_marketplace.py --harness <HARNESS 仓库根> -
 ```
 
 - 期望：`agentguard` 出现在扩展目录 `~\.openclaw-autoclaw\extensions\agentguard`，状态 enabled / loaded。
-- agent 会话内实测两个探针：`harness_doctor` 返回 rc=0；`harness_list_gates` 返回 35/35（全部启用）。
+- agent 会话内实测两个探针：`harness_doctor` 返回 rc=0；`harness_list_gates` 返回 2/2（全部启用）。
   （本行是**随包出货**的文档，写的是"你应当看到什么"，所以必须是当下的真值；数字由
   `tests/test_docs_consistency.py` 的数字锁看住 —— 写成别的数当场红。）
 - 已完成实测（2026-09-14）：技能与 MCP 均 AVAILABLE；记录见 `evidence/e1_openclaw_install.txt`。

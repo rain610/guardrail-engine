@@ -3,7 +3,7 @@
 # 用途：sandbox/agents_audit.py 的**唯一**判据来源。
 #
 #   一条行能不能删，只取决于**这一行有没有归宿**，不取决于它属于哪一端。
-#   所以「PC 模板以后补上归宿」和「后端今天就有归宿」走的是同一条路 ——
+#   所以「端级模板以后补上归宿」和「全局守则今天就有归宿」走的是同一条路 ——
 #   往本文件加一组 [归宿]/[行]，重跑，那一行自动从「待迁」挪进「可删」。
 #
 # 格式（每组一条归宿，[行] 可重复）：
@@ -16,17 +16,17 @@
 #   ① **归一化后精确相等**，不是子串。比对前把引擎仓绝对路径（正/反斜杠两种写法）
 #      抹成 <H> 并折叠空白，否则这套判据只在写表的人那台机器上成立（同事 clone 到
 #      D:/dev/ 就整片落进待迁）。差一个标点 → 落到「待迁」= **留而不删**。
-#   ② **锚点要能求证到**。改 AGENTS_*_slim.md 的措辞时若忘了同步本表，`--audit`
+#   ② **锚点要能求证到**。改归宿文件的措辞时若忘了同步本表，`--audit`
 #      会报「指针指空」，那几行自动退回待迁 —— 不会误删，但也不会静默少删（所以出声）。
 #
 # ⚠ 删客户仓的知识不可恢复（00_知识分层设计.md §六 ①）：本表只用于**生成给人过目的
 #   diff**。agents_audit.py 没有任何写入路径。
 
 # ── 全局守则（sandbox/global_agents.py 的 BODY；渲染到 ~/.agentguard/GLOBAL_AGENTS.md）
-# 跑门禁的命令与退出码语义：三端各自抄了一份，正文在守则里，模板里也明写「不在这里重复」。
+# 跑门禁的命令与退出码语义：此前各端模板各抄了一份，正文在守则里，模板里也明写「不在这里重复」。
 [归宿] sandbox/global_agents.py
 [锚点] harness/agents/auto-gate.py
-[为什么] 全局守则正文（跑门禁的命令；三端各抄一份，正文只有这一处）
+[为什么] 全局守则正文（跑门禁的命令；各端各抄一份，正文只有这一处）
 [行] 改完代码仓库根执行：`python <H>/harness/agents/auto-gate.py`
 
 # 退出码语义 —— 三种措辞（行尾 LF / 行尾 CRLF / 分层约束），归宿同一处
@@ -50,57 +50,3 @@
 [为什么] 全局守则本体（最高优先级那一节）
 [行] 4. 遵守用户级全局守则（~/.agentguard/GLOBAL_AGENTS.md）
 [行] 5. 遵守用户级全局守则（~/.agentguard/GLOBAL_AGENTS.md）
-
-# ── H5 端级模板
-[归宿] golden-patterns/templates/AGENTS_h5_slim.md
-[锚点] 先找本仓同类已验收页面做参照
-[为什么] H5 端级事实 4（先循先例）
-[行] 1. 先找本仓同类已验收页面做参照，禁止自由发明结构
-
-[归宿] golden-patterns/templates/AGENTS_h5_slim.md
-[锚点] 安卓 WebView 壳限制
-[为什么] H5 端级事实 2（本端最高频返工原因）
-[行] 2. 常驻显式按钮，不依赖 popup/长按（安卓 WebView 壳限制）
-
-# ── 后端端级模板
-[归宿] golden-patterns/templates/AGENTS_backend_slim.md
-[锚点] Controller → Repository 两层
-[为什么] 后端端级规则 1（+ 门禁 R1/R2）
-[行] 1. Controller 只做参数校验与调度，业务在 Repository，禁止 Controller 直连 EF 细节
-[行] 1. **Controller 只做 参数校验 → 调 Repository → 返回**；业务（循环/Session/DbSet）进 Repository（分层边界门禁 R1/R2 已机械查，此条是架构意图）
-
-[归宿] golden-patterns/templates/AGENTS_backend_slim.md
-[锚点] 基类已有的方法直接继承
-[为什么] 后端端级规则 2（+ 门禁 R5/R6）
-[行] 2. 列表/分页统一走基类（GetApiPageData），参照 golden-patterns/backend 样板
-
-# ── PC 端级知识（2026-09-19：原技能已并进 golden-patterns/pc/，这两条才终于有了归宿）
-# 多人字段 —— 原先只写在版本控制外的技能里（~/.skills-manager/，不是 git 仓、不随 harness 分发），
-# 所以客户仓那一行没有归宿、只能留在「待迁」。现已落进 pc_page_patterns.md §5.5 正文。
-[归宿] golden-patterns/pc/pc_page_patterns.md
-[锚点] 5.5 多人字段
-[为什么] PC 端级事实（审核人配置返工教训；拆子表 + UserList 数组传输）
-[行] 3. **多人字段**：拆子表一人一行，接口用数组（UserList）传输，不用逗号分隔字段
-
-# 页面开发技能 —— 归宿是技能入口本身。注意这个入口现在住在**引擎仓内**
-# （integrations/eagle-rmc-pc-page-dev-skill/），不再是版本控制外的 ~/.skills-manager/ 副本；
-# 它的正文（5 类型速查/SOP/组件速查/坑）全部指向 golden-patterns/pc/，正文仍只有一处。
-[归宿] integrations/eagle-rmc-pc-page-dev-skill/SKILL.md
-[锚点] 正文在哪（唯一住处）
-[为什么] 页面开发规范入口（原技能已迁入 golden-patterns/pc/，此为薄路由）
-[行] 1. **页面开发先加载技能 `eagle-rmc-pc-page-dev`**（页面骨架模板 + eagle-* 组件写法）——照模板抄，禁止自由发明页面结构
-[行] 1. **页面开发先加载技能 `eagle-rmc-pc-page-dev`**（5 种页面骨架模板 + eagle-* 组件写法）——照模板抄，禁止自由发明页面结构
-# 另两仓把它写在「文档」表格里，措辞不同、归属同一处
-# ⚠ 这两行是**逐字**抄的（含 `| PC ` 前缀）—— 少了前缀就匹配不上，而匹配不上是静默的：
-#   那一行不会报错，只会留在「待迁」里没人发现（2026-09-19 首跑就是这么漏掉 hy_hzy_pc 的）。
-[行] | PC 页面骨架模板/组件速查 | 技能 `eagle-rmc-pc-page-dev`（gxgk 同构，组件库一致） |
-[行] | 页面骨架模板/组件速查/表单抽屉写法/坑 | 技能 `eagle-rmc-pc-page-dev`（或 D:/KnowledgeVault/concepts/技术规范/AgentGuard_PCVue页面开发规范_v1.md） |
-
-# 「先找标本页再动手」—— 7 个 PC 仓的第 2 条（2026-09-19 实测 9 个仓有此意，
-# 另 2 个是变体：gxgk_pc 写的是真实标本路径、hy_hzy_pc 措辞与编号都不同，那两条按设计留在待迁）。
-# H5 的同一句早已由 AGENTS_h5_slim.md 承接并登表；PC 之前无处可放 ——
-# 它的「端级规则」7 条表里没有这一条，所以只能一直挂在待迁当端级模板的待办。
-[归宿] golden-patterns/templates/AGENTS_pc_slim.md
-[锚点] 先找标本页再动手
-[为什么] PC 端级事实（先循先例；标本页清单在 pc_page_patterns.md §6.0）
-[行] 2. **先找标本页再动手**：在本仓 src/views 找同类已验收页面做参照，禁止自由发明结构

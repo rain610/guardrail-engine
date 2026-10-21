@@ -5,7 +5,7 @@
 #   sh <harness工程>/sandbox/install_hooks.sh [gate名]
 #   gate 名可省略——省略时由 pre-commit.py 按 cwd 自动识别（推荐）。
 #   example: sh <HARNESS>/sandbox/install_hooks.sh
-#            sh <HARNESS>/sandbox/install_hooks.sh gxgk_pc
+#            sh <HARNESS>/sandbox/install_hooks.sh example
 #
 # 2026-09-12 hooksPath 升级：
 #   旧版把 hook 文件拷贝到各仓 .git/hooks/——gate 写死、改 hook 要逐仓重装。

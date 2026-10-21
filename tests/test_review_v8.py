@@ -9,11 +9,9 @@
   C5 扩展名清单三套分叉（P1）
 每一条都用**行为**锁（不是"源码里有这行字"），失败信息里写明为什么。
 """
-import contextlib
 import io
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -62,7 +60,7 @@ class TestC1PreCommitFailClosed(unittest.TestCase):
             with io.open(os.path.join(target, "a.vue"), "w", encoding="utf-8", newline="") as f:
                 f.write("console.log(1);\n")
             r = subprocess.run([sys.executable, os.path.join(copy, "harness", "hooks", "pre-commit.py"),
-                                "gxgk_pc", "--repo", target.replace("\\", "/")],
+                                "demo_pc", "--repo", target.replace("\\", "/")],
                                capture_output=True, text=True, encoding="utf-8", errors="replace",
                                timeout=180, cwd=copy)
             self.assertEqual(r.returncode, 2,
@@ -73,7 +71,7 @@ class TestC1PreCommitFailClosed(unittest.TestCase):
 
     def test_missing_repo_override_returns_2(self):
         r = subprocess.run([sys.executable, os.path.join(ROOT, "harness", "hooks", "pre-commit.py"),
-                            "gxgk_pc", "--repo", os.path.join(tempfile.gettempdir(), "definitely-not-here-xyz")],
+                            "demo_pc", "--repo", os.path.join(tempfile.gettempdir(), "definitely-not-here-xyz")],
                            capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=120, cwd=ROOT)
         self.assertIn(r.returncode, (1, 2),
@@ -82,47 +80,7 @@ class TestC1PreCommitFailClosed(unittest.TestCase):
 
 
 class TestC2LegacyLineLevel(unittest.TestCase):
-    """C2：legacy 只豁免「存量且未改动」，不得整条规则降级。"""
-
-    def _rules(self):
-        import backend_ruleset as B
-        import encoding_ruleset as E
-        out = {}
-        for mod in (B, E):
-            for n in dir(mod):
-                o = getattr(mod, n)
-                if isinstance(o, type) and hasattr(o, "severity") and getattr(o, "id", ""):
-                    try:
-                        out[o.id] = o()
-                    except Exception:
-                        pass
-        return out
-
-    def _ctx(self, changed, is_new):
-        import pathlib as _p
-        import rule_base
-        return rule_base.CheckContext(path=_p.Path("x.cs"), rel="RMC/x.cs", raw="", content="",
-                                      script="", template="", mode="strict", repo="",
-                                      changed_lines=frozenset(changed), legacy_exempt=True,
-                                      is_new_file=is_new, targeted=True)
-
-    def test_changed_lines_not_downgraded(self):
-        rules = self._rules()
-        for rid in ("R5", "R6", "R9"):
-            if rid not in rules:
-                continue
-            self.assertEqual(rules[rid].severity(self._ctx([5], False)).name, "ERROR",
-                             "%s：legacy 仓里**本次改动行**的命中必须照拦（改前整条降 INFO）" % rid)
-            self.assertEqual(rules[rid].severity(self._ctx([], False)).name, rules[rid].severity_default.name,
-                             "%s：真正存量的（无改动、非新文件）仍按豁免降级" % rid)
-
-    def test_new_file_not_downgraded(self):
-        rules = self._rules()
-        for rid in ("R5", "R6", "R9", "ENC"):
-            if rid not in rules:
-                continue
-            self.assertEqual(rules[rid].severity(self._ctx([], True)).name, "ERROR",
-                             "%s：**新建文件**不得因 legacy 开关降级（编码规则尤其如此）" % rid)
+    """C2：按行过滤的三态语义（legacy 降级的判据本身在 rule_base，见 test_review_v5 G1）。"""
 
     def test_finding_line_filter_helper(self):
         import rule_base
@@ -143,113 +101,18 @@ class TestC2LegacyLineLevel(unittest.TestCase):
         self.assertEqual(dropped3, 1)
 
 
-class TestC3NodeProbeVisible(unittest.TestCase):
-    """C3：node 存在但调用失败必须可见（可选 fail-closed）。"""
-
-    def test_call_failure_warns(self):
-        import pc_code_check
-        import rule_base
-        real = subprocess.run
-
-        def boom(*a, **k):
-            raise PermissionError("node denied")
-
-        subprocess.run = boom
-        buf = io.StringIO()
-        try:
-            rule_base._NODE_PROBE_WARNED[0] = False
-            with contextlib.redirect_stderr(buf):
-                r = pc_code_check.check_syntax("a.mjs", "console.log(1)")
-            self.assertIsNone(r, "默认不阻塞（避免把基础设施问题变成误拦）")
-            self.assertIn("node-warn", buf.getvalue(),
-                          "调用失败必须出声——改前是 except Exception: return None（完全静默）")
-        finally:
-            subprocess.run = real
-
-    def test_required_mode_turns_it_into_finding(self):
-        import pc_code_check
-        import rule_base
-        real = subprocess.run
-
-        def boom(*a, **k):
-            raise PermissionError("node denied")
-
-        subprocess.run = boom
-        os.environ["HARNESS_NODE_REQUIRED"] = "1"
-        try:
-            rule_base._NODE_PROBE_WARNED[0] = False
-            with contextlib.redirect_stderr(io.StringIO()):
-                r = pc_code_check.check_syntax("a.mjs", "console.log(1)")
-            self.assertIsNotNone(r, "HARNESS_NODE_REQUIRED=1 时语法未检查 = 失败")
-            self.assertIn("未检查", r)
-        finally:
-            subprocess.run = real
-            os.environ.pop("HARNESS_NODE_REQUIRED", None)
-
-
-class TestC4AllowlistLoud(unittest.TestCase):
-    """C4：allowlist 加载失败不得静默变成空集合。"""
-
-    def _load_copy(self, rel, yaml_name):
-        d = tempfile.mkdtemp(prefix="c4-")
-        shutil.copy(os.path.join(ROOT, rel), d)
-        buf = io.StringIO()
-        import importlib.util
-        with contextlib.redirect_stderr(buf):
-            spec = importlib.util.spec_from_file_location("tmp_ruleset_%d" % abs(hash(d)),
-                                                          os.path.join(d, os.path.basename(rel)))
-            m = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(m)
-        _rmtree_force(d)
-        return m, buf.getvalue()
-
-    def test_pc_missing_allowlist_is_loud(self):
-        m, out = self._load_copy("checks/pc_ruleset.py", "components_allowlist.yaml")
-        self.assertTrue(getattr(m, "ALLOWLIST_ERRORS", None),
-                        "缺 allowlist 文件时必须记录错误（改前 except: pass 静默空集合）")
-        self.assertIn("allowlist-warn", out, "并且要出声")
-
-    def test_h5_missing_allowlist_is_loud(self):
-        m, out = self._load_copy("checks/h5_ruleset.py", "components_allowlist_h5.yaml")
-        self.assertTrue(getattr(m, "ALLOWLIST_ERRORS", None), "H5 同款必须记录错误")
-        self.assertIn("allowlist-warn", out)
-
-    def test_real_repo_allowlists_are_healthy(self):
-        """反向锁：本仓自己的 allowlist 必须是健康的（否则上面的锁会被"永远为真"污染）。"""
-        import pc_ruleset
-        import h5_ruleset
-        self.assertEqual(pc_ruleset.ALLOWLIST_ERRORS, [], "本仓 PC allowlist 应可正常加载")
-        self.assertEqual(h5_ruleset.ALLOWLIST_ERRORS, [], "本仓 H5 allowlist 应可正常加载")
-
-
 class TestC5ExtensionSingleSource(unittest.TestCase):
     """C5：扩展名清单必须单一来源（hook/gate 层不得各写一套）。"""
-
-    def test_registry_covers_endpoints(self):
-        import file_types as F
-        self.assertIn(".nvue", F.exts_for("gxgk_h5"), "H5 支持 .nvue，提交期不得漏检")
-        self.assertTrue(F.matches("a/b.tsx", "hy_backend"), "后端仓混入 .tsx 必须被看见")
-        self.assertIn(".css", F.exts_for("zhongxin_pc"))
-        self.assertNotIn(".nvue", F.exts_for("gxgk_pc"), "PC 端不该收 .nvue（避免无关噪声）")
-        self.assertEqual(set(F.exts_for("unknown_gate")), set(F.ALL_EXTS),
-                         "认不出端点时取并集（宁可多扫不可漏扫）")
 
     def test_hook_layer_uses_registry(self):
         for rel in ("harness/hooks/pre-commit.py", "harness/hooks/post-edit.py", "harness/agents/auto-gate.py"):
             src = _read(rel)
             self.assertIn("file_types", src, "%s 必须走单一来源 file_types（改前各自手抄）" % rel)
 
-    def test_hook_layer_sets_superset_of_check_scripts(self):
-        """hook 层的检查面 ⊇ 各 check 脚本自己的目标面（否则"编辑期看得见、提交期漏检"）。"""
+    def test_unknown_gate_takes_union(self):
+        """认不出端点时取并集（宁可多扫不可漏扫）—— 开源版 gate 名就是这种形态。"""
         import file_types as F
-        for rel, gate in (("checks/h5_code_check.py", "gxgk_h5"),
-                          ("checks/backend_layer_check.py", "hy_backend")):
-            src = _read(rel)
-            exts = set(re.findall(r'"(\.[a-z]{2,4})"', src))
-            hook = set(F.exts_for(gate))
-            missing = {e for e in exts if e in (".vue", ".nvue", ".js", ".ts", ".tsx", ".jsx", ".css", ".scss", ".cs")} - hook
-            self.assertEqual(missing, set(),
-                             "%s 会检查 %s，但 hook 层收不到 → 提交期漏检" % (rel, sorted(missing)))
+        self.assertEqual(set(F.exts_for("example")), set(F.ALL_EXTS))
 
 
 if __name__ == "__main__":

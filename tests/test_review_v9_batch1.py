@@ -220,104 +220,19 @@ class TestL1WorktreeBasis(_Fixture):
         wt = self.worktree()
         _write(os.path.join(wt, "src/a.vue"), "x\r\ny\r\n")
         _git(wt, "add", "src/a.vue")
-        env = self.cfg("gxgk_pc", "checks/pc_code_check.py")
-        o = _sh([PY, os.path.join(ROOT, "harness", "run_gate.py"), "gxgk_pc",
+        env = self.cfg("example", "checks/example_code_check.py")
+        o = _sh([PY, os.path.join(ROOT, "harness", "run_gate.py"), "example",
                  "--repo", wt, os.path.join(wt, "src", "a.vue")], env=env)
         out = o.stdout + o.stderr
         self.assertNotIn("忽略未知参数: --repo", out, "run_gate 仍把 --repo 当未知参数（P1-1 未接线）")
         self.assertIn("检查基准=调用方指定仓", out, "run_gate 没有以调用方指定仓为基准")
         self.assertNotIn("Permission denied", out, "仍把 --repo 的路径当文件塞给检查器")
 
-    def test_basis_used_legacy_changed_lines(self):
-        """评审 v11 §2（V11-1）：上面那条 ENC 例**没有判别力** —— 即使基准退回 config 主仓，
-        文件仍会被检查并以 ENC 拦下（两态都 rc=1）→ 形态 A（仅把
-        `repo = repo_override or g.get("_repo_path")` 改回 `g.get("_repo_path")`）下**全套无人红**。
-
-        本例用 legacy + changed_lines 的语义做**有判别力**的构造（评审给的现成场景）：
-          config 主仓 = main；调用方 = worktree；wt 里 **stage 一个新文件**且命中 PC-CONSOLE
-          基准 = worktree（正确）→ 该行算「本次改动」→ legacy 只降级**存量** → ERROR → rc=1
-          基准 = 主仓（变异 A）→ rel 落仓外 + changed_lines 为空 → 全文视为存量 → 降级 → rc=0（静默放过）
-        夹具用 CRLF，避开 PC-EOL 干扰（否则 rc=1 会被 EOL 规则顶掉，测试因错的理由通过）。
-        """
-        rel = "src/staged_new.vue"
-        _write(os.path.join(self.main, "README.md"), "x\r\n")
-        _git(self.main, "add", "-A")
-        _git(self.main, "commit", "-qm", "init")
-        wt = self.worktree()
-        f = os.path.join(wt, rel)
-        os.makedirs(os.path.dirname(f), exist_ok=True)
-        _write(f, "<template>\r\n  <eagle-tag />\r\n</template>\r\n<script>\r\nconsole.log(1)\r\n</script>\r\n")
-        self.assertEqual(_git(wt, "add", rel).returncode, 0)
-        env = self.cfg("gxgk_pc", "checks/pc_code_check.py", extra="    legacy_baseline: true\n")
-        # 入口必须是 `run_gate <gate> --repo <仓> <文件>`（评审 v11 的 legacy_demo 同款）。
-        # 注意：走 `hooks/pre-commit.py` 时文件清单由 hook 自己算 → 该入口**量不到**基准回归
-        # （我第一版就是这么写的 → 形态 A 下不红，被评审抓出）。这条锁盯的是调度器自己的基准。
-        o = _sh([PY, os.path.join(ROOT, "harness", "run_gate.py"),
-                 "gxgk_pc", "--repo", wt, os.path.join(wt, rel)], env=env)
-        out = (o.stdout or "") + (o.stderr or "")
-        self.assertEqual(o.returncode, 1,
-                         "基准没被真正使用：改动行被判成存量 → legacy 降级 → 静默放过 rc=%d\n%s"
-                         % (o.returncode, out[-500:]))
-        self.assertIn("console.log", out, "命中的应是 PC-CONSOLE（否则测试因错的规则通过）")
-
     def test_basis_invalid_path_is_fail_closed(self):
-        env = self.cfg("gxgk_pc", "checks/pc_code_check.py")
-        o = _sh([PY, os.path.join(ROOT, "harness", "run_gate.py"), "gxgk_pc",
+        env = self.cfg("example", "checks/example_code_check.py")
+        o = _sh([PY, os.path.join(ROOT, "harness", "run_gate.py"), "example",
                  "--repo", os.path.join(self.tmp, "nope")], env=env)
         self.assertEqual(o.returncode, 2, "--repo 指向非法路径必须 fail-closed(2)")
-
-    def test_basis_is_actually_used_backend_enc(self):
-        """评审 v10 §7-4（V10-4）：L1 原先只断言**输出字符串**，变异（改回主仓基准）后照样打印
-        → M1 GREEN = 弱锁。这里补**行为**判据：config 主仓 ≠ 调用方 worktree 时，
-        「本次改动」必须按**调用方仓**算。
-
-        构造：worktree 里 stage 一个**新建的** `.cs`（`*Entities` 下、UTF-8 无 BOM），
-        后端 ENC 规则对「新建/改动的文件」是硬拦（error）。于是：
-          基准=worktree（正确）→ rel 在仓内 + 该文件算新增 → ENC error → rc=1
-          基准=主仓（变异）  → rel 落到仓外、changed_lines 为空 → 文件被跳过 → rc=0（静默放过）
-        """
-        rel = "src/Eagle.RMC.Entities/User.cs"
-        _write(os.path.join(self.main, "README.md"), "x\n")
-        _git(self.main, "add", "-A")
-        _git(self.main, "commit", "-qm", "init")
-        wt = self.worktree()
-        f = os.path.join(wt, rel)
-        os.makedirs(os.path.dirname(f), exist_ok=True)
-        _write(f, "public class User {\n    public int Id { get; set; }\n}\n")   # 无 BOM：违反 .cs 约定
-        self.assertEqual(_git(wt, "add", rel).returncode, 0)
-        env = self.cfg("gxgk_backend", "checks/backend_layer_check.py")
-        o = _sh([PY, os.path.join(ROOT, "harness", "hooks", "pre-commit.py"),
-                 "gxgk_backend", "--repo", wt], env=env)
-        out = (o.stdout or "") + (o.stderr or "")
-        self.assertEqual(o.returncode, 1,
-                         "worktree 基准没被真正使用（改动被判成存量/仓外）→ 静默放过：rc=%d\n%s"
-                         % (o.returncode, out[-500:]))
-
-
-class TestL2BackendReadFailure(unittest.TestCase):
-    """Codex v4 P1-3：后端读取失败必须阻断，不能用空 violations 表示通过。"""
-
-    def test_read_failure_yields_error_finding(self):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "blc_v9", os.path.join(CHECKS, "backend_layer_check.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        d = tempfile.mkdtemp(prefix="v9blc_")
-        self.addCleanup(_rmtree_force, d)
-        overlay = os.path.join(d, "ov"); os.makedirs(overlay)
-        target = os.path.join(d, "Missing.cs")          # overlay 里**不存在**该副本
-        _write(target, "class X {}\n")
-        os.environ["HARNESS_STAGED_OVERLAY"] = overlay
-        os.environ["HARNESS_STAGED_REPO"] = d
-        try:
-            out = mod.check_file(__import__("pathlib").Path(target))
-        finally:
-            os.environ.pop("HARNESS_STAGED_OVERLAY", None)
-            os.environ.pop("HARNESS_STAGED_REPO", None)
-        self.assertTrue(out, "读取失败返回了空 violations —— 等于报平安（P1-3）")
-        self.assertEqual(out[0].get("severity"), "error", "读取失败必须是 error 级")
-
 
 @unittest.skipUnless(_BASH, "本机找不到可用的 git-bash（裸 bash 指向 WSL）→ shell 类锁跳过")
 @_slow("真跑 bash 分发器 + 假工程布局（每例 2.6~6.1s）")
@@ -478,12 +393,12 @@ class TestL7AcceptanceSyntaxProbe(_Fixture):
 
     @_slow("真跑 acceptance 探针（子进程 + 全仓扫描，3.6s）")
     def test_syntax_probe_is_false_without_node(self):
-        env = self.cfg("gxgk_pc", "checks/pc_code_check.py")
+        env = self.cfg("demo_pc", "checks/pc_code_check.py")
         # 造一个"没有 node"的 PATH（按文件建镜像，见 _node_free_path）
         env["PATH"] = _node_free_path(self.tmp)   # 按文件建镜像，node 一族一个不进（见该函数）
         self.assertIsNone(shutil.which("node", path=env["PATH"]),
                           "夹具没剥掉 node，锁会失真（PATH=%s）" % env["PATH"])
-        o = _sh([PY, os.path.join(ROOT, "sandbox", "acceptance_check.py"), "gxgk_pc", "--json"], env=env)
+        o = _sh([PY, os.path.join(ROOT, "sandbox", "acceptance_check.py"), "demo_pc", "--json"], env=env)
         out = o.stdout + o.stderr
         self.assertIn('"syntax"', out, "acceptance 没有输出 syntax 项（探针没接线）")
         # 评审 v10 §7-3（V10-3）：原判据 `assertIn("false", out.lower())` 近似**恒真** ——

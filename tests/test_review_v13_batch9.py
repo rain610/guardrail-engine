@@ -6,8 +6,8 @@
 `config/harness.yaml` 里 22 处 `line_ending:`（11 LF + 11 CRLF）是**维护机当年检出时的快照**，
 而它的优先级高于事实：
 
-    git -C .../agentguard_mobile_net-gxgk ls-files --eol | <数 w/ 列>
-    #   → crlf=1745 / lf=29        ← 而 gate gxgk_h5 声明的是 line_ending: LF
+    git -C <某个 H5 端仓> ls-files --eol | <数 w/ 列>
+    #   → crlf=1745 / lf=29        ← 而该 gate 声明的是 line_ending: LF
     # 台账里那 1489 条 H5-CRLF 错误就是它的产物：**纯行尾误报，今天就在 Windows 上发生**
 
 同事换盘符 / 换用户名 / 在 WSL 上 clone 只会更糟（Linux 检出是 LF，而 PC gate 声明 CRLF
@@ -34,10 +34,10 @@
 ⑦ 是施工中真出过的事故，值得单说
 ================================================================================
 删那 22 行 `line_ending:` 时，替换把该行**连同它与下一行之间的换行**一起吞了，
-于是 `  gxgk_backend:` 这类 gate 键粘到了上一行末尾 —— 在 YAML 里整行成了注释/值的一部分，
+于是某个 gate 键粘到了上一行末尾 —— 在 YAML 里整行成了注释/值的一部分，
 **该 gate 从配置里整个消失**。症状不报错而是"看起来配好了"：`--validate --structure-only`
-实测从 34 个 gate 掉到 13 个，且 `script:` 全部串位（`gxgk_pc` 显示成
-`checks/backend_layer_check.py`），`run_gate.py gxgk_h5 <文件>` 直接报「gate 未登记」。
+实测从 34 个 gate 掉到 13 个，且 `script:` 全部串位（某个 gate 的脚本显示成
+`checks/backend_layer_check.py`），`run_gate.py <某个 H5 gate> <文件>` 直接报「gate 未登记」。
 
 所以 `TestConfigGateKeysAreIntact` 三条一起上：**粘连正则零命中** + **严格行扫描的键集 ==
 加载后的 gate 集** + **`script` 与 gate 名后缀一致**。第三条是"后果锁"——它不问原因，
@@ -234,7 +234,7 @@ class TestAutoMatchesWorktreeReality(_RepoCase):
 
         它是 git 对"**被检出的文本文件**"的保证；手工在仓里写过 LF 的临时仓并不满足它
         （字节是手写的，没经过 checkout）。真 clone 的工作树必是 CRLF，所以这不是本仓形态；
-        而代价换来的是 0.21s 对 1.74s（实测 gxgk_h5：无 pathspec 的 `ls-files --eol` 要 1.5s+）。
+        而代价换来的是 0.21s 对 1.74s（实测某个 H5 仓：无 pathspec 的 `ls-files --eol` 要 1.5s+）。
         """
         d = self.repo(autocrlf="true", crlf=0, lf=3)
         self.assertEqual(eol.worktree_eol_map(d)["f00.txt"], "lf", "前提：工作树确实是 LF")
@@ -310,7 +310,7 @@ class TestMajorityThresholdAndNotice(_RepoCase):
         """出声判据 = **结论 != 端默认**（= "这个 gate 的期望值因你这台机器而变了"）。
 
         同一个仓、同一份字节，只换端默认：PC 侧（CRLF）静默、H5 侧（LF）出声 ——
-        gxgk_h5 那 1489 条误报的成因就是后者，而它是同事最需要看见的那一句。
+        某个 H5 仓那 1489 条误报的成因就是后者，而它是同事最需要看见的那一句。
         """
         d = self.repo(autocrlf="true", crlf=3)
         _no_notice_env()
@@ -365,7 +365,7 @@ class TestNoDriftWithSandboxEolText(_RepoCase):
 
     `eol_text.index_eol_map()` 取 `i/`（git 会把它**存**成什么 —— 打包/发布语义）；
     `_eol_policy.worktree_eol_map()` 取 `w/`（它现在**躺**在盘上是什么 —— 行尾门禁语义）。
-    行尾门禁读的是磁盘字节，所以必须比工作树侧：拿索引侧比，gxgk_h5 那 1732 个 CRLF 照样全红。
+    行尾门禁读的是磁盘字节，所以必须比工作树侧：拿索引侧比，某个 H5 仓那 1732 个 CRLF 照样全红。
     """
 
     def test_both_sides_match_git_own_columns_verbatim(self):
@@ -459,7 +459,7 @@ class TestConfigGateKeysAreIntact(unittest.TestCase):
                 m = re.match(r"^  ([A-Za-z0-9_]+):\s*$", l)
                 if m:
                     keys.append(m.group(1))
-        self.assertGreaterEqual(len(keys), 30, "gate 数掉到这个量级，八成是整段被吃掉了")
+        self.assertGreaterEqual(len(keys), 2, "gate 数掉到这个量级，八成是整段被吃掉了")
 
         sys.path.insert(0, HARNESS_LIB)
         import _config
@@ -471,27 +471,22 @@ class TestConfigGateKeysAreIntact(unittest.TestCase):
     def test_each_gate_script_matches_its_name_suffix(self):
         """**后果锁**：不问原因，只问"这个 gate 的脚本是不是被换成了别人的"。
 
-        事故现场就是 `gxgk_pc` 的 `script` 显示成 `checks/backend_layer_check.py` ——
+        事故现场就是某个 gate 的 `script` 显示成 `checks/backend_layer_check.py` ——
         因为它的 `repo:`/`script:` 两行在解析里并到了前一个 gate 身上。
         """
         sys.path.insert(0, HARNESS_LIB)
         import _config
         gates = _config.load(CONFIG_YAML).get("gates") or {}
-        want = {"_pc": "pc_code_check.py", "_h5": "h5_code_check.py",
-                "_backend": "backend_layer_check.py"}
+        want = {"example": "example_code_check.py"}
         seen = 0
         for name, g in gates.items():
             if name == "harness_self":
                 continue
-            for suffix, script in want.items():
-                if name.endswith(suffix):
-                    seen += 1
-                    self.assertEqual(os.path.basename(g.get("script") or ""), script,
-                                     "%s 的 script 不该是 %r" % (name, g.get("script")))
-                    break
-            else:
-                self.fail("gate 名 %r 没有可判定的端后缀，本锁需要跟着更新" % name)
-        self.assertGreaterEqual(seen, 30, "只判到 %d 个 gate，锁可能已空转" % seen)
+            self.assertIn(name, want, "gate 名 %r 没有可判定的脚本，本锁需要跟着更新" % name)
+            self.assertEqual(os.path.basename(g.get("script") or ""), want[name],
+                             "%s 的 script 不该是 %r" % (name, g.get("script")))
+            seen += 1
+        self.assertGreaterEqual(seen, 1, "只判到 %d 个 gate，锁可能已空转" % seen)
 
     def test_no_gate_declares_line_ending(self):
         """那 22 行是**维护机当年检出的快照**，删掉是目的本身 —— 别加回来。
@@ -519,11 +514,12 @@ class TestConfigGateKeysAreIntact(unittest.TestCase):
         tmp = tempfile.mkdtemp(prefix="eol-cfg-")
         self.addCleanup(_rmtree_force, tmp)
 
-        def run(value):
+        def run(value, enabled=True):
             cfg = os.path.join(tmp, "local-%s.yaml" % value)
             with open(cfg, "w", encoding="utf-8") as f:
-                f.write("gates:\n  probe_eol_gate:\n    enabled: true\n"
-                        "    script: checks/pc_code_check.py\n    line_ending: %s\n" % value)
+                f.write("gates:\n  probe_eol_gate:\n    enabled: %s\n"
+                        "    script: checks/example_code_check.py\n    line_ending: %s\n"
+                        % ("true" if enabled else "false", value))
             # `HARNESS_LOG_FILE` / `HARNESS_STATS_FILE` 必须**指到临时目录**：
             # 不指的话 `run_gate` 会把本次探针写进真实的 `reports/gate_log.jsonl`
             # （第四轮 N-2 实测污染过 124 条，因此 `tests/test_coverage.py:400` 有一条源码级锁
@@ -542,17 +538,20 @@ class TestConfigGateKeysAreIntact(unittest.TestCase):
         self.assertEqual(rc_bad, 2, "非法值必须阻断（rc=2）；输出=%s" % out_bad[-700:])
         self.assertIn("line_ending 非法", out_bad)
 
-        rc_ok, out_ok = run("auto")
+        # 合法值这一向用 disabled gate：示例脚本不消费 line_ending（它只由端脚本的
+        # _resolve_eol 读取），enabled 时会额外命中「空承诺」检查 —— 那是另一条判据，
+        # 会让「值域合法」这个结论混进无关的红。值域检查本身与 enabled 无关。
+        rc_ok, out_ok = run("auto", enabled=False)
         self.assertNotIn("line_ending 非法", out_ok, "合法值不该被报：%s" % out_ok[-400:])
         self.assertEqual(rc_ok, 0, "`auto` 是默认值，必须放行；输出=%s" % out_ok[-700:])
 
     def test_readme_documents_the_three_states(self):
         with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
             readme = f.read()
-        self.assertIn("gates.<gate>.line_ending", readme,
-                      "README 的配置键表必须留着这一行（键仍在，只是默认变了）")
-        row = [l for l in readme.split("\n") if l.startswith("| `gates.<gate>.line_ending`")]
-        self.assertEqual(len(row), 1, "配置键表里该键应恰好一行")
+        self.assertIn("line_ending", readme,
+                      "README 必须保留 line_ending 这个键（键仍在，只是默认变了）")
+        row = [l for l in readme.split("\n") if l.strip().startswith("line_ending:")]
+        self.assertEqual(len(row), 1, "配置示例里该键应恰好一行")
         self.assertIn("auto", row[0])
         self.assertIn("CRLF", row[0])
         self.assertIn("LF", row[0])
@@ -582,7 +581,7 @@ class TestEolSourceInLedger(_RepoCase):
     没跑过的 gate，一律不落键，由下面两条阴性对照看住。
     """
 
-    GATE = "hy_pc"                      # 共享配置里 enabled: true 的普通 PC 端 gate
+    GATE = "example"                    # 共享配置里 enabled: true 的示例 gate
 
     def _ledger_path(self):
         return os.path.join(self.tmp, "gate_log.jsonl")
@@ -616,37 +615,9 @@ class TestEolSourceInLedger(_RepoCase):
             f.write(body)
         return p
 
-    # ---------- 阳性：来源真的走到了台账 ----------
-    def test_checkout_majority_source_reaches_the_ledger(self):
-        """本机检出多数 → 台账那一行必须说得出「期望值是按本仓检出来的」。
-
-        这是防护 3 的主用例：台账要能回答"上个月那批 H5 全红时，期望行尾是按什么定的"。
-        """
-        repo = self.repo("maj", autocrlf="false", crlf=6, lf=0)
-        rc, out, row = self._row(repo)
-        self.assertEqual(rc, 0, out[-600:])
-        self.assertTrue(row, "没有落台账 —— 后面几条断言会变成空转：%s" % out[-600:])
-        self.assertEqual(row.get("eol_source"), "checkout-majority",
-                         "检出多数的来源必须落到台账上：%s" % row)
-        self.assertEqual(row.get("eol_value"), "CRLF",
-                         "落的值必须是**本次真用的**那个（6 个文件全是 CRLF）：%s" % row)
-
-    def test_declared_source_is_recorded_as_declared(self):
-        """显式声明 → 来源记 `declared`，且值取声明的那个（不是检出多数那个）。
-
-        两向都咬住：`source` 证明没把声明的功劳记到检出头上；`value` 证明声明的值真的生效了。
-        用一个 **CRLF 多数**的仓去声明 `LF` —— 若哪一方没生效，两个断言必有一个红。
-        """
-        repo = self.repo("decl", autocrlf="false", crlf=6, lf=0)
-        cfg = self._override("gates:\n  %s:\n    line_ending: LF\n" % self.GATE)
-        rc, out, row = self._row(repo, extra_env={"HARNESS_CONFIG": cfg})
-        self.assertEqual(rc, 0, out[-600:])
-        self.assertTrue(row, out[-600:])
-        self.assertEqual(row.get("eol_source"), "declared",
-                         "显式声明的 gate 不该被记成按检出判定：%s" % row)
-        self.assertEqual(row.get("eol_value"), "LF",
-                         "声明的 LF 必须胜过该仓的 CRLF 多数（否则这条锁自己就假了）：%s" % row)
-
+    # 阳性用例（checkout-majority / declared / resolve-failed）依赖 PC/H5 检查脚本里
+    # `_resolve_eol()` 的接线；开源裁剪后已无这类脚本。_eol_policy.resolve() 本身
+    # 仍由 TestDeclaredWins / TestAutoMatchesWorktreeReality 等类直接覆盖。
     # ---------- 阴性：没有这个概念 / 没跑过，就不许留痕 ----------
     def test_gate_without_eol_concept_has_no_eol_keys(self):
         """`harness_self` 压根不走行尾 → 台账里**不该有这一项**。
@@ -676,32 +647,8 @@ class TestEolSourceInLedger(_RepoCase):
         self.assertEqual([k for k in row if k.startswith("eol")], [],
                          "没跑过的 gate 不许有行尾来源：%s" % row)
 
-    def test_resolve_failure_is_recorded_not_faked(self):
-        """半残部署（`_eol_policy.py` 不在）→ 记 `resolve-failed`，**不许伪装成端默认**。
-
-        这是本批最容易犯的那个错：解析失败时"补一个 `endpoint-default`"看起来无害，
-        实际等于把「**没解析出来**」和「解析出来正好是端默认」写成同一句话 ——
-        而 `no-repo`（本机没配这个 gate）就会被读成「按检出事实判定了」。
-
-        用**真的删掉文件**的工程副本来造这个场景（不是打桩）：它正是这条分支存在的理由
-        （混装 / 半残部署），`_eol_policy.py` 是批次 3 新增的引擎层文件，老装机上就没有。
-        """
-        sys.path.insert(0, TESTS)
-        from _engine_copy import EngineCopy
-        eng = EngineCopy()
-        self.addCleanup(eng.cleanup)
-        os.remove(os.path.join(eng.path, "harness", "_eol_policy.py"))
-
-        repo = self.repo("half", autocrlf="false", crlf=6, lf=0)
-        rc, out, row = self._row(repo, engine=eng.path)
-        self.assertEqual(rc, 0, "解析不出来不该把门禁打挂（仍按模块默认跑）：%s" % out[-600:])
-        self.assertTrue(row, out[-600:])
-        self.assertEqual(row.get("eol_source"), "resolve-failed",
-                         "半残部署必须留痕，且说的是「没解析出来」：%s" % row)
-        self.assertNotEqual(row.get("eol_source"), "endpoint-default",
-                            "解析失败**不许**伪装成端默认 —— 那会让 no-repo 被读成按检出判定：%s" % row)
-        self.assertEqual(row.get("eol_value"), "CRLF",
-                         "值应停在模块默认（PC=CRLF），这正是本次真正会用的那个：%s" % row)
+    # resolve-failed → 台账 这一用例同样依赖端脚本的 `_resolve_eol()` 接线；
+    # 半残部署的失败分支由 `_eol_policy.resolve()` 自身的行为锁覆盖（见 TestProbeFailure）。
 
 
 if __name__ == "__main__":

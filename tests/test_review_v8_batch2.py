@@ -136,7 +136,7 @@ class TestB1HooksPathChain(unittest.TestCase):
                 f.write('#!/bin/sh\necho "团队自己的检查"\nexit 1\n')
             os.chmod(own, 0o755)
             inst = os.path.join(ROOT, "sandbox", "install_hooks.sh").replace("\\", "/")
-            r = subprocess.run([bash, inst, "gxgk_pc"], cwd=repo, capture_output=True, text=True,
+            r = subprocess.run([bash, inst, "example"], cwd=repo, capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=300)
             backup = os.path.join(repo, ".git", "agentguard-original-hooks", "pre-commit")
             self.assertTrue(os.path.isfile(backup),
@@ -257,16 +257,16 @@ class TestB2PolicyOverrides(unittest.TestCase):
         # 于是共享层一开就红。真正的不变量只有一条：**local 写的值不许出现在合并结果里**。
         # 故：本地写共享层的反面，再断言合并结果仍是共享层那个值。
         cfg, out = self._load_with_local("""gates:
-  gxgk_pc:
+  example:
     mode: loose
     script: /tmp/evil.py
     legacy_baseline: %s
-""" % self._local_scalar_for("gxgk_pc", "legacy_baseline"))
-        g = cfg["gates"]["gxgk_pc"]
+""" % self._local_scalar_for("example", "legacy_baseline"))
+        g = cfg["gates"]["example"]
         self.assertNotEqual(g.get("mode"), "loose", "本机不得通过 local 降级 mode")
-        self.assertEqual(g.get("script"), "checks/pc_code_check.py", "script 不许被指到别处")
+        self.assertEqual(g.get("script"), "checks/example_code_check.py", "script 不许被指到别处")
         self.assertEqual(bool(g.get("legacy_baseline")),
-                         bool(self._base_value("gxgk_pc", "legacy_baseline")),
+                         bool(self._base_value("example", "legacy_baseline")),
                          "不得通过 local 打开 legacy 豁免（合并结果必须仍是共享层的值）")
         self.assertIn("config-policy", out, "忽略策略覆盖必须出声")
 
@@ -276,10 +276,10 @@ class TestB2PolicyOverrides(unittest.TestCase):
         无此能力的后果：同事机器上 --validate 永久红（一堆「repo 路径不存在」），
         而文档又禁止改共享 yaml → 只剩「改 core.hooksPath」这种绕过路径。"""
         cfg, out = self._load_with_local("""gates:
-  gxgk_pc:
+  example:
     enabled: false
 """)
-        self.assertFalse(cfg["gates"]["gxgk_pc"].get("enabled"),
+        self.assertFalse(cfg["gates"]["example"].get("enabled"),
                          "本地层应当允许关掉自己没有的 gate")
         self.assertIn("已在本地关闭", out, "本地关闭必须出声（防静默减护）")
 
@@ -293,9 +293,9 @@ class TestB2PolicyOverrides(unittest.TestCase):
         （N 条）… 文件：<path>`）。两种形态都留痕，所以这里接受任一 —— 但**都不许没有**。
         """
         cfg, out = self._load_with_local("""repos:
-  gxgk_pc: D:/somewhere/else
+  example_repo: D:/somewhere/else
 """)
-        self.assertEqual(cfg["repos"]["gxgk_pc"], "D:/somewhere/else",
+        self.assertEqual(cfg["repos"]["example_repo"], "D:/somewhere/else",
                          "路径映射是本地覆盖层的正当用途，必须允许")
         self.assertTrue("repos 路径覆盖" in out or "全部来自本地覆盖层" in out,
                         "允许的动作也要留痕（否则指向空目录=静默关闭）：base 的 repos 段非空时"
@@ -374,8 +374,8 @@ class TestB2PolicyOverrides(unittest.TestCase):
         d = tempfile.mkdtemp(prefix="b2c-")
         lp = os.path.join(d, "local.yaml")
         with io.open(lp, "w", encoding="utf-8", newline="") as f:
-            f.write("gates:\n  gxgk_pc:\n    mode: loose\n    legacy_baseline: %s\n"
-                    % self._local_scalar_for("gxgk_pc", "legacy_baseline"))
+            f.write("gates:\n  example:\n    mode: loose\n    legacy_baseline: %s\n"
+                    % self._local_scalar_for("example", "legacy_baseline"))
         old_cfg = os.environ.get("HARNESS_CONFIG")
         old_ovr = os.environ.get("HARNESS_ALLOW_POLICY_OVERRIDE")
         os.environ["HARNESS_CONFIG"] = lp
@@ -386,13 +386,13 @@ class TestB2PolicyOverrides(unittest.TestCase):
             with contextlib.redirect_stderr(buf):
                 cfg = C.load()
             out = buf.getvalue()
-            self.assertEqual(cfg["gates"]["gxgk_pc"].get("mode"), "loose", "显式开关下应放行")
+            self.assertEqual(cfg["gates"]["example"].get("mode"), "loose", "显式开关下应放行")
             self.assertIn("策略字段覆盖", out)
             self.assertIn("mode", out, "必须逐条报出放行了哪个字段，不能只说「已放行」")
             self.assertIn("legacy_baseline", out, "两个字段都要报，不能只报第一个")
             ovr = C.last_policy_override()
-            self.assertIn("gates.gxgk_pc.mode", ovr)
-            self.assertIn("gates.gxgk_pc.legacy_baseline", ovr)
+            self.assertIn("gates.example.mode", ovr)
+            self.assertIn("gates.example.legacy_baseline", ovr)
             self.assertEqual([], C.last_policy_rejection(),
                              "放行模式下没有任何字段被忽略 —— rejection 非空会让 --validate "
                              "打出「已被忽略」，与事实正好相反")
@@ -403,10 +403,10 @@ class TestB2PolicyOverrides(unittest.TestCase):
             os.environ.pop("HARNESS_ALLOW_POLICY_OVERRIDE", None)
             with contextlib.redirect_stderr(buf):
                 cfg2 = C.load()
-            self.assertNotEqual(cfg2["gates"]["gxgk_pc"].get("mode"), "loose", "无开关时必须拦回")
+            self.assertNotEqual(cfg2["gates"]["example"].get("mode"), "loose", "无开关时必须拦回")
             self.assertEqual([], C.last_policy_override(),
                              "没走放行开关 → override 必须为空（否则上面那条是恒真的假绿）")
-            self.assertIn("gates.gxgk_pc.mode", C.last_policy_rejection())
+            self.assertIn("gates.example.mode", C.last_policy_rejection())
         finally:
             if old_cfg is None:
                 os.environ.pop("HARNESS_CONFIG", None)
@@ -424,14 +424,14 @@ class TestB2PolicyOverrides(unittest.TestCase):
         d = tempfile.mkdtemp(prefix="b2b-")
         lp = os.path.join(d, "local.yaml")
         with io.open(lp, "w", encoding="utf-8", newline="") as f:
-            f.write("gates:\n  gxgk_pc:\n    enabled: false\n")
+            f.write("gates:\n  example:\n    enabled: false\n")
         os.environ["HARNESS_CONFIG"] = lp
         os.environ["HARNESS_ALLOW_POLICY_OVERRIDE"] = "1"
         buf = io.StringIO()
         try:
             with contextlib.redirect_stderr(buf):
                 cfg = C.load()
-            self.assertFalse(cfg["gates"]["gxgk_pc"].get("enabled"),
+            self.assertFalse(cfg["gates"]["example"].get("enabled"),
                              "显式开关下应放行（用于调试）")
             self.assertIn("策略字段覆盖", buf.getvalue())
         finally:

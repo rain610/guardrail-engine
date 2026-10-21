@@ -115,7 +115,7 @@ def _parse_args(argv):
             args = args[:i] + args[i + 2:]
     if self_mode:
         return True, "self", commit_msg or " ".join(args)
-    return False, (args[0] if args else "gxgk_pc"), commit_msg or " ".join(args[1:])
+    return False, (args[0] if args else "example"), commit_msg or " ".join(args[1:])
 
 
 def _take_repo_arg(argv):
