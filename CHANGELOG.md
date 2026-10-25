@@ -8,8 +8,31 @@
 
 ## [Unreleased]
 
+（暂无）
+
+## [0.2.0] — 2026-10-25
+
+### Changed
+
+- **项目改名 `guardrail-engine`（迁移期保留全部旧名）**：发行包 / 导入包为
+  `guardrail-engine` / `guardrail_engine`，主命令 `guardrail-engine`；仓库、文档与
+  MCP 服务名同步。旧名不会当场失效：`agentguard` 命令与导入包、`~/.agentguard`
+  配置目录、`AGENTGUARD_*` 环境变量、`.agentguard-init.json` 标记、旧 MCP 键
+  `agentguard` 都继续可用（新名优先，旧名兜底）。为了让老接入不断，`agentguard/`
+  作为兼容壳随 wheel 一起分发，v0.3 移除。以下**保持不变**：`harness-ok:` 豁免标记、
+  `harness/` `checks/` `config/harness.toml` 磁盘布局、hook 文件名
+  `agentguard-gate.py`、Claude 插件 ID `agentguard@agentguard-tools`、OpenClaw 扩展
+  `extensions/agentguard`。
+- 自带引擎的 wheel 与离线安装包的目录名改为 `guardrail-engine-package-v<版本>`；
+  `sandbox/pack_release.py` 产出的内容与校验口径同步。
+
 ### Added
 
+- **PyPI 可信发布（OIDC，不用长期 token）**：`release.yml` 新增 `publish` job ——
+  `python -m build` 先打 sdist、**再从 sdist** 打 wheel（sdist 漏带引擎会当场失败），
+  干净 venv 安装并 `init` 冒烟后由 `pypa/gh-action-pypi-publish` 上传。首次发布前需在
+  PyPI 网页端登记 trusted publisher（见 `docs/packaging/RUNBOOK.md`）。
+- **英文 README**：新增 `README.en.md`，与中文 `README.md` 互链。
 - **外部分析器适配 gate（架构 A）**：新增 `checks/external_adapter.py` 与 `eslint_check.py` /
   `semgrep_check.py`，把 ESLint / Semgrep 的 JSON 结果归一成统一 `Finding`，复用同一条输出、
   `harness-ok:` 行内豁免、退出码与台账通道。两个 gate 默认 `enabled = false`；命令可用

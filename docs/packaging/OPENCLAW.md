@@ -1,6 +1,6 @@
-# OpenClaw 接入指南（agentguard）
+# OpenClaw 接入指南（guardrail-engine）
 
-把 agentguard 门禁以「Claude Code 插件市场同款 bundle」的形式装入 OpenClaw；安装完成后，agent 会话即可直接调用门禁工具（技能 + MCP 双通道）。本文件是 RUNBOOK「客户端接入」章节的展开版：完整命令、验证与坑位以本文为准。
+把 guardrail-engine 门禁以「Claude Code 插件市场同款 bundle」的形式装入 OpenClaw；安装完成后，agent 会话即可直接调用门禁工具（技能 + MCP 双通道）。本文件是 RUNBOOK「客户端接入」章节的展开版：完整命令、验证与坑位以本文为准。
 
 ## 0. 前置条件
 
@@ -63,4 +63,4 @@ python integrations/plugins/build_marketplace.py --harness <HARNESS 仓库根> -
 
 ---
 
-维护：agentguard 打包路线；相关背景见 `RUNBOOK.md`「客户端接入」与 `COMPAT.md`。
+维护：guardrail-engine 打包路线；相关背景见 `RUNBOOK.md`「客户端接入」与 `COMPAT.md`。

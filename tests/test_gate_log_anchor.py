@@ -3,7 +3,7 @@
 
 对应实现（**三份读侧判据必须逐字同源**，本文件就是那个对拍锁）：
 - harness/run_gate.py   _log_file / _ledger_files / _chain_h / _log_run（写侧 + --summary）
-- agentguard/cli.py  _ledger_paths / _read_ledger / _cmd_anchor / _cmd_verify（读侧 + 锚）
+- guardrail_engine/cli.py  _ledger_paths / _read_ledger / _cmd_anchor / _cmd_verify（读侧 + 锚）
 - harness/coverage.py   ledger_files / _anchor_probe / --quick（引擎侧只读锚点）
 
 密闭口径（与既有 tests 同款）：HARNESS_LOG_FILE / HARNESS_LOG_DIR / HARNESS_ANCHOR_FILE
@@ -21,7 +21,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_GATE = os.path.join(ROOT, "harness", "run_gate.py")
-CLI = os.path.join(ROOT, "agentguard", "cli.py")
+CLI = os.path.join(ROOT, "guardrail_engine", "cli.py")
 COV = os.path.join(ROOT, "harness", "coverage.py")
 ENV_KEYS = ("HARNESS_LOG_FILE", "HARNESS_LOG_DIR", "HARNESS_ANCHOR_FILE")
 PY = sys.executable

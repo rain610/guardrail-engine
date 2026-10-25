@@ -16,7 +16,7 @@
      这里**跑真 install_hooks.sh + 真 cli.py**，不用手写的假存档 ——
      手写存档只能证明"我以为格式是这样"，跑真脚本才锁得住读写两侧的契约。
   ③ **镜像实现不漂移**：`sandbox/uninstall.py`（CLI 转发不了时的兜底，随包分发、
-     不能 import 包内模块）与 `agentguard/cli.py` 解析同一份存档必须同结论。
+     不能 import 包内模块）与 `guardrail_engine/cli.py` 解析同一份存档必须同结论。
 
 另附：`install_engine_hooks.sh` 的一条**自毁**路径（同一次排查中发现，见该文件头）
 —— 它原先用 `git rev-parse --git-path hooks` 定位目录，而该命令尊重 `core.hooksPath`，
@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _tmpclean import rmtree_force as _rmtree_force  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CLI = os.path.join(ROOT, "agentguard", "cli.py")
+CLI = os.path.join(ROOT, "guardrail_engine", "cli.py")
 INSTALL_HOOKS = os.path.join(ROOT, "sandbox", "install_hooks.sh")
 ENGINE_HOOKS = os.path.join(ROOT, "sandbox", "install_engine_hooks.sh")
 UNINSTALL_PY = os.path.join(ROOT, "sandbox", "uninstall.py")
@@ -47,7 +47,7 @@ SHARED = os.path.join(ROOT, "harness", "hooks-dir")
 _HAS_GIT = shutil.which("git") is not None
 _HAS_SH = shutil.which("sh") is not None
 
-# 存档行格式（与 agentguard/cli.py / sandbox/uninstall.py 的常量一致，有 test_same_constants 锁）
+# 存档行格式（与 guardrail_engine/cli.py / sandbox/uninstall.py 的常量一致，有 test_same_constants 锁）
 PREV_HP_PREFIX = "安装前 core.hooksPath："
 
 # 快跑（HARNESS_FAST=1）：本文件的慢在**真起 git 仓 + 真跑两个脚本**（每例 1~2s）。
@@ -223,11 +223,11 @@ class TestUninstallPyMirrorDoesNotDrift(unittest.TestCase):
 
     def test_both_readers_agree_on_the_same_archive(self):
         """同一份存档 → 两个实现必须给出同样的 (状态, 值)。"""
-        sys.path.insert(0, os.path.join(ROOT, "agentguard"))
+        sys.path.insert(0, ROOT)
         try:
-            from agentguard import cli as cli_mod     # noqa: F401
+            from guardrail_engine import cli as cli_mod     # noqa: F401
         except Exception:
-            import cli as cli_mod                        # 无包上下文时裸导入（别的测试也这么干）
+            import cli as cli_mod                           # 无包上下文时裸导入（别的测试也这么干）
         import importlib.util
         spec = importlib.util.spec_from_file_location("_uninstall_under_test", UNINSTALL_PY)
         un_mod = importlib.util.module_from_spec(spec)

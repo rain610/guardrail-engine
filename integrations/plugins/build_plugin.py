@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""构建 Claude Code 插件原型（agentguard）——按机器打戳 + 技能同源复制。
+"""构建 Claude Code 插件原型（扩展 ID 仍是 agentguard，产品名 guardrail-engine）——按机器打戳 + 技能同源复制。
 
 用法（在工程根或任意位置）：
   python integrations/plugins/build_plugin.py --harness <HARNESS> --out <OUT_DIR> [--python <PY>]
@@ -7,8 +7,8 @@
 
 产物（OUT_DIR，可直接用于 claude --plugin-dir / marketplace 形态）：
   .claude-plugin/plugin.json   插件清单（版本取自 <HARNESS>/VERSION，单一来源）
-  .mcp.json                    把 agentguard MCP 薄服务声明为插件自带 MCP server
-  skills/agentguard/...  技能包（从 integrations/agentguard-skill 复制，同源）
+  .mcp.json                    把 guardrail-engine MCP 薄服务声明为插件自带 MCP server
+  skills/guardrail-engine/...   技能包（从 integrations/guardrail-engine-skill 复制，同源）
   README.md                    插件层使用说明
 
 两种打戳模式（`--keep-placeholders`，2026-09-17 起出货件走第二种）
@@ -49,7 +49,7 @@ def _eol_text(harness):
 
     为什么让**这个**脚本也走同一口径：出货件里 `marketplace/plugins/…/SKILL.md` 的 CRLF
     正是从这里来的 —— 本函数此前用 `open(..., "rb")` 原样照搬工作树字节，而同一份
-    `integrations/agentguard-skill/SKILL.md` 在打包机上是 CRLF、在 CI 上是 LF，
+    `integrations/guardrail-engine-skill/SKILL.md` 在打包机上是 CRLF、在 CI 上是 LF，
     于是同一个包在外层就已经不同了（2026-09-18 发版复盘实测的第 3 处）。
     """
     sandbox = os.path.join(os.path.abspath(harness), "sandbox")
@@ -91,8 +91,8 @@ def copy_tree_if_changed(src, dst, harness, eol_map=None):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="构建 agentguard Claude Code 插件原型")
-    ap.add_argument("--harness", required=True, help="agentguard 工程根（含 harness/run_gate.py）")
+    ap = argparse.ArgumentParser(description="构建 guardrail-engine Claude Code 插件原型")
+    ap.add_argument("--harness", required=True, help="guardrail-engine 工程根（含 harness/run_gate.py）")
     ap.add_argument("--out", required=True, help="输出目录（不存在则创建）")
     ap.add_argument("--python", default=sys.executable or "python", help="写入配置的 python 解释器")
     ap.add_argument("--keep-placeholders", action="store_true",
@@ -105,7 +105,9 @@ def main(argv=None):
     if not os.path.isfile(os.path.join(harness, "harness", "run_gate.py")):
         print("✗ 不是有效的 harness 根: %s" % harness)
         return 2
-    mcp = os.path.join(harness, "agentguard", "mcp.py")
+    mcp = os.path.join(harness, "guardrail_engine", "mcp.py")
+    if not os.path.isfile(mcp):          # 旧 clone（改名前的仓库）
+        mcp = os.path.join(harness, "agentguard", "mcp.py")
     if not os.path.isfile(mcp):
         print("✗ 缺少 MCP 薄服务: %s" % mcp)
         return 2
@@ -135,8 +137,8 @@ def main(argv=None):
         with io.open(dst, "w", encoding="utf-8", newline="") as f:
             f.write(text)
 
-    skill_src = os.path.join(harness, "integrations", "agentguard-skill")
-    skill_dst = os.path.join(out, "skills", "agentguard")
+    skill_src = os.path.join(harness, "integrations", "guardrail-engine-skill")
+    skill_dst = os.path.join(out, "skills", "guardrail-engine")
     c = u = s = 0
     if os.path.isdir(skill_src):
         c, u, s = copy_tree_if_changed(skill_src, skill_dst, harness)

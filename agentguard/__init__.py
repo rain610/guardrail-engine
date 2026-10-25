@@ -1,20 +1,16 @@
 # -*- coding: utf-8 -*-
-"""agentguard：agentguard 的薄壳集合（ADR-0001：壳只转发，逻辑只一份）。
+"""兼容壳（2026-10-25 改名 guardrail-engine）：`import agentguard` 仍可用。
 
-- cli.py   : 统一命令行入口（运行 / 台账 / 安装 / 旁路 / 回滚）
-- mcp.py   : 单文件零依赖 MCP 薄服务（stdio JSON-RPC）
-- _shell.py: 三个入口共用的环境定位件（工程根 / 版本 / 解释器 / 前置检查 / gate 归属匹配）
-
-版本单一来源（ADR-0001 铁律 3）：本文件的 `__version__`、`cli._version()`、`mcp.VERSION`
-都走 `_shell.read_version()` 的**同一份**实现。此前三处各写一遍且回退链不同 ——
-轮子安装形态（包内不带 VERSION 文件）下同一个包会报出两个版本号（剖析报告 N1）。
+本包只在 v0.2 迁移期存在，v0.3 移除。新代码请 `import guardrail_engine`；
+命令行请用 `guardrail-engine`（`agentguard` 作为别名保留到 v0.3）。
 """
-from . import _shell
+import warnings
 
+warnings.warn(
+    "包名 agentguard 已改为 guardrail_engine（v0.3 移除兼容层）；命令行推荐 guardrail-engine。",
+    DeprecationWarning, stacklevel=2)
 
-def _version():
-    """本包版本 —— 转发公用件（保留本名以维持既有调用面）。"""
-    return _shell.read_version()
+from guardrail_engine import __version__, _version  # noqa: E402,F401
+from guardrail_engine import _shell as _shell  # noqa: E402,F401
 
-
-__version__ = _version()
+__all__ = ["__version__", "_version", "_shell"]

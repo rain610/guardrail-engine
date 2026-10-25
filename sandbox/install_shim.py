@@ -59,7 +59,21 @@ except ImportError:
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATE = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate-shim.py")
-AGENTS = os.path.join(os.path.expanduser("~"), ".agentguard")
+
+
+def config_home():
+    """本机配置目录：新名优先；已有旧目录而新目录不存在 → 继续用旧目录（v0.3 前不迁移）。"""
+    home = os.path.expanduser("~")
+    new = os.path.join(home, ".guardrail-engine")
+    old = os.path.join(home, ".agentguard")
+    if os.path.isdir(new):
+        return new
+    if os.path.isdir(old):
+        return old
+    return new
+
+
+AGENTS = config_home()
 SHIM = os.path.join(AGENTS, "hooks", "agentguard-gate.py")
 POINTER = os.path.join(AGENTS, "harness.path")
 # shim 转发目标在候选目录下的**相对路径** —— 必须与模板里的 `REL` 逐字一致，否则体检的判据
@@ -73,7 +87,7 @@ ARCHIVE_SUFFIX = ".disabled-"
 def archive_name(target):
     """挑一个没被占用的归档名：`<target>.disabled-<戳>`，撞车就加序号 `-2`、`-3`…
 
-    **跨文件同口径**：agentguard/cli.py 与 sandbox/uninstall.py 各有一份镜像
+    **跨文件同口径**：guardrail_engine/cli.py 与 sandbox/uninstall.py 各有一份镜像
     （本脚本随包/随仓分发，不能 import 包内模块）。改动任一侧都要同步，
     tests/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一输入喂三份实现做对拍。
 
@@ -146,7 +160,7 @@ def check():
 
     判据 = **整链是否至少有一跳可达**（评审 2026-09-23 L13）。原先的判据是「GEN_PATH 可达
     **且** 指针可达」—— 两跳必须同时好 —— 与运行时语义不符：模板的 `resolve()` 是
-    「AGENTGUARD_DIR（旧名 HARNESS_DIR）→ 指针 → GEN_PATH 逐个试，**取第一个 `REL` 存在的**」。于是
+    「GUARDRAIL_ENGINE_DIR（旧名 AGENTGUARD_DIR / HARNESS_DIR）→ 指针 → GEN_PATH 逐个试，**取第一个 `REL` 存在的**」。于是
     「指针有效、GEN_PATH 因挪仓/换克隆而失效」这种**运行时完全正常**的状态被判 ✗ ——
     偏严的假红。而假红与假绿同害：它会把人训练成"这条自检的输出不用看"，那时真红也没人信了。
     现在：任一跳可达 = ✅（并点名**实际会被用到的那一跳**）；"陈旧跳"与"指针 ≠ GEN_PATH
@@ -166,7 +180,8 @@ def check():
     ptr_val = None
     if os.path.isfile(POINTER):
         ptr_val = pathlib.Path(POINTER).read_text(encoding="utf-8").strip()
-    env = (os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
+    env = (os.environ.get("GUARDRAIL_ENGINE_DIR") or os.environ.get("AGENTGUARD_DIR")
+           or os.environ.get("HARNESS_DIR") or "").strip()
 
     # 与模板 resolve() **同一判据**：候选逐个试，取第一个 `REL` 存在的。别在这里另写一套
     # "看着差不多"的规则（例：只判目录存在）—— 两套判据必然分叉成"自检说好、运行时说坏"。
@@ -188,7 +203,7 @@ def check():
         # 被跳过（模板里那条出口：不阻塞、但出声 + 落 shim-missing.log）。
         print("[check] ✗ 解析链**整条失效**：环境变量 / 指针 / GEN_PATH 都到不了 %s ——"
               "该机器上的编辑期门禁会被跳过（不阻塞，但 shim 会打一次提示并落 shim-missing.log）。"
-              "修法：重跑本脚本，或设 AGENTGUARD_DIR（旧名 HARNESS_DIR 兼容）。" % REL)
+              "修法：重跑本脚本，或设 GUARDRAIL_ENGINE_DIR（旧名 AGENTGUARD_DIR / HARNESS_DIR 兼容）。" % REL)
         return False
     print("[check] ✅ 运行时实际会用到的：%s → %s"
           % (live[0][0], os.path.join(live[0][1], REL)))

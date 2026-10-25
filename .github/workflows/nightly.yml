@@ -33,7 +33,7 @@ jobs:
           python -m pip install --upgrade build
           python sandbox/pack_release.py
           # 只数出货目录里那一个 wheel（_wheel/ 是构建缓存，递归 find 会多数一份）。
-          STAGE="dist/install-package/agentguard-package-v$(tr -d '[:space:]' < VERSION)"
+          STAGE="dist/install-package/guardrail-engine-package-v$(tr -d '[:space:]' < VERSION)"
           N=$(find "$STAGE" -maxdepth 1 -name "*.whl" | wc -l)
           if [ "$N" -ne 1 ]; then
             echo "期望出货目录恰好一个 wheel，实际 $N 个（$STAGE）" >&2
@@ -49,7 +49,7 @@ jobs:
       - name: 干净 venv 安装冒烟（验证 wheel 自带引擎）
         run: |
           python -m venv /tmp/ag-venv
-          STAGE="dist/install-package/agentguard-package-v$(tr -d '[:space:]' < VERSION)"
+          STAGE="dist/install-package/guardrail-engine-package-v$(tr -d '[:space:]' < VERSION)"
           set -- "$STAGE"/*.whl
           if [ "$#" -ne 1 ]; then
             echo "出货目录里的 wheel 不是恰好一个（$# 个）：$STAGE" >&2
@@ -57,17 +57,17 @@ jobs:
           fi
           /tmp/ag-venv/bin/python -m pip install --no-index --no-deps --disable-pip-version-check "$1"
           # 与 release.yml 同一判据：引擎必须由 wheel 自带、经 init 落盘。
-          # 不用 AGENTGUARD_DIR 指向检出目录 —— 那样即使 wheel 漏带引擎也会假绿。
+          # 不用 GUARDRAIL_ENGINE_DIR 指向检出目录 —— 那样即使 wheel 漏带引擎也会假绿。
           ENGINE="/tmp/ag-engine"
-          /tmp/ag-venv/bin/agentguard init --dir "$ENGINE"
-          if [ ! -f "$ENGINE/.agentguard-init.json" ]; then
-            echo "init 没写下所有权标记：$ENGINE/.agentguard-init.json" >&2
+          /tmp/ag-venv/bin/guardrail-engine init --dir "$ENGINE"
+          if [ ! -f "$ENGINE/.guardrail-engine-init.json" ]; then
+            echo "init 没写下所有权标记：$ENGINE/.guardrail-engine-init.json" >&2
             exit 1
           fi
-          GOT="$(AGENTGUARD_DIR="$ENGINE" /tmp/ag-venv/bin/agentguard --version | tr -d '[:space:]')"
+          GOT="$(GUARDRAIL_ENGINE_DIR="$ENGINE" /tmp/ag-venv/bin/guardrail-engine --version | tr -d '[:space:]')"
           WANT="$(tr -d '[:space:]' < VERSION)"
           if [ "$GOT" != "$WANT" ]; then
-            echo "venv 里 agentguard --version 输出 '$GOT'，VERSION 是 '$WANT'" >&2
+            echo "venv 里 guardrail-engine --version 输出 '$GOT'，VERSION 是 '$WANT'" >&2
             exit 1
           fi
-          echo "OK: 干净 venv 安装后 init 落盘自带引擎，agentguard --version = $GOT"
+          echo "OK: 干净 venv 安装后 init 落盘自带引擎，guardrail-engine --version = $GOT"

@@ -12,7 +12,7 @@
 # ---- 引擎仓路径（统一解析链第 ② 环）----
 # 本机上 agentguard 工程根的位置。各 AI 客户端的 GLOBAL_AGENTS.md、仓级 AGENTS.md
 # 渲染时都从这取路径（不再写死绝对路径，换机器只改这一处）。
-# 缺省注释掉 = 走解析链下一环（~/.agentguard/harness.path → cwd 上溯）。
+# 缺省注释掉 = 走解析链下一环（~/.guardrail-engine/harness.path → cwd 上溯）。
 #
 # harness = "D:/Rain/project/agentguard"
 

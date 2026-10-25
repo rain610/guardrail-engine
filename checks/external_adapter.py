@@ -48,7 +48,18 @@ except Exception:
 import rule_base  # noqa: E402
 
 DEFAULT_TIMEOUT = 300
-TIMEOUT_ENV = "AGENTGUARD_ADAPTER_TIMEOUT"
+TIMEOUT_ENV = "GUARDRAIL_ADAPTER_TIMEOUT"
+# 迁移期兼容：改名前的环境变量名继续可用（v0.3 移除）。
+LEGACY_ENV = {
+    "GUARDRAIL_ESLINT": "AGENTGUARD_ESLINT",
+    "GUARDRAIL_SEMGREP": "AGENTGUARD_SEMGREP",
+    "GUARDRAIL_ADAPTER_TIMEOUT": "AGENTGUARD_ADAPTER_TIMEOUT",
+}
+
+
+def _env(name):
+    """读环境变量：新名优先，旧名兜底（旧名在 v0.3 移除）。"""
+    return os.environ.get(name) or (LEGACY_ENV.get(name) and os.environ.get(LEGACY_ENV[name])) or ""
 
 _SEV_ESLINT = {1: rule_base.Severity.WARN, 2: rule_base.Severity.ERROR}
 
@@ -70,7 +81,7 @@ class AdapterError(Exception):
 
 def _tool_argv(env_name, default_cmd):
     """外部命令：留空 → PATH 里的默认名；也可用 JSON 字符串数组（便于带参数/夹具）。"""
-    raw = (os.environ.get(env_name) or "").strip()
+    raw = _env(env_name).strip()
     if not raw:
         return [default_cmd]
     if raw.startswith("["):
@@ -137,7 +148,7 @@ def _run_tool(argv, cwd, timeout):
 
 
 def _timeout_value():
-    raw = (os.environ.get(TIMEOUT_ENV) or "").strip()
+    raw = _env(TIMEOUT_ENV).strip()
     if not raw:
         return DEFAULT_TIMEOUT
     try:

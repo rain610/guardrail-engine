@@ -28,8 +28,8 @@ import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MCP = os.path.join(ROOT, "agentguard", "mcp.py")
-CLI = os.path.join(ROOT, "agentguard", "cli.py")
+MCP = os.path.join(ROOT, "guardrail_engine", "mcp.py")
+CLI = os.path.join(ROOT, "guardrail_engine", "cli.py")
 AUTO = os.path.join(ROOT, "harness", "agents", "auto-gate.py")
 PY = sys.executable
 
@@ -158,7 +158,7 @@ class TestMcpProtocol(unittest.TestCase):
             r = s.req("initialize", {"protocolVersion": "2025-03-26"})
             res = r["result"]
             self.assertEqual(res["protocolVersion"], "2025-03-26")
-            self.assertEqual(res["serverInfo"]["name"], "agentguard")
+            self.assertEqual(res["serverInfo"]["name"], "guardrail-engine")
             self.assertIn("tools", res.get("capabilities", {}))
             r2 = s.req("initialize", {"protocolVersion": "1999-01-01"})
             self.assertEqual(r2["result"]["protocolVersion"], "2025-06-18")  # 不支持则回退首选版本
@@ -325,10 +325,10 @@ class TestFlagLikePredicate(unittest.TestCase):
     """
 
     def setUp(self):
-        sys.path.insert(0, os.path.join(ROOT, "agentguard"))
-        import _shell
+        sys.path.insert(0, ROOT)
+        import guardrail_engine._shell as _shell
         self.shell = _shell
-        self.addCleanup(sys.path.remove, os.path.join(ROOT, "agentguard"))
+        self.addCleanup(sys.path.remove, ROOT)
 
     def test_picks_only_dash_prefixed_entries(self):
         self.assertEqual(self.shell.flag_like(["--mode", "loose", "src/a.vue"]), ["--mode"])
@@ -686,16 +686,18 @@ class TestVersionSingleSourceInWheelForm(unittest.TestCase):
 
     def _wheel_form(self):
         d = tempfile.mkdtemp(prefix="egwheel-")
-        pkg = os.path.join(d, "agentguard")
-        os.makedirs(pkg)
-        src = os.path.join(ROOT, "agentguard")
-        for n in os.listdir(src):
-            if n.endswith(".py"):                  # 轮子里就这些（不含 VERSION / sandbox）
-                shutil.copyfile(os.path.join(src, n), os.path.join(pkg, n))
-        di = os.path.join(d, "agentguard-%s.dist-info" % self.WANT)
+        # 轮子里是**两个**包：主包 + 迁移期兼容壳（后者 import 前者）。缺一个都装不起来。
+        for name in ("guardrail_engine", "agentguard"):
+            pkg = os.path.join(d, name)
+            os.makedirs(pkg)
+            src = os.path.join(ROOT, name)
+            for n in os.listdir(src):
+                if n.endswith(".py"):              # 轮子里就这些（不含 VERSION / sandbox）
+                    shutil.copyfile(os.path.join(src, n), os.path.join(pkg, n))
+        di = os.path.join(d, "guardrail_engine-%s.dist-info" % self.WANT)
         os.makedirs(di)
         with io.open(os.path.join(di, "METADATA"), "w", encoding="utf-8", newline="") as f:
-            f.write("Metadata-Version: 2.1\nName: agentguard\nVersion: %s\n" % self.WANT)
+            f.write("Metadata-Version: 2.1\nName: guardrail-engine\nVersion: %s\n" % self.WANT)
         return d
 
     def test_all_entries_agree_without_version_file(self):
@@ -710,16 +712,16 @@ class TestVersionSingleSourceInWheelForm(unittest.TestCase):
         # "有人把 path.insert 删了"这种回退。
         # 自查（真跑过）：`python -I -c "import agentguard"` + PYTHONPATH → ModuleNotFoundError；
         #                  同一条命令带上 sys.path.insert 那句 → 正常导入。
-        for k in ("AGENTGUARD_DIR", "HARNESS_DIR"):   # 定位不能从环境变量漏回真实仓库
+        for k in ("GUARDRAIL_ENGINE_DIR", "AGENTGUARD_DIR", "HARNESS_DIR"):   # 不能漏回真实仓库
             env.pop(k, None)
         # 子进程用 `json.dump(..., sys.stdout)` 而不是内置打印函数：`sandbox/list_entries.py`
         # 的「入口必须带 UTF-8 兜底」清单是**子串判据**（源码里出现打印调用 + 含非 ASCII 即入选），
         # 本文件含中文，一旦把打印调用的字面量写进来就会被当成控制台入口，从而要求一个
         # 本文件根本用不到的 reconfigure。这里只是把代码交给子进程，本文件自己不输出。
         code = ("import sys; sys.path.insert(0, %r);"        # ← 夹具自足：不吃 PYTHONPATH（见上）
-                " import json, agentguard, agentguard.cli as cli, agentguard.mcp as mcp,"
-                " agentguard._shell as shell;"
-                " json.dump({'root': shell.find_root(), 'pkg': agentguard.__version__,"
+                " import json, guardrail_engine as pkg, guardrail_engine.cli as cli,"
+                " guardrail_engine.mcp as mcp, guardrail_engine._shell as shell;"
+                " json.dump({'root': shell.find_root(), 'pkg': pkg.__version__,"
                 " 'cli': cli._version(), 'mcp': mcp.VERSION}, sys.stdout)" % d)
         rc, out, err = _run([PY, "-c", code], env=env, cwd=d)
         self.assertEqual(rc, 0, "子进程加载安装形态的包失败：%s" % (err or out)[-400:])
@@ -832,7 +834,7 @@ def _pid_alive(pid):
 
 def _load_cli_module():
     spec = importlib.util.spec_from_file_location(
-        "killtree_cli_under_test", os.path.join(ROOT, "agentguard", "cli.py"))
+        "killtree_cli_under_test", os.path.join(ROOT, "guardrail_engine", "cli.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -903,7 +905,7 @@ class TestKillTree(unittest.TestCase):
                 src = f.read().replace("\r\n", "\n")
             m = re.search(r"# HARNESS-KILLTREE-BEGIN.*?# HARNESS-KILLTREE-END", src, re.S)
             return m.group(0) if m else ""
-        a = block("agentguard/cli.py")
+        a = block("guardrail_engine/cli.py")
         b = block("integrations/hooks/agentguard-gate.py")
         self.assertTrue(a, "cli.py 里找不到 KILLTREE 块（标记被拆了？）")
         self.assertEqual(a, b, "杀树块两份实现漂移了（跨文件契约，改一处必须同步另一处）")

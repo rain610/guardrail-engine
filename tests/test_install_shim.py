@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """install_shim.py --uninstall 回归锁 —— 剖析报告 G5 的撤回面。
 
-G5 说的是：编辑期 shim 由 install_shim.py 产出**两支文件**（`~/.agentguard/hooks/
-agentguard-gate.py` 与指针 `~/.agentguard/harness.path`），而此前**没有任何撤回入口**
+G5 说的是：编辑期 shim 由 install_shim.py 产出**两支文件**（`~/.guardrail-engine/hooks/
+agentguard-gate.py` 与指针 `~/.guardrail-engine/harness.path`），而此前**没有任何撤回入口**
 —— 安装说明里没有它们的名字、`uninstall.py` 的五项清理里也没有。于是"整机退出"之后
 `~/.agentguard/` 下会原样留着它们、指针还指着别人的引擎仓。
 
 ⚠ **装三样、撤两样**（2026-09-19 起）：安装时本脚本还顺带渲染
-`~/.agentguard/GLOBAL_AGENTS.md`（《安装说明》「二、Agent 接入」里同事必然跑到的一步，
+`~/.guardrail-engine/GLOBAL_AGENTS.md`（《安装说明》「二、Agent 接入」里同事必然跑到的一步，
 此前那支文件根本没有生成者），但**撤回时刻意不退它** —— 它的哨兵区之外属于用户，
 归档走就等于把同事自己加的规矩一起拿走。所以下面第 ④ 条锁的是"**留着且一字不动**"。
 
@@ -60,7 +60,7 @@ class InstallShimTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = os.path.join(self.tmp.name, "home")
         os.makedirs(self.home)
-        self.agents = os.path.join(self.home, ".agentguard")
+        self.agents = os.path.join(self.home, ".guardrail-engine")
         self.shim = os.path.join(self.agents, "hooks", "agentguard-gate.py")
         self.ptr = os.path.join(self.agents, "harness.path")
         # 第三样产物（装的时候写、撤的时候**不退**，见模块 docstring ④）
@@ -71,7 +71,8 @@ class InstallShimTest(unittest.TestCase):
         env["HOME"] = self.home            # POSIX expanduser
         env["USERPROFILE"] = self.home     # Windows expanduser
         env["HARNESS_DIR"] = ROOT          # 免得体检读到本机真实的指针
-        env["AGENTGUARD_DIR"] = ROOT # 批次 5：主名优先，两跳同钉（否则本机若设了主名会盖过它）
+        env["GUARDRAIL_ENGINE_DIR"] = ROOT   # 主名优先；两跳同钉免得本机环境盖过它
+        env["AGENTGUARD_DIR"] = ROOT         # 迁移期旧名（同钉）
         r = subprocess.run([sys.executable, SCRIPT] + list(args), capture_output=True,
                            text=True, encoding="utf-8", errors="replace", env=env,
                            cwd=ROOT)
@@ -84,6 +85,7 @@ class InstallShimTest(unittest.TestCase):
         env["HOME"] = self.home
         env["USERPROFILE"] = self.home
         env["HARNESS_DIR"] = ROOT
+        env["GUARDRAIL_ENGINE_DIR"] = ROOT
         env["AGENTGUARD_DIR"] = ROOT
         env.update(extra)
         r = subprocess.run([sys.executable, SCRIPT] + list(args), capture_output=True,
@@ -306,7 +308,7 @@ class TestCheckMatchesRuntimeChain(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = os.path.join(self.tmp.name, "home")
         os.makedirs(self.home)
-        self.agents = os.path.join(self.home, ".agentguard")
+        self.agents = os.path.join(self.home, ".guardrail-engine")
         self.shim = os.path.join(self.agents, "hooks", "agentguard-gate.py")
         self.ptr = os.path.join(self.agents, "harness.path")
         self.stub_root = os.path.join(self.tmp.name, "stubrepo")     # 能被指针指到的"活"目标

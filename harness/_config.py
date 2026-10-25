@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""agentguard 配置读取（主格式 TOML，标准库 tomllib；旧版 YAML 只作兼容层）。
+"""guardrail-engine 配置读取（主格式 TOML，标准库 tomllib；旧版 YAML 只作兼容层）。
 
 主格式是 `config/harness.toml`（本机覆盖层 `config/harness.local.toml`）。两者都用
 Python 3.11+ 标准库 `tomllib` 解析，零第三方依赖，也不会再出现"自研子集解析器静默
@@ -24,7 +24,7 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-_HARNESS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = agentguard 工程根
+_HARNESS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = 引擎根
 
 
 class ConfigError(Exception):

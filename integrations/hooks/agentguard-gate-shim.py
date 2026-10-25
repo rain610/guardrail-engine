@@ -4,7 +4,7 @@
 **不要手改本文件** —— 由 `python <HARNESS>/sandbox/install_shim.py` 生成（占位符 __HARNESS__ 会被替换）。
 
 目标解析顺序（与正本一致）：
-  ① 环境变量 `AGENTGUARD_DIR`（旧名 `HARNESS_DIR` 同样可用）；② 指针文件 `~/.agentguard/harness.path`；③ 生成时写入的路径。
+  ① 环境变量 `AGENTGUARD_DIR`（旧名 `HARNESS_DIR` 同样可用）；② 指针文件 `~/.guardrail-engine/harness.path`（旧 `~/.agentguard/harness.path` 仍读）；③ 生成时写入的路径。
 
 **目标缺失时的行为（2026-09-13 外部评审 G2 后改进）**：
   不阻塞（exit 0，保持"宁可不过门禁也别卡住同事"的承诺），但**出声** ——
@@ -26,7 +26,12 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 GEN_PATH = r"__HARNESS__"
-AGENTS_DIR = os.path.join(os.path.expanduser("~"), ".agentguard")
+# 与 guardrail_engine/_shell.py:config_home() 同口径（本文件随 hook 分发，不能 import 包）：
+# 新目录存在就用它，否则沿用旧目录；都没有时按新目录创建。
+_HOME = os.path.expanduser("~")
+_NEW_DIR = os.path.join(_HOME, ".guardrail-engine")
+_OLD_DIR = os.path.join(_HOME, ".agentguard")
+AGENTS_DIR = _NEW_DIR if os.path.isdir(_NEW_DIR) else (_OLD_DIR if os.path.isdir(_OLD_DIR) else _NEW_DIR)
 POINTER = os.path.join(AGENTS_DIR, "harness.path")
 FLAG = os.path.join(AGENTS_DIR, "shim-missing.log")
 REL = os.path.join("integrations", "hooks", "agentguard-gate.py")
@@ -35,7 +40,7 @@ RENOTIFY_DAYS = 7          # H3：标记带时间戳，超过这个天数（仍�
 
 def resolve():
     cands = []
-    env = (os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
+    env = (os.environ.get("GUARDRAIL_ENGINE_DIR") or os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
     if env:
         cands.append(env)
     try:
@@ -52,8 +57,8 @@ def resolve():
 
 TARGET = resolve()
 if TARGET is None:
-    msg = ("[harness shim] 找不到门禁实现（AGENTGUARD_DIR / HARNESS_DIR / ~/.agentguard/harness.path / 生成时路径都失效）："
-           "本次编辑期门禁被跳过（未阻塞）。修复：重跑 <HARNESS>/sandbox/install_shim.py，或设置 AGENTGUARD_DIR（旧名 HARNESS_DIR 兼容）。")
+    msg = ("[harness shim] 找不到门禁实现（GUARDRAIL_ENGINE_DIR / AGENTGUARD_DIR / HARNESS_DIR / ~/.guardrail-engine|.agentguard/harness.path / 生成时路径都失效）："
+           "本次编辑期门禁被跳过（未阻塞）。修复：重跑 <ENGINE>/sandbox/install_shim.py，或设置 GUARDRAIL_ENGINE_DIR（旧名 AGENTGUARD_DIR / HARNESS_DIR 兼容）。")
     # H2：**先出声，后落盘**，各自 best-effort —— 宁可多喊一次，也不能因为"写标记失败/编码异常"
     # 把提示一起吞掉（那正是"反静默机制自己静默"的坑）。
     import time
@@ -77,7 +82,7 @@ if TARGET is None:
     try:
         os.makedirs(AGENTS_DIR, exist_ok=True)
         with open(FLAG, "w", encoding="utf-8") as fh:
-            fh.write("%s\n生成时间: %s\n解析链: AGENTGUARD_DIR/HARNESS_DIR → %s → %s\n"
+            fh.write("%s\n生成时间: %s\n解析链: GUARDRAIL_ENGINE_DIR/AGENTGUARD_DIR/HARNESS_DIR → %s → %s\n"
                      % (msg, time.strftime("%Y-%m-%d %H:%M:%S"), POINTER, GEN_PATH))
     except Exception:
         pass

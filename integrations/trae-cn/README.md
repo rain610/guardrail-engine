@@ -1,4 +1,4 @@
-# Trae CN 接入 agentguard
+# Trae CN 接入 guardrail-engine
 
 > 实证：Trae CN 3.3.95 的 Electron 包内**命中了 `.trae/rules`**（`resources/app/**/index.mjs`），
 > 且包内 6 个文件出现 `AGENTS.md` 字符串 —— 即它同时吃「项目规则目录」与「AGENTS.md」。
@@ -99,7 +99,7 @@ Trae 自带这个功能（包内文案原文）：
 > PowerShell 拼崩、退出码被吞成 1、client 也不对）。2026-09-23 按 §5.6 改正，此处不再重复解释，
 > 两个坑的现场证据都在 §5.6。
 
-`<HARNESS_SHIM>`（用 `python <HARNESS>/sandbox/install_shim.py` 生成，别手搓） 指我们那份通用钩子（本机 `C:\Users\HP\.agentguard\hooks\agentguard-gate.py`，
+`<HARNESS_SHIM>`（用 `python <HARNESS>/sandbox/install_shim.py` 生成，别手搓） 指我们那份通用钩子（本机 `C:\Users\HP\.guardrail-engine\hooks\agentguard-gate.py`，
 它转发到仓内正本，换机器只改这一处）。**两个路径都不许含空格、都要写成正斜杠。**
 项目级 `.trae/hooks.json` 建议提交进仓库（团队共享）。
 

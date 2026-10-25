@@ -1,23 +1,28 @@
-# AgentGuard
+# Guardrail Engine
 
-[![CI](https://github.com/rain610/agentguard/actions/workflows/ci.yml/badge.svg)](https://github.com/rain610/agentguard/actions/workflows/ci.yml)
+[![CI](https://github.com/rain610/guardrail-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/rain610/guardrail-engine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](https://github.com/rain610/agentguard)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](https://github.com/rain610/guardrail-engine)
 
 > 零依赖、可扩展的代码门禁引擎 —— 把"规范"从"靠人记"变成"靠机器判"。
 
-AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交期自动检查代码是否符合团队约定。
+[English](README.en.md) | 简体中文
+
+> 本项目原名 **AgentGuard**，v0.2 起更名为 **Guardrail Engine**。旧命令 `agentguard`、
+> 旧导入包与旧配置目录在迁移期内继续可用（见 [CHANGELOG](CHANGELOG.md)）。
+
+Guardrail Engine 是一个**通用代码门禁框架**，用于在编辑期和提交期自动检查代码是否符合团队约定。
 
 它不是 lint 工具（ESLint / SonarQube 那类代码分析器），而是**策略强制平面**（policy enforcement plane）—— 决定"这次提交过不过"。对标物是 Claude Code 的 hooks / permissions、Codex 的 execpolicy。
 
-它也不替代 `AGENTS.md`：`AGENTS.md` 管架构意图、业务语义（需要人/模型判断），AgentGuard 管**能被机械判定**的事。两者是分工。
+它也不替代 `AGENTS.md`：`AGENTS.md` 管架构意图、业务语义（需要人/模型判断），Guardrail Engine 管**能被机械判定**的事。两者是分工。
 
 ## 核心价值
 
-| 痛点 | AgentGuard 怎么解 |
+| 痛点 | Guardrail Engine 怎么解 |
 |---|---|
-| 规范写在文档里，AI / 开发者记不住 | 常驻只注入约 2.4KB 的全局守则（`~/.agentguard/GLOBAL_AGENTS.md`，不是仓库根的 `AGENTS.md`），细节按需加载 |
+| 规范写在文档里，AI / 开发者记不住 | 常驻只注入约 2.4KB 的全局守则（`~/.guardrail-engine/GLOBAL_AGENTS.md`，不是仓库根的 `AGENTS.md`），细节按需加载 |
 | 约定只对"愿意遵守的人"有效 | 编辑期 + 提交期双重拦截，忘了也会被拦 |
 | 一上规则就被存量旧账淹没 | 双态 severity：新代码 `error` 拦截，存量 `info` 观察 |
 | "门禁跑没跑"说不清 | 每次判定写台账，可查看运行摘要与规则覆盖度 |
@@ -38,27 +43,28 @@ AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交�
 
 ### 0. pip 安装（wheel 自带引擎，不需要另 clone 引擎）
 
-> **PyPI 尚未发布**：短命令 `pip install agentguard` 现在会 404。先在源码树根目录安装
-> `pip install .`（或装本地构建的 wheel）；PyPI 发布后再改回短命令。
+> **首个 PyPI 版本发布前**：短命令 `pip install guardrail-engine` 仍会 404。发布由 `v*` tag
+> 触发的 `release.yml` 完成（OIDC 可信发布）；在那之前请在源码树根目录 `pip install .`
+> （或装本地构建的 wheel）。
 
 ```bash
-git clone https://github.com/rain610/agentguard.git
-cd agentguard
+git clone https://github.com/rain610/guardrail-engine.git
+cd guardrail-engine
 pip install .               # 从源码装：wheel 自带引擎
-agentguard init             # 把随包引擎落到 ~/.agentguard/engine，并写 ~/.agentguard/harness.path
-agentguard quickstart       # 自检 + 打印 MCP 接入配置
+guardrail-engine init             # 把随包引擎落到 ~/.guardrail-engine/engine，并写 ~/.guardrail-engine/harness.path
+guardrail-engine quickstart       # 自检 + 打印 MCP 接入配置
 ```
 
 `init` 只复制、不删除：目标已存在且内容不同时要求 `--force`，旧目录会改名归档为
 `<dir>.disabled-<时间戳>`；可用 `--dir` 指定引擎安装位置。装完后：
-`agentguard list` 看 gate，`agentguard run <gate> <文件>` 定向检查，
-`agentguard mcp` 启动 MCP 服务。源码树里也可以直接跑 `python agentguard/cli.py init`。
+`guardrail-engine list` 看 gate，`guardrail-engine run <gate> <文件>` 定向检查，
+`guardrail-engine mcp` 启动 MCP 服务。源码树里也可以直接跑 `python guardrail_engine/cli.py init`。
 
 ### 1. clone 源码看效果（不需要配置）
 
 ```bash
-git clone https://github.com/rain610/agentguard.git
-cd agentguard
+git clone https://github.com/rain610/guardrail-engine.git
+cd guardrail-engine
 
 sh sandbox/demo_gate.sh    # 在临时目录造一个 console.log → 拦住 → 改对 → 放行
 python sandbox/demo_gate.py  # 同上，且不需要 sh（PowerShell / cmd 直接可用）
@@ -99,10 +105,10 @@ python harness/run_gate.py example --all
 
 # 以后在业务仓里只查本次改动（自动识别 gate）
 cd /path/to/your/project
-python /path/to/agentguard/harness/agents/auto-gate.py
+python /path/to/guardrail-engine/harness/agents/auto-gate.py
 
 # 配置体检：必须 rc=0
-python /path/to/agentguard/harness/run_gate.py --validate
+python /path/to/guardrail-engine/harness/run_gate.py --validate
 ```
 
 > 不要在本机配置里新增或改写 `[repos]` 的键名。键名是共享 `config/harness.toml` 里的
@@ -123,10 +129,10 @@ NO_TODO = RegexRule(
 )
 ```
 
-把它加进 `EXAMPLE_RULES`，然后回到 agentguard 工程根：
+把它加进 `EXAMPLE_RULES`，然后回到 guardrail-engine 工程根：
 
 ```bash
-cd /path/to/agentguard
+cd /path/to/guardrail-engine
 python harness/run_gate.py example --all
 python harness/run_gate.py --validate   # 规则 ID / 配置键都会被体检
 ```
@@ -136,10 +142,10 @@ python harness/run_gate.py --validate   # 规则 ID / 配置键都会被体检
 ```bash
 # 提交期 hook（在业务仓根执行；gate 名可省略，按 cwd 自动识别）
 cd /path/to/your/project
-sh /path/to/agentguard/sandbox/install_hooks.sh
+sh /path/to/guardrail-engine/sandbox/install_hooks.sh
 
 # 编辑期 hook（给 AI 客户端转发 post-edit 事件）
-python /path/to/agentguard/sandbox/install_shim.py
+python /path/to/guardrail-engine/sandbox/install_shim.py
 ```
 
 ## 示例规则
@@ -220,7 +226,7 @@ python harness/run_gate.py example --repo <你的仓> --all
 | `config/` | gate 与仓库策略 |
 | `integrations/` | 各 AI 客户端接入说明 |
 | `sandbox/` | 安装、自检、打包工具 |
-| `agentguard/` | CLI / MCP 分发壳 |
+| `guardrail_engine/` | CLI / MCP 主包（`agentguard/` 是迁移期兼容壳，v0.3 移除） |
 | `tests/` | 单元测试 |
 
 ## 规则模型
@@ -271,7 +277,7 @@ RegexRule(id, pattern, message, fix_hint="",
 ## 接外部分析器（ESLint / Semgrep）
 
 内置规则是**示例与兜底**，不是主力分析器。引擎层受「零第三方依赖」约束，标准库里只有
-Python 的 `ast`；Vue / JS / TS / C# 的语法与类型判断交给成熟工具，AgentGuard 只负责
+Python 的 `ast`；Vue / JS / TS / C# 的语法与类型判断交给成熟工具，Guardrail Engine 只负责
 **策略强制**那一层：什么时候跑、跑不过怎么退出、结果怎么进台账、怎么豁免。
 
 两个适配 gate 已注册，默认 `enabled = false`（装了工具、确认配置后再开）：
@@ -299,9 +305,9 @@ python harness/run_gate.py semgrep --all
 工具命令默认取 PATH 里的 `eslint` / `semgrep`，可用环境变量覆盖（普通命令或 JSON 数组）：
 
 ```bash
-export AGENTGUARD_ESLINT='["npx","eslint"]'
-export AGENTGUARD_SEMGREP='["semgrep","scan"]'
-export AGENTGUARD_ADAPTER_TIMEOUT=120          # 秒，默认 300
+export GUARDRAIL_ESLINT='["npx","eslint"]'
+export GUARDRAIL_SEMGREP='["semgrep","scan"]'
+export GUARDRAIL_ADAPTER_TIMEOUT=120          # 秒，默认 300
 ```
 
 外部工具的规则 ID（如 `no-console`、`python.lang.security.audit.eval`）直接可用于
@@ -377,13 +383,13 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 | 60 秒演示（无需 sh） | `python sandbox/demo_gate.py` |
 | 运行摘要 | `python harness/run_gate.py --summary` |
 | 覆盖度报告 | `python harness/run_gate.py --coverage` |
-| 台账核链 + 引擎归因 | `python agentguard/cli.py log --verify --engine` |
+| 台账核链 + 引擎归因 | `python guardrail_engine/cli.py log --verify --engine` |
 | 安装提交 hook | `sh sandbox/install_hooks.sh <gate>` |
 | 安装编辑期 hook | `python sandbox/install_shim.py` |
 | 接入自检 | `sh sandbox/doctor.sh` |
 | 快速测试 | `python sandbox/run_tests.py --fast` |
 | 全量测试 | `python sandbox/run_tests.py --full` |
-| 紧急旁路（留痕） | `python agentguard/cli.py bypass --repo <端仓> --reason "≥10 字的原因"` |
+| 紧急旁路（留痕） | `python guardrail_engine/cli.py bypass --repo <端仓> --reason "≥10 字的原因"` |
 
 > `bypass` 只是**声明留痕入口，不是权限闸**：它不拦任何提交，也不改变门禁判定。
 
@@ -432,7 +438,7 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 1. 带 `[harness]` 的提交，在提交消息末尾加一行 `Engine-Sha: <16 位哈希>`；值来自
    `python harness/run_gate.py --engine-sha`（只读出口，配置坏了也能回答）；
 2. CI 的 `provenance` job 会按该提交的内容**重算**并与尾注比对，不一致即失败；
-3. `python agentguard/cli.py log --verify --engine` 把台账里的 `engine_sha` 与
+3. `python guardrail_engine/cli.py log --verify --engine` 把台账里的 `engine_sha` 与
    **提交历史里声明过的集合**对账，基线是第一条带尾注的提交时间，更早的历史不追溯。
 
 会红的是「记录用的引擎内容从未被提交」—— 这正是"瞬时改弱规则 → 跑通过 → 改回 → 提交"
@@ -523,9 +529,9 @@ if (DEBUG) console.log("debug info")
 | 层 | 负责什么 |
 |---|---|
 | `AGENTS.md` | 架构意图、业务语义、红线与人工判断 |
-| `AgentGuard` | 可机械判定的规则、自动触发、台账与验收 |
+| `Guardrail Engine` | 可机械判定的规则、自动触发、台账与验收 |
 
-只写 `AGENTS.md` 成本最低，但没有强制力；加 AgentGuard 后才能在编辑期和提交期获得机械拦截与留痕。
+只写 `AGENTS.md` 成本最低，但没有强制力；加 Guardrail Engine 后才能在编辑期和提交期获得机械拦截与留痕。
 
 ## 支持的 AI 客户端
 
@@ -555,7 +561,7 @@ python -m unittest discover -s tests
 
 发布链（`.github/workflows/release.yml`）与每日定时（`.github/workflows/nightly.yml`）
 还会跑三类慢闸门：变异冒烟（114 条变异，验证锁真的会红）、真打包后的真产物锁、
-干净 venv 安装并执行 `agentguard --version`（轮子自带引擎，不依赖引擎检出）。
+干净 venv 安装并执行 `guardrail-engine --version`（轮子自带引擎，不依赖引擎检出）。
 本机复现：先 `python sandbox/pack_release.py`，再跑
 `python tests/test_release_artifact.py TestRealArtifactPasses -v`；venv 安装命令见
 `.github/workflows/release.yml` 的「干净 venv 安装冒烟」步骤。

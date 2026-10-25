@@ -227,7 +227,7 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
         r1 = self._run()
         self.assertEqual(r1.returncode, 0, "shim 目标缺失不得阻塞（exit 0）")
         self.assertIn("找不到门禁实现", r1.stderr, "必须出声，否则失效不可见")
-        flag = os.path.join(self.home, ".agentguard", "shim-missing.log")
+        flag = os.path.join(self.home, ".guardrail-engine", "shim-missing.log")
         self.assertTrue(os.path.isfile(flag), "应落去重标记")
         r2 = self._run()
         self.assertEqual(r2.returncode, 0)
@@ -254,7 +254,7 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
         原实现只有"首次出声 / 第二次去重"两条断言，"恢复即清标记"这条路径没有任何锁
         —— 一旦清标记的代码坏了，故障会被永久静默（反静默机制的自我背叛）。
         """
-        flag = os.path.join(self.home, ".agentguard", "shim-missing.log")
+        flag = os.path.join(self.home, ".guardrail-engine", "shim-missing.log")
         ok_root = os.path.join(self.home, "harness_ok")
         os.makedirs(os.path.join(ok_root, "integrations", "hooks"))
         pathlib.Path(os.path.join(ok_root, "integrations", "hooks", "agentguard-gate.py")).write_text("# stub\n", encoding="utf-8")
@@ -290,7 +290,7 @@ class TestShimSpeaksWhenHarnessMissing(unittest.TestCase):
         self._write_shim("C:/definitely/not/here")
         r1 = self._run_env({})
         self.assertIn("找不到门禁实现", r1.stderr)
-        flag = os.path.join(self.home, ".agentguard", "shim-missing.log")
+        flag = os.path.join(self.home, ".guardrail-engine", "shim-missing.log")
         old = _t.time() - 8 * 86400
         os.utime(flag, (old, old))
         r2 = self._run_env({})

@@ -35,8 +35,8 @@ reports/gate_log-YYYY-MM.jsonl（git 忽略；旧单文件 gate_log.jsonl 若在
 import sys, os, json, time, glob, hashlib, subprocess, tempfile, threading, socket, getpass
 from contextlib import contextmanager
 
-HARNESS = os.path.dirname(os.path.abspath(__file__))  # = agentguard/harness/
-ROOT = os.path.dirname(HARNESS)  # = agentguard 工程根
+HARNESS = os.path.dirname(os.path.abspath(__file__))  # = guardrail-engine/harness/
+ROOT = os.path.dirname(HARNESS)  # = 引擎根
 CHECKS = os.path.join(ROOT, "checks")
 LOG_DIR = os.environ.get("HARNESS_LOG_DIR") or os.path.join(ROOT, "reports")
 LOG_FILE = os.environ.get("HARNESS_LOG_FILE") or os.path.join(LOG_DIR, "gate_log.jsonl")   # env 覆盖：便于测试密闭
@@ -972,7 +972,7 @@ def _dispatch(argv):
         if cfg_err:
             print(f"[run_gate] ✗ 配置读不出来（rc=2）：{cfg_err}")
             return 2
-        print("=== agentguard gates ===")
+        print("=== guardrail-engine gates ===")
         for k, g in sorted(gates.items()):
             print(f"  [{'ON ' if g.get('enabled') else 'off'}] {k}: {g.get('script')} @ {g.get('_repo_path') or '(未配置)'}")
         # 2026-09-18（跨平台批次 2）：逐行 `@ (未配置)` 在同事的新机器上是**一整屏**，

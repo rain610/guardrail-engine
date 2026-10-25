@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-"""setuptools 钩子：把引擎打进 wheel（`agentguard/_engine/`）。
+"""setuptools 钩子：把引擎打进 wheel（`guardrail_engine/_engine/`）。
 
 为什么需要这个文件（评审 2026-10-21 §5.2）
 ==========================================
-`pyproject.toml` 只声明了 `packages = ["agentguard"]`，打出来的 wheel 里只有四个壳模块
-（`__init__ / _shell / cli / mcp`）。于是 `pip install agentguard` 之后仍然要 clone 一份引擎、
-再设 `AGENTGUARD_DIR` —— "装完就能跑"是断的。这里把引擎（checks / harness / config /
+`pyproject.toml` 只声明了壳包，打出来的 wheel 里只有四个壳模块
+（`__init__ / _shell / cli / mcp`）。于是 `pip install guardrail-engine` 之后仍然要 clone 一份引擎、
+再设 `GUARDRAIL_ENGINE_DIR` —— "装完就能跑"是断的。这里把引擎（checks / harness / config /
 sandbox / golden-patterns / integrations / docs + VERSION 等）复制进
-`build_lib/agentguard/_engine/`，wheel 因此自带引擎；运行期由 `agentguard init` 把它复制到
-可写目录（`~/.agentguard/engine`）并写指针。台账不应该落在 site-packages 里 —— 升级即丢，
+`build_lib/guardrail_engine/_engine/`，wheel 因此自带引擎；运行期由 `guardrail-engine init`
+把它复制到可写目录（`~/.guardrail-engine/engine`）并写指针。台账不应该落在 site-packages 里 —— 升级即丢，
 系统级安装还可能只读。
 
-清单与 `agentguard/_shell.py` 里的 `ENGINE_DIRS / ENGINE_FILES / ENGINE_EXCLUDE` **逐字相同**
+清单与 `guardrail_engine/_shell.py` 里的 `ENGINE_DIRS / ENGINE_FILES / ENGINE_EXCLUDE` **逐字相同**
 （构建脚本不能 import 包：构建阶段包还没进 sys.path）。两处漂移由
 `tests/test_init_bundle.py` 用 AST 对拍。
 
@@ -36,11 +36,11 @@ _SKIP_SUFFIX = (".pyc", ".pyo")
 
 
 class build_py(_build_py):
-    """先按常规复制包模块，再把引擎铺进 `agentguard/_engine/`。"""
+    """先按常规复制包模块，再把引擎铺进 `guardrail_engine/_engine/`。"""
 
     def run(self):
         super().run()
-        self._copy_engine(os.path.join(self.build_lib, "agentguard", "_engine"))
+        self._copy_engine(os.path.join(self.build_lib, "guardrail_engine", "_engine"))
 
     def _copy_engine(self, dst_root):
         missing = [d for d in ENGINE_DIRS if not os.path.isdir(os.path.join(HERE, d))]

@@ -1,6 +1,6 @@
 #!/bin/sh
 # agentguard dispatcher · pre-commit（指纹标记：链式调用前检测自身，防自递归）
-# agentguard 共享 hook 分发器（core.hooksPath 模式）
+# guardrail-engine 共享 hook 分发器（core.hooksPath 模式）
 # ============================================================
 # 各端仓库执行 `git config core.hooksPath <harness>/harness/hooks-dir` 后，
 # 所有 commit 的 pre-commit 都会执行本文件。gate 不写死——由 pre-commit.py
@@ -86,7 +86,7 @@ if [ -n "$ORIG" ]; then
     if [ -x "$ORIG" ]; then "$ORIG" "$@"; else sh "$ORIG" "$@"; fi
     chained_rc=$?
     if [ "$chained_rc" -ne 0 ]; then
-        echo "✗ 端仓原有 pre-commit 未通过（由 agentguard 链式调用），本次提交已阻断。"
+        echo "✗ 端仓原有 pre-commit 未通过（由 guardrail-engine 链式调用），本次提交已阻断。"
         exit "$chained_rc"
     fi
 fi

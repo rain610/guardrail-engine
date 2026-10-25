@@ -1,12 +1,12 @@
 {
   "mcpServers": {
-    "agentguard": {
+    "guardrail-engine": {
       "command": "__PY__",
       "args": [
         "__MCP__"
       ],
       "env": {
-        "AGENTGUARD_DIR": "__HARNESS__"
+        "GUARDRAIL_ENGINE_DIR": "__HARNESS__"
       }
     }
   }

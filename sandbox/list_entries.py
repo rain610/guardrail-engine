@@ -33,7 +33,8 @@ for _stream in (sys.stdout, sys.stderr):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GLOBS = ("checks/*.py", "harness/*.py", "harness/**/*.py",
          "integrations/hooks/*.py", "sandbox/*.py", "tests/*.py",
-         "agentguard/*.py")   # 打包路线壳（2026-09-14）：CLI/MCP 入口同受 UTF-8 兜底检查
+         "guardrail_engine/*.py",   # 打包路线壳：CLI/MCP 入口同受 UTF-8 兜底检查
+         "agentguard/*.py")         # 迁移期兼容壳（v0.3 移除）
 
 
 def candidates():

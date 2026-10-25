@@ -25,16 +25,16 @@
         由包内 `fix_paths.py` 现场填本机路径。**每一步通道刷新都建立在它之上**：
         漏跑 = 装出来的副本指向不存在的解释器，MCP 起不来、编辑期门禁整体无声失效。
   [2/7] Claude Code 插件：`marketplace add <本包>/marketplace` → `plugin update`
-  [3/7] OpenClaw 扩展：就地把新 bundle 覆盖进 `extensions/agentguard`（重启桌面端生效）
+  [3/7] OpenClaw 扩展：就地把新 bundle 覆盖进 `extensions/agentguard`（扩展 ID 迁移期不变）
   [4/7] 人用 CLI（pip 包）：**只在装过时** `pip install -U <新轮子>`，装完对账产物是否真的换了
-  [5/7] 引擎副本：**只刷新 init 复制出来的那份**（默认 `~/.agentguard/engine`），
+  [5/7] 引擎副本：**只刷新 init 复制出来的那份**（默认 `~/.guardrail-engine/engine`），
         源是本包轮子自带的引擎；仓库（引擎源）一律不碰
-  [6/7] 技能副本：转发 `<HARNESS>/agentguard/cli.py skill install --dir <宿主技能目录>`
+  [6/7] 技能副本：转发 `<ENGINE>/guardrail_engine/cli.py skill install --dir <宿主技能目录>`
   [7/7] 编辑期 shim：**只在装过时**刷新（`<HARNESS>/sandbox/install_shim.py`）
 
 用法（默认只预演，不改任何东西；确认无误后加 --yes 执行）
 ==========================================================
-    python upgrade.py --harness <你的 agentguard 路径>                  # 预演
+    python upgrade.py --harness <你的 guardrail-engine 路径>            # 预演
     python upgrade.py --harness <...> --yes                                  # 执行
     python upgrade.py --harness <...> --yes --skip pip,openclaw              # 想保留某几项时
     python upgrade.py --harness <...> --pack <包目录>                         # 包不在本脚本所在目录时
@@ -60,24 +60,31 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-SKILL_NAME = "agentguard"
+SKILL_NAMES = ("guardrail-engine", "agentguard")   # 新名优先；旧名卷进迁移期
+PKG = "guardrail_engine"
+LEGACY_PKG = "agentguard"
+PKG_NAMES = (PKG, LEGACY_PKG)                     # 新轮子里两个都在（后者是兼容壳）
+# 扩展 ID（Claude 插件 / OpenClaw 扩展 / marketplace 名）在 v0.2 保持不变：
+# 改它等于让已安装的扩展变成"查无此项"，而升级路径靠这个名字找登记。
 PLUGIN_NAME = "agentguard"
 PLUGIN_FULL = "agentguard@agentguard-tools"
 MARKETPLACE_NAME = "agentguard-tools"
-# 与 agentguard/cli.py 的 SKILL_PRESETS 保持一致（壳层常量镜像，别单边改）
+# 与 guardrail_engine/cli.py 的 SKILL_PRESETS 保持一致（壳层常量镜像，别单边改）
 SKILL_PRESETS = {
     "claude": os.path.join(os.path.expanduser("~"), ".claude", "skills"),
     "opencode": os.path.join(os.path.expanduser("~"), ".config", "opencode", "skills"),
     "codebuddy": os.path.join(os.path.expanduser("~"), ".codebuddy", "skills"),
 }
 SKIP_KEYS = ("claude", "openclaw", "pip", "engine", "skills", "shim")
-# 与 agentguard/cli.py 的 INIT_MARKER / INIT_MARKER_KIND 逐字相同（壳层常量镜像，别单边改）。
-# 本脚本随包分发、可能在没有装 agentguard 的机器上跑，不能 import 那个包。
-INIT_MARKER = ".agentguard-init.json"
-INIT_MARKER_KIND = "agentguard-init"
+# 与 guardrail_engine/cli.py 的 INIT_MARKER / INIT_MARKER_KIND 逐字相同（壳层常量镜像，别单边改）。
+# 本脚本随包分发、可能在没有装 guardrail-engine 的机器上跑，不能 import 那个包。
+INIT_MARKER = ".guardrail-engine-init.json"
+INIT_MARKER_KIND = "guardrail-engine-init"
+LEGACY_INIT_MARKER = ".agentguard-init.json"        # 改名前的 init 副本；v0.3 移除
+LEGACY_INIT_MARKER_KIND = "agentguard-init"
 # 装机时由 fix_paths.py 现场填充的三个字段（与安装说明、verify_release.py 同一份定义）
 FILLED_FIELDS = (("command", "__PY__"), ("args[0]", "__MCP__"),
-                 ("env.AGENTGUARD_DIR", "__HARNESS__"))
+                 ("env.GUARDRAIL_ENGINE_DIR", "__HARNESS__"))
 # 内容对账时**排除**的文件：`.mcp.json` 本来就是"每台机器一份"（fix_paths 现场填），
 # 把它算进去会让"换了台机器"表现成"内容不同"—— 那是假警报，不是发现。
 HASH_SKIP = (".mcp.json",)
@@ -110,7 +117,7 @@ def run_cmd(args, timeout=600):
     `.cmd` ⇒ 是**操作系统本人**认它，不需要谁替它转交（Python 文档同此："batch files may be
     launched by the operating system in a system shell"）。而那层 cmd 会在**路径与参数都含空格**时
     按 cmd 自己的规则再剥一遍引号（`cmd /c "<含空格路径>" "<含空格参数>"`）⇒ 引号错位、rc=1 且输出为空。
-    判据与 `sandbox/check_contracts.py::_client_version`、`agentguard/mcp.py::run_cmd` 同源；
+    判据与 `sandbox/check_contracts.py::_client_version`，`guardrail_engine/mcp.py::run_cmd` 同源；
     锁见 `tests/test_review_2026_09_23.py::TestL14BatchFileIsNotHandedToAShell`。
     """
     exe = shutil.which(args[0]) or args[0]
@@ -124,8 +131,9 @@ def run_cmd(args, timeout=600):
 
 def record(a, step, result, reason=""):
     """运维台账：与 cli.py / uninstall.py 同文件同风格（entry=upgrade）；失败提示但不阻断。"""
-    p = os.environ.get("AGENTGUARD_OPS_LOG") or (
-        os.path.join(a.harness_norm, "reports", "ops_log.jsonl") if a.harness_norm else "")
+    p = (os.environ.get("GUARDRAIL_OPS_LOG") or os.environ.get("AGENTGUARD_OPS_LOG")
+         or (
+        os.path.join(a.harness_norm, "reports", "ops_log.jsonl") if a.harness_norm else ""))
     if not p:
         return
     try:
@@ -222,10 +230,12 @@ def _mcp_fields(mj):
     try:
         with io.open(mj, encoding="utf-8", errors="replace") as f:
             data = json.loads(f.read())
-        srv = (data.get("mcpServers") or {}).get(PLUGIN_NAME) or {}
+        servers = data.get("mcpServers") or {}
+        srv = servers.get("guardrail-engine") or servers.get(PLUGIN_NAME) or {}
+        env = srv.get("env") or {}
         return (srv.get("command"),
                 (srv.get("args") or [None])[0],
-                (srv.get("env") or {}).get("AGENTGUARD_DIR"))
+                env.get("GUARDRAIL_ENGINE_DIR") or env.get("AGENTGUARD_DIR"))
     except (OSError, ValueError, AttributeError):
         return None
 
@@ -247,7 +257,10 @@ def check_installed_mcp(plugin_dir, harness, python):
     got = _mcp_fields(mj)
     if got is None:
         return [("bad", "副本里的 .mcp.json 读不出来（不是合法 JSON？）")]
-    want = (norm(python), norm(os.path.join(harness, "agentguard", "mcp.py")), norm(harness))
+    mcp_rel = ("guardrail_engine", "mcp.py")
+    if not os.path.isfile(os.path.join(harness, *mcp_rel)):
+        mcp_rel = ("agentguard", "mcp.py")
+    want = (norm(python), norm(os.path.join(harness, *mcp_rel)), norm(harness))
     exists = (os.path.isfile, os.path.isfile, os.path.isdir)
     out = []
     for (label, ph), cur, exp, ok in zip(FILLED_FIELDS, got, want, exists):
@@ -397,17 +410,17 @@ def step_openclaw(a):
 #   在这条通道上"升"完了、rc=0、什么也没发生。这正是 G3 在插件通道修掉的那个形状，
 #   而本格当时只留了一句**挂在 `rc != 0` 分支上**的提示 —— 同版本时 rc 本来就是 0，
 #   那句提示永远不会执行。所以改成与插件通道同一套判据：**跑完去读产物本身**
-#   （site-packages 里 `agentguard/**.py` 逐字节比轮子里的同名文件），一致才算刷新成功。
+#   （site-packages 里 `guardrail_engine/**.py` 逐字节比轮子里的同名文件），一致才算刷新成功。
 #   刻意不比版本号大小：`0.1.2-dev`（VERSION 文件）与 `0.1.2.dev0`（包元数据）本就不是同一个
 #   字符串，为比大小再抄一份 PEP440 归一化进来，只会多出一处要跟着同步的东西。
 
 def wheel_pkg_files(wheel):
-    """轮子里 `agentguard/**.py` → {路径: sha1}；读不出来返回 None（不是空字典）。"""
+    """轮子里壳包 `**.py` → {路径: sha1}；读不出来返回 None（不是空字典）。"""
     out = {}
     try:
         with zipfile.ZipFile(wheel) as z:
             for n in z.namelist():
-                if n.startswith("agentguard/") and n.endswith(".py"):
+                if n.split("/", 1)[0] in PKG_NAMES and n.endswith(".py"):
                     out[n] = hashlib.sha1(z.read(n)).hexdigest()
     except Exception:
         return None
@@ -415,14 +428,14 @@ def wheel_pkg_files(wheel):
 
 
 def installed_pkg_files(location):
-    """site-packages 里 `agentguard/**.py` → {路径: sha1}；目录不在/读不了返回 None。
+    """site-packages 里 `guardrail_engine/**.py` → {路径: sha1}；目录不在/读不了返回 None。
 
     None 与 {} 必须分开：前者是"读不到，无法对账"，后者是"读到了、包是空的"。
     混成一个值，这条对账就会在一次 OSError 之后静默变成"一致"。
     """
     if not location:
         return None
-    root = os.path.join(location, "agentguard")
+    root = os.path.join(location, PKG)
     if not os.path.isdir(root):
         return None
     out = {}
@@ -439,7 +452,7 @@ def installed_pkg_files(location):
                         h.update(chunk)
             except OSError:
                 return None
-            out["agentguard/" + os.path.relpath(fp, root).replace("\\", "/")] = h.hexdigest()
+            out[PKG + "/" + os.path.relpath(fp, root).replace("\\", "/")] = h.hexdigest()
     return out
 
 
@@ -504,9 +517,11 @@ def step_pip(a):
     代跑只有这一条命令、不递归重试 —— 装/卸之外一律由人确认这条边界仍然成立。
     """
     fails = []
-    rc, out = run_cmd([a.python, "-m", "pip", "show", "agentguard"])
+    rc, out = run_cmd([a.python, "-m", "pip", "show", "guardrail-engine"])
     if rc != 0:
-        print("  · pip 未见 agentguard（未装过 → 升级不动它；只装 CLI 见《安装说明》一）")
+        rc, out = run_cmd([a.python, "-m", "pip", "show", "agentguard"])   # 旧包名
+    if rc != 0:
+        print("  · pip 未见 guardrail-engine（未装过 → 升级不动它；只装 CLI 见《安装说明》一）")
         return fails
     ver, loc = pip_show_fields(out)
     wheel, err = pack_wheel(a)
@@ -545,7 +560,7 @@ def step_pip(a):
     if now is None:
         print("  · ✗ 读不到安装位置里的包内容（Location=%r）→ **无法确认这次到底换没换**。" % loc)
         print("      （`pip install -e .` 这类可编辑安装就是这种：登记在、包却不在 Location 下）")
-        print("      处置：%s -m pip show -f agentguard 与包内轮子手工对一遍。" % a.python)
+        print("      处置：%s -m pip show -f guardrail-engine 与包内轮子手工对一遍。" % a.python)
         fails.append("pip 装完读不到产物（无法确认是否刷新）")
         record(a, "pip", "unverified", norm(loc))
         return fails
@@ -571,7 +586,7 @@ def step_pip(a):
         after = installed_pkg_files(loc)
         if after is None:
             print("        ✗ 代跑之后仍读不到安装位置里的包内容（Location=%r）→ **无法确认到底换没换**。" % loc)
-            print("          处置：%s -m pip show -f agentguard 与包内轮子手工对一遍。" % a.python)
+            print("          处置：%s -m pip show -f guardrail-engine 与包内轮子手工对一遍。" % a.python)
             fails.append("pip 代跑 --force-reinstall 后读不到产物（无法确认是否刷新）")
             record(a, "pip", "unverified", norm(loc))
             return fails
@@ -596,14 +611,15 @@ def step_pip(a):
     return fails
 
 
-# ---- [5/7] 引擎副本（agentguard init 复制出来的引擎根）-------------------------------
-# 为什么这一格必须存在：`agentguard init` 把引擎复制到可写目录（默认 ~/.agentguard/engine），
+# ---- [5/7] 引擎副本（guardrail-engine init 复制出来的引擎根）-------------------------
+# 为什么这一格必须存在：`guardrail-engine init` 把引擎复制到可写目录（默认 ~/.guardrail-engine/engine），
 # MCP / 钩子 / shim 全指向它。pip 那一路刷新的是 site-packages 里的壳，**不会**动这份副本；
 # 漏刷的表现是「CLI 是新的、门禁跑的还是旧规则」—— 没有任何一步会报错。
 #
 # 为什么不直接对 --harness 跑 init：--harness 也可能是用户自己的仓库（引擎源）。对仓库跑
 # `init --force` 会把它改名归档再复制一份 —— 那是把源搬走，不是升级。所以只认 init 写下的
-# 所有权标记（`.agentguard-init.json`）；旧版 init 没有标记，只对默认路径且**没有 .git**
+# 所有权标记（`.guardrail-engine-init.json`；旧 `.agentguard-init.json` 仍认）；
+# 旧版 init 没有标记，只对默认路径且**没有 .git**
 # 的目录做兼容识别。宁可不刷，也不猜。
 
 def engine_version(root):
@@ -615,13 +631,20 @@ def engine_version(root):
 
 
 def init_marker(root):
-    """读 init 的所有权标记 → dict；不是 init 副本返回 None。"""
-    try:
-        with io.open(os.path.join(root, INIT_MARKER), encoding="utf-8", errors="replace") as f:
-            data = json.loads(f.read())
-    except (OSError, ValueError):
-        return None
-    return data if isinstance(data, dict) and data.get("kind") == INIT_MARKER_KIND else None
+    """读 init 的所有权标记 → dict；不是 init 副本返回 None。
+
+    迁移期双读：新标记（`.guardrail-engine-init.json`）优先，旧标记仍认。
+    """
+    for name, kind in ((INIT_MARKER, INIT_MARKER_KIND),
+                       (LEGACY_INIT_MARKER, LEGACY_INIT_MARKER_KIND)):
+        try:
+            with io.open(os.path.join(root, name), encoding="utf-8", errors="replace") as f:
+                data = json.loads(f.read())
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("kind") == kind:
+            return data
+    return None
 
 
 def looks_like_engine(root):
@@ -629,13 +652,18 @@ def looks_like_engine(root):
 
 
 def engine_pointer():
-    """`~/.agentguard/harness.path` 的内容（也可能指向仓库；所有权由调用方再判）。"""
-    p = os.path.join(os.path.expanduser("~"), ".agentguard", "harness.path")
-    try:
-        with io.open(p, encoding="utf-8", errors="replace") as f:
-            return f.read().strip()
-    except OSError:
-        return ""
+    """指针文件的内容（也可能指向仓库；所有权由调用方再判）。新目录优先，旧目录兜底。"""
+    home = os.path.expanduser("~")
+    for p in (os.path.join(home, ".guardrail-engine", "harness.path"),
+              os.path.join(home, ".agentguard", "harness.path")):
+        try:
+            with io.open(p, encoding="utf-8", errors="replace") as f:
+                v = f.read().strip()
+            if v:
+                return v
+        except OSError:
+            continue
+    return ""
 
 
 def engine_copy_targets(a):
@@ -645,7 +673,9 @@ def engine_copy_targets(a):
     旧版 init 没有标记，只对默认路径且没有 `.git` 的目录做兼容识别 —— 这三条都是"宁可
     少刷一份"的方向：`init --force` 会把目标目录改名归档，对用户自己的仓库就是搬走源。
     """
-    default = os.path.abspath(os.path.join(os.path.expanduser("~"), ".agentguard", "engine"))
+    home = os.path.expanduser("~")
+    defaults = [os.path.abspath(os.path.join(home, ".guardrail-engine", "engine")),
+                os.path.abspath(os.path.join(home, ".agentguard", "engine"))]
     cands = []
 
     def add(p, label):
@@ -657,7 +687,8 @@ def engine_copy_targets(a):
 
     add(a.harness_norm, "--harness 指向的引擎")
     add(engine_pointer(), "指针指向的引擎")
-    add(default, "默认引擎目录")
+    for d in defaults:
+        add(d, "默认引擎目录")
 
     out = []
     for path, label in cands:
@@ -665,7 +696,8 @@ def engine_copy_targets(a):
             continue
         if init_marker(path):
             out.append((path, label, ""))
-        elif norm(path) == norm(default) and not os.path.exists(os.path.join(path, ".git")):
+        elif (any(norm(path) == norm(d) for d in defaults)
+              and not os.path.exists(os.path.join(path, ".git"))):
             out.append((path, label,
                         "旧版 init 没有标记；按「默认路径 + 没有 .git」识别"))
     return out
@@ -678,16 +710,16 @@ def _inside(path, root):
 
 
 def extract_wheel_cli(wheel, root):
-    """把轮子里的 `agentguard/` 解到 root → (init 用的 cli.py, 错误说明)。
+    """把轮子里的壳包解到 root → (init 用的 cli.py, 错误说明)。
 
-    为什么解压而不是 `python -m agentguard.cli`：后者用的是**已装**的那份；`--skip pip`
+    为什么解压而不是 `python -m guardrail_engine.cli`：后者用的是**已装**的那份；`--skip pip`
     或本机没装过 pip 时它是旧版，会把旧引擎再铺一遍。解压的是本包这只轮子 —— 与
     `pip install` 搬运的是同一批字节，来源不随本机的安装状态而变。
     """
     try:
         with zipfile.ZipFile(wheel) as z:
             for n in z.namelist():
-                if not n.startswith("agentguard/") or n.endswith("/"):
+                if n.split("/", 1)[0] not in PKG_NAMES or n.endswith("/"):
                     continue
                 target = os.path.join(root, n.replace("/", os.sep))
                 if not _inside(target, root):
@@ -697,19 +729,21 @@ def extract_wheel_cli(wheel, root):
                     shutil.copyfileobj(src, dst)
     except Exception as ex:
         return None, "解压轮子失败：%r" % (ex,)
-    cli = os.path.join(root, "agentguard", "cli.py")
+    pkg = PKG if os.path.isdir(os.path.join(root, PKG)) else LEGACY_PKG
+    cli = os.path.join(root, pkg, "cli.py")
     if not os.path.isfile(cli):
-        return None, "轮子里没有 agentguard/cli.py"
-    if not os.path.isfile(os.path.join(root, "agentguard", "_engine", "harness", "run_gate.py")):
+        return None, "轮子里没有 %s/cli.py" % pkg
+    if not os.path.isfile(os.path.join(root, pkg, "_engine", "harness", "run_gate.py")):
         return None, "轮子未自带引擎（旧版包？）—— 无法刷新引擎副本"
     return cli, ""
 
 
 def wheel_has_engine(wheel):
-    """轮子是否自带 `agentguard/_engine/`（旧包没有；那种包刷不了引擎副本）。"""
+    """轮子是否自带 `<pkg>/_engine/`（旧包没有；那种包刷不了引擎副本）。"""
     try:
         with zipfile.ZipFile(wheel) as z:
-            return "agentguard/_engine/harness/run_gate.py" in z.namelist()
+            names = set(z.namelist())
+        return any("%s/_engine/harness/run_gate.py" % p in names for p in PKG_NAMES)
     except Exception:
         return False
 
@@ -717,8 +751,9 @@ def wheel_has_engine(wheel):
 def wheel_engine_files(wheel):
     """轮子 → 引擎副本应有的 {相对路径: sha1}；读不出来返回 None（不是空字典）。
 
-    两段来源正是 init 的复制清单：`agentguard/_engine/**`（铺到引擎根）与
-    `agentguard/*.py`（壳文件，铺到 `<root>/agentguard/`）。
+    两段来源正是 init 的复制清单：`<pkg>/_engine/**`（铺到引擎根）与
+    `<pkg>/*.py`（壳文件，铺到 `<root>/<pkg>/`）。新轮子里 `guardrail_engine/` 与兼容壳
+    `agentguard/` 都在，两段都算 —— 与 init 的 `_engine_entries` 同口径。
     """
     out = {}
     try:
@@ -726,9 +761,10 @@ def wheel_engine_files(wheel):
             for n in z.namelist():
                 if n.endswith("/"):
                     continue
-                if n.startswith("agentguard/_engine/"):
-                    rel = n[len("agentguard/_engine/"):]
-                elif n.startswith("agentguard/") and n.count("/") == 1 and n.endswith(".py"):
+                parts = n.split("/")
+                if len(parts) >= 3 and parts[0] in PKG_NAMES and parts[1] == "_engine":
+                    rel = "/".join(parts[2:])
+                elif len(parts) == 2 and parts[0] in PKG_NAMES and n.endswith(".py"):
                     rel = n
                 else:
                     continue
@@ -771,9 +807,9 @@ def step_engine(a):
         elif h and looks_like_engine(h):
             print("  · %s 没有 init 所有权标记，无法确认是可归档的副本 → 不自动刷新" % norm(h))
             print("      确认它是 init 副本时，装好新 wheel 后手动跑一次：")
-            print("      agentguard init --force --dir \"%s\"" % norm(h))
+            print("      guardrail-engine init --force --dir \"%s\"" % norm(h))
         else:
-            print("  · 未发现 agentguard init 复制出来的引擎副本（升级不替你新增通道）")
+            print("  · 未发现 guardrail-engine init 复制出来的引擎副本（升级不替你新增通道）")
         return fails
 
     wheel, err = pack_wheel(a)
@@ -809,7 +845,7 @@ def step_engine(a):
                 print("      预判：内容与本包一致 —— init 会幂等返回「引擎已是最新」")
         return fails
 
-    with tempfile.TemporaryDirectory(prefix="agentguard-engine-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="guardrail-engine-") as tmp:
         cli, err = extract_wheel_cli(wheel, tmp)
         if not cli:
             print("  · ✗ %s" % err)
@@ -861,14 +897,20 @@ def skill_targets(a):
     """已存在的宿主技能副本 → [(宿主名, 技能目录)]（没装过的不列：升级 ≠ 新增通道）。"""
     out = []
     for name, base in sorted(SKILL_PRESETS.items()):
-        t = os.path.join(base, SKILL_NAME)
-        if os.path.isdir(t):
-            out.append((name, t))
+        for skill in SKILL_NAMES:
+            t = os.path.join(base, skill)
+            if os.path.isdir(t):
+                out.append((name, t))
     for d in a.skill_dir:
         d = os.path.abspath(d)
-        t = d if os.path.basename(d) == SKILL_NAME else os.path.join(d, SKILL_NAME)
-        if os.path.isdir(t) and all(t != x[1] for x in out):
-            out.append(("custom", t))
+        hit = d if os.path.basename(d) in SKILL_NAMES else None
+        if hit is None:
+            for skill in SKILL_NAMES:
+                if os.path.isdir(os.path.join(d, skill)):
+                    hit = os.path.join(d, skill)
+                    break
+        if hit and os.path.isdir(hit) and all(hit != x[1] for x in out):
+            out.append(("custom", hit))
     return out
 
 
@@ -882,7 +924,7 @@ def step_skills(a):
     for name, t in targets:
         if not a.harness_cli:
             print("  · 技能副本[%s]：未找到引擎仓的 cli.py → 请手动执行：" % name)
-            print("      python <HARNESS>/agentguard/cli.py skill install --dir \"%s\"" % norm(t))
+            print("      python <ENGINE>/guardrail_engine/cli.py skill install --dir \"%s\"" % norm(t))
             continue
         if not a.yes:
             print("  · 技能副本[%s]：将刷新 %s" % (name, norm(t)))
@@ -902,8 +944,10 @@ def step_skills(a):
 def step_shim(a):
     """[7/7] 编辑期 shim：**只在装过时**刷新（它指向仓库，所以多半不用动；换过路径才需要）。"""
     fails = []
-    shim = os.path.join(os.path.expanduser("~"), ".agentguard", "hooks",
-                        "agentguard-gate.py")
+    home = os.path.expanduser("~")
+    shim = next((os.path.join(d, "hooks", "agentguard-gate.py")
+                 for d in (os.path.join(home, ".guardrail-engine"), os.path.join(home, ".agentguard"))
+                 if os.path.isfile(os.path.join(d, "hooks", "agentguard-gate.py"))), "")
     script = os.path.join(a.harness_norm, "sandbox", "install_shim.py") if a.harness_norm else ""
     if not os.path.isfile(shim):
         print("  · 未装编辑期 shim（升级不替你新增通道）。它是 7 家客户端编辑期门禁的唯一入口，")
@@ -943,7 +987,7 @@ def main(argv=None):
     _require_python()
     ap = argparse.ArgumentParser(description="一键升级：用新包刷新本机装过的副本（默认预演）")
     ap.add_argument("--harness", default=None,
-                    help="你的 agentguard 仓库路径（缺省读 AGENTGUARD_DIR、HARNESS_DIR）")
+                    help="你的 guardrail-engine 仓库路径（缺省读 GUARDRAIL_ENGINE_DIR、AGENTGUARD_DIR、HARNESS_DIR）")
     ap.add_argument("--python", default=None, help="跑 pip / cli.py 用的解释器（默认：当前解释器）")
     ap.add_argument("--pack", default=None,
                     help="安装包目录（默认：本脚本所在目录 —— 解压出来的包里就有本脚本）")
@@ -967,23 +1011,25 @@ def main(argv=None):
         return 1
 
     a.pack = os.path.abspath(a.pack or os.path.dirname(os.path.abspath(__file__)))
-    harness = (a.harness or os.environ.get("AGENTGUARD_DIR")
+    harness = (a.harness or os.environ.get("GUARDRAIL_ENGINE_DIR")
+               or os.environ.get("AGENTGUARD_DIR")
                or os.environ.get("HARNESS_DIR") or "").strip()
     a.harness_norm = norm(harness) if harness else ""
     a.harness_cli = ""
     if a.harness_norm:
-        c = os.path.join(a.harness_norm, "agentguard", "cli.py")
+        c = next((os.path.join(a.harness_norm, p, "cli.py") for p in PKG_NAMES
+                  if os.path.isfile(os.path.join(a.harness_norm, p, "cli.py"))), "")
         if os.path.isfile(c):
             a.harness_cli = c
 
-    print("== agentguard 一键升级 ==================================")
+    print("== guardrail-engine 一键升级 =============================")
     print("   模式    : %s" % ("执行（--yes）" if a.yes else "预演（不改任何东西；确认后加 --yes 执行）"))
     print("   包目录  : %s" % norm(a.pack))
     print("   引擎库  : %s" % (a.harness_norm or "(未指定 —— 路径适配与技能/矩阵刷新都做不了)"))
     print("   解释器  : %s" % a.python)
     if not a.harness_norm:
         print("")
-        print("✗ 请用 --harness 指定 agentguard 路径（或设 AGENTGUARD_DIR）。")
+        print("✗ 请用 --harness 指定 guardrail-engine 路径（或设 GUARDRAIL_ENGINE_DIR）。")
         print("  为什么必须给：新包里的 .mcp.json 是占位符，要靠引擎仓的 fix_paths.py 填成本机路径；")
         print("  漏了这一步，装出来的副本会指向一个不存在的解释器，而**没有任何一步会报错**。")
         return 1
@@ -1063,7 +1109,7 @@ def main(argv=None):
         return 1
     print("✅ 升级完成（台账已记录）。")
     print(" · 重启宿主（Claude Code / OpenClaw 桌面端）让插件与扩展重新加载。")
-    print(" · 复核：python <HARNESS>/agentguard/cli.py installed")
+    print(" · 复核：python <ENGINE>/guardrail_engine/cli.py installed")
     record(a, "summary", "done", "")
     return 0
 

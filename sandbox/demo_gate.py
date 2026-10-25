@@ -48,11 +48,11 @@ def main(argv):
         print("  想看其它 gate 的现场拦截，请在对应业务仓里按 README 的接入流程跑。")
         return 2
 
-    tmp = tempfile.mkdtemp(prefix="agentguard-demo.")
+    tmp = tempfile.mkdtemp(prefix="guardrail-engine-demo.")
     target = os.path.join(tmp, "demo.js")
     try:
         print("=" * 60)
-        print(" agentguard 门禁演示（gate=%s，临时仓=%s）" % (GATE, tmp))
+        print(" guardrail-engine 门禁演示（gate=%s，临时仓=%s）" % (GATE, tmp))
         print("=" * 60)
 
         print("\n【第 1 步】写一个含 console.log 的临时文件（模拟调试代码忘了删）…")

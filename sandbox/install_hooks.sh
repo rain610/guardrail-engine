@@ -1,5 +1,5 @@
 #!/bin/sh
-# agentguard/sandbox/install_hooks.sh —— 端仓库接入 pre-commit 门禁
+# guardrail-engine/sandbox/install_hooks.sh —— 端仓库接入 pre-commit 门禁
 # ============================================================
 # 用法（在端仓库/worktree 根执行）：
 #   sh <harness工程>/sandbox/install_hooks.sh [gate名]

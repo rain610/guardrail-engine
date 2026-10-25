@@ -1,9 +1,11 @@
-# sdist 必须带上引擎 —— wheel 由 setup.py 的 build_py 从这里复制进 agentguard/_engine/。
+# sdist 必须带上引擎 —— wheel 由 setup.py 的 build_py 从这里复制进 guardrail_engine/_engine/。
 # 漏掉任何一棵子树，`pip install <sdist>` 都会产出"没有引擎的 wheel"（§5.2 的形状）。
 include VERSION
 include LICENSE
 include README.md
+include README.en.md
 include AGENTS.md
+include CHANGELOG.md
 
 recursive-include checks *.py
 recursive-include harness *

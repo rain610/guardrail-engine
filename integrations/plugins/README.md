@@ -32,5 +32,5 @@ openclaw plugins marketplace list <MP_DIR>
 ## 原则
 
 - 插件只是**安装载体**：不含任何门禁逻辑；逻辑永远只有一份（`harness/` + `checks/` 引擎）。
-- 插件里的一切调用都走 MCP 薄服务（`agentguard/mcp.py`），与 CLI、git 钩子共用同一判定内核。
+- 插件里的一切调用都走 MCP 薄服务（`guardrail_engine/mcp.py`），与 CLI、git 钩子共用同一判定内核。
 - 新增任何"壳"都要进 `sandbox/list_entries.py` 的 ENTRIES 与 `tests/test_packaging_contract.py` 的契约锁（ADR-0001 铁律 2）。

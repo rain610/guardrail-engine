@@ -3,7 +3,7 @@
 
 G8 说的是两件事，都发生在"卸载"这一侧、而且都**看不见**：
   ① 反复「卸载 + 重装」会在宿主 skills 目录里堆 `.disabled-*` 残骸（每份都是完整技能副本），
-     而 `skill status` 只 stat 了 `<宿主>/agentguard` 一个路径 —— 不枚举父目录，
+     而 `skill status` 只 stat 了 `<宿主>/guardrail-engine` 一个路径 —— 不枚举父目录，
      对残骸**完全盲**；文档里也只写着归档"可逆"，没人写它的代价。
   ② 归档名是秒级戳（`%Y%m%d-%H%M%S`），同一秒内两次卸载会撞上同名目录，Windows 上
      `os.rename` 直接抛 OSError，而打印出来的是「改名归档失败（可能被占用）」——
@@ -24,8 +24,8 @@ import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CLI = os.path.join(ROOT, "agentguard", "cli.py")
-SKILL_NAME = "agentguard"
+CLI = os.path.join(ROOT, "guardrail_engine", "cli.py")
+SKILL_NAME = "guardrail-engine"
 
 
 def _load_cli():

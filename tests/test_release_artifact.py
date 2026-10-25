@@ -111,19 +111,24 @@ def _code_lines(body):
 
 
 #: 轮子自带的引擎探针（与 sandbox/verify_release.py 的 engine_required 同一组）
-ENGINE_PROBE = ("agentguard/_engine/harness/run_gate.py",
-                "agentguard/_engine/checks/example_code_check.py",
-                "agentguard/_engine/config/harness.toml")
+ENGINE_PROBE = ("guardrail_engine/_engine/harness/run_gate.py",
+                "guardrail_engine/_engine/checks/example_code_check.py",
+                "guardrail_engine/_engine/config/harness.toml")
 
 
 def _make_wheel(path, modules, requires_python, name, version,
-                entry_points="[console_scripts]\nagentguard = agentguard.cli:main\n",
+                entry_points=("[console_scripts]\n"
+                              "guardrail-engine = guardrail_engine.cli:main\n"
+                              "agentguard = agentguard.cli:main\n"),
                 metadata=True, bundled_engine=True, extra=None):
     """现场造一个"形状对、内容可控"的 wheel —— 用来当喂给校验器的病变样本。"""
-    dist = "agentguard-%s.dist-info" % version
+    dist = "guardrail_engine-%s.dist-info" % version
     with zipfile.ZipFile(path, "w") as z:
         for m in modules:
-            z.writestr("agentguard/" + m, "# %s\n" % m)
+            z.writestr("guardrail_engine/" + m, "# %s\n" % m)
+        # 迁移期兼容壳（老命令 / 老 MCP 注册在 v0.3 前必须继续可用）
+        for m in ("__init__.py", "cli.py", "mcp.py", "_shell.py"):
+            z.writestr("agentguard/" + m, "# shim\n")
         if bundled_engine:
             for n in ENGINE_PROBE:
                 z.writestr(n, "# engine\n")
@@ -193,7 +198,7 @@ class _Base(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="rel-lock-")
         self.addCleanup(_rmtree_force, self.tmp)
         self.proj, self.version, self.modules = vr._facts()
-        self.assertTrue(self.modules, "agentguard/ 下没枚举到 .py —— 本锁会因此空转")
+        self.assertTrue(self.modules, "guardrail_engine/ 下没枚举到 .py —— 本锁会因此空转")
 
     def wheel(self, fname="x.whl", **kw):
         """默认参数 = 一个**合格**产物；只覆盖要制造的那一处病变。"""
@@ -509,7 +514,7 @@ class _Pack(_Base):
         _make_wheel(cls.seed, modules, str(proj.get("requires-python")),
                     proj.get("name"), version)
         cls.out = os.path.join(cls._tmp, "out")
-        cls.pkg_name = "agentguard-package-v%s" % version
+        cls.pkg_name = "guardrail-engine-package-v%s" % version
         r = subprocess.run([sys.executable, PACKER, "--out", cls.out, "--wheel", cls.seed],
                            cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=600)
@@ -528,7 +533,7 @@ class _Pack(_Base):
         self.stage = os.path.join(self.tmp, "stage")
         shutil.copytree(self.stage_src, self.stage)
         self.mj = os.path.join(self.stage, "marketplace", "plugins", "agentguard",
-                               ".mcp.json")
+                               ".mcp.json")   # 插件 ID 保持 agentguard（v0.3 前不改）
 
     # ---- 夹具 ----
     def problems(self):
@@ -579,7 +584,7 @@ class TestShippedPackIsMachineIndependent(_Pack):
         srv = {"command": "C:/Users/someone/AppData/Local/Programs/Python/python.exe",
                "args": ["D:/someone/agentguard/agentguard/mcp.py"],
                "env": {"AGENTGUARD_DIR": "D:/someone/agentguard"}}
-        self._rewrite_json(self.mj, lambda d: d["mcpServers"].update({"agentguard": srv}))
+        self._rewrite_json(self.mj, lambda d: d["mcpServers"].update({"guardrail-engine": srv}))
         got = "\n".join(self.problems_at(self.mj))
         for field in ("command", "args[0]", "env.AGENTGUARD_DIR"):
             self.assertIn(field, got,

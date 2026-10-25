@@ -1,4 +1,4 @@
-# OpenCode 接入 agentguard
+# OpenCode 接入 guardrail-engine
 
 OpenCode 读 `AGENTS.md`（全局 `~/.config/opencode/AGENTS.md` 注入 + 仓库根 AGENTS.md），
 并支持 **plugins（TS）**——本仓提供一个现成插件，把 OpenCode 从「自觉制」升级为
@@ -45,7 +45,7 @@ EOF
 | 放行策略 | 找不到 harness 工程 / 异常 / 超时 一律静默放行——**宁可不过门禁，也绝不卡住编辑器** |
 | 兜底（默认关） | `HARNESS_OPENCODE_IDLE_CHECK=1` 时，回合结束（`session.idle`）再跑一次 `auto-gate.py`（覆盖"写文件判据没命中"的漏网改动） |
 
-可调环境变量：`AGENTGUARD_DIR`（旧名 `HARNESS_DIR` 兼容） / `HARNESS_PYTHON` / `HARNESS_OPENCODE_IDLE_CHECK` / `HARNESS_OPENCODE_LOG`。
+可调环境变量：`GUARDRAIL_ENGINE_DIR`（旧名 `HARNESS_DIR` 兼容） / `HARNESS_PYTHON` / `HARNESS_OPENCODE_IDLE_CHECK` / `HARNESS_OPENCODE_LOG`。
 
 > **为什么插件要读 JSON 而不是退出码**：hook 自身的退出码恒为 2（表"阻断"），无法区分
 > 「门禁未通过」与「门禁调用出错」。所以 `client=opencode` 这一支回一段

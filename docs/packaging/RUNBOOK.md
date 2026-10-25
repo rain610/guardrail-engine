@@ -1,12 +1,12 @@
-# 打包接入 Runbook（agentguard · 推荐版）
+# 打包接入 Runbook（guardrail-engine · 推荐版）
 
-> 读者：要在一台机器 / 一个端仓接入 agentguard 门禁的人（**不需要读过任何其他文档**）。
+> 读者：要在一台机器 / 一个端仓接入 guardrail-engine 门禁的人（**不需要读过任何其他文档**）。
 > 一页速查 → 三入口 → 台账 → 旁路 → 回滚 → 排障 → 已知限制 → 演进建议。
-> 路径约定：`<HARNESS>` = agentguard 引擎根。两种来源都成立：
-> ① 安装本包（源码树 `pip install .` 或本地 wheel；PyPI 尚未发布）并 `agentguard init`
->    之后是 `~/.agentguard/engine`；
-> ② clone 源码时是工程根（如 `D:/Rain/project/agentguard`）。
-> ① 的形态下，下文 `python <HARNESS>/agentguard/cli.py …` 都可换成 `agentguard …`。
+> 路径约定：`<HARNESS>` = guardrail-engine 引擎根。两种来源都成立：
+> ① 安装本包（源码树 `pip install .` 或本地 wheel；PyPI 尚未发布）并 `guardrail-engine init`
+>    之后是 `~/.guardrail-engine/engine`；
+> ② clone 源码时是工程根（如 `D:/Rain/project/guardrail-engine`）。
+> ① 的形态下，下文 `python <HARNESS>/guardrail_engine/cli.py …` 都可换成 `guardrail-engine …`（迁移期 `agentguard` 别名仍可用）。
 
 ---
 
@@ -15,25 +15,25 @@
 ```bash
 # ⓪ 只有 pip 包时：先把随包引擎落到本机（clone 源码的跳过）
 #    PyPI 尚未发布：在源码树根目录用 pip install .（或装本地 wheel）
-pip install . && agentguard init
+pip install . && guardrail-engine init
 
 # ① 自检（3 秒，任何目录）——同时打印全部接入方式
-python <HARNESS>/agentguard/cli.py quickstart
+python <HARNESS>/guardrail_engine/cli.py quickstart
 
 # ② 让 agent 能直接用（MCP：一行配置）
-python <HARNESS>/agentguard/cli.py mcp --print-config
-#    Claude Code:  claude mcp add agentguard -- "<python>" "<HARNESS>/agentguard/mcp.py"
-#    OpenClaw:     openclaw mcp add agentguard --command "<python>" --arg "<HARNESS>/agentguard/mcp.py"
-#    Codex:        codex mcp add agentguard -- "<python>" "<HARNESS>/agentguard/mcp.py"
+python <HARNESS>/guardrail_engine/cli.py mcp --print-config
+#    Claude Code:  claude mcp add guardrail-engine -- "<python>" "<HARNESS>/guardrail_engine/mcp.py"
+#    OpenClaw:     openclaw mcp add guardrail-engine --command "<python>" --arg "<HARNESS>/guardrail_engine/mcp.py"
+#    Codex:        codex mcp add guardrail-engine -- "<python>" "<HARNESS>/guardrail_engine/mcp.py"
 
 # ③ 提交期硬兜底（每个端仓执行一次）
-python <HARNESS>/agentguard/cli.py hooks install --repo <端仓路径>
+python <HARNESS>/guardrail_engine/cli.py hooks install --repo <端仓路径>
 
 # ④（可选）agent 侧技能包
-python <HARNESS>/agentguard/cli.py skill install --target claude   # 或 opencode / codebuddy
+python <HARNESS>/guardrail_engine/cli.py skill install --target claude   # 或 opencode / codebuddy
 
 # ⑤ 第一次判定
-python <HARNESS>/agentguard/cli.py check <你改过的文件>
+python <HARNESS>/guardrail_engine/cli.py check <你改过的文件>
 ```
 
 判读结果：`rc=0` 通过；`rc=1` 拦截（按输出里的 ❌ 修复）；`rc=2` 配置/定位错误；`rc=3` 非受管仓库。
@@ -46,8 +46,8 @@ python <HARNESS>/agentguard/cli.py check <你改过的文件>
 
 | 入口 | 用什么 | 适用场景 |
 |---|---|---|
-| **MCP 工具** | `harness_check_file` / `harness_run_gate` / `harness_list_gates` / `harness_summary` / `harness_coverage` / `harness_doctor` | 宿主已配置 agentguard 时，agent 会话内直接调用，无需终端 |
-| **CLI** | `python <HARNESS>/agentguard/cli.py run/check/summary/...` | 人工终端、脚本、CI |
+| **MCP 工具** | `harness_check_file` / `harness_run_gate` / `harness_list_gates` / `harness_summary` / `harness_coverage` / `harness_doctor` | 宿主已配置 guardrail-engine 时，agent 会话内直接调用，无需终端 |
+| **CLI** | `python <HARNESS>/guardrail_engine/cli.py run/check/summary/...` | 人工终端、脚本、CI |
 | **git 钩子** | `core.hooksPath` 共享分发器（安装见 §0-③） | **硬兜底**：agent 侧什么都不装，提交也会被拦 |
 
 > 三入口共用同一判定内核与同一本台账；出现结论不一致 = bug，直接报 harness 负责人。
@@ -79,7 +79,7 @@ python <HARNESS>/sandbox/audit_reconcile.py --since 7d --gate example
 ## 3. 紧急旁路（仅限紧急，必须留痕）
 
 ```bash
-python <HARNESS>/agentguard/cli.py bypass --repo <端仓> --reason "≥10 字的原因（为什么、给谁看）"
+python <HARNESS>/guardrail_engine/cli.py bypass --repo <端仓> --reason "≥10 字的原因（为什么、给谁看）"
 git -C <端仓> commit --no-verify -m "<提交说明>"
 ```
 
@@ -95,16 +95,16 @@ git -C <端仓> commit --no-verify -m "<提交说明>"
 
 ```bash
 # 提交期钩子：卸载（核心 = 撤回 core.hooksPath；不删除任何文件）
-python <HARNESS>/agentguard/cli.py hooks uninstall --repo <端仓>
+python <HARNESS>/guardrail_engine/cli.py hooks uninstall --repo <端仓>
 
 # 技能包：卸载（改名归档，可逆：<target>.disabled-<时间戳>）
-python <HARNESS>/agentguard/cli.py skill uninstall --target claude
+python <HARNESS>/guardrail_engine/cli.py skill uninstall --target claude
 
 # 编辑期 shim：卸载（两支文件改名归档，可逆；7 家客户端的编辑期门禁入口）
 python <HARNESS>/sandbox/install_shim.py --uninstall
 
 # MCP：在宿主侧移除
-#   claude mcp remove agentguard ｜ openclaw mcp unset agentguard ｜ codex mcp remove agentguard
+#   claude mcp remove guardrail-engine ｜ openclaw mcp unset guardrail-engine ｜ codex mcp remove guardrail-engine
 
 # OpenClaw 扩展：删除 ~\.openclaw-autoclaw\extensions\agentguard → 重启桌面端（或 uninstall.py 自动移出归档）
 ```
@@ -125,7 +125,7 @@ python <HARNESS>/sandbox/install_shim.py --uninstall
 | 提交"好像没被检查"、无任何输出 | hooksPath 未设置 / 指向不存在目录（git 静默跳过） | `git config core.hooksPath` 自查；`cli.py hooks install --repo <仓>`；对照 `README.md` 的三态说明 |
 | 提交被拦但看不懂 | 正常拦截 | 按输出 ❌ 修复；拿 `cli.py log` 看这次判定的规则明细 |
 | rc=2 配置/定位错误 | gate 登记或路径问题 | `python <HARNESS>/harness/run_gate.py --validate` |
-| MCP 工具在宿主里不出现 | 配置未生效/命令写错 | `openclaw mcp probe agentguard` / `claude mcp list` / `codex mcp list` 自查；看服务 stderr |
+| MCP 工具在宿主里不出现 | 配置未生效/命令写错 | `openclaw mcp probe guardrail-engine` / `claude mcp list` / `codex mcp list` 自查；看服务 stderr |
 | 控制台乱码/崩溃 | GBK 控制台 | 三个壳都带 UTF-8 兜底；其他入口见 `doctor` 第 1 节检查 |
 | 文档/证据出现乱码字符（� / 锟斤拷 类） | 采集管道编码损伤（PS 管道按 cp936 解码 / Windows CLI 的 GBK 输出被按 UTF-8 采集） | 采集时：python 直接写 UTF-8 文件、CLI 输出 cp936 回退解码；提交前：`python sandbox/check_mojibake.py` 自检（本行示例字符为说明用途，mojibake-ok） |
 | hooks 报 `python: command not found` | PATH 无 python | 把 python 加进 PATH；或改用 `cli.py` 直跑验证后再装钩子 |
@@ -178,13 +178,51 @@ claude plugin marketplace remove agentguard-tools
 
 ## 7. 已知限制（诚实版）
 
-- pip 包形态**已提供**（`pyproject.toml` + `[project.scripts] agentguard`，随离线安装包分发 wheel）；
-  未提供的是**公开发布到 PyPI**，分发走 Release / 离线安装包（见 README「打包与分发」）。
+- pip 包形态**已提供**（`pyproject.toml` + `[project.scripts] guardrail-engine`）；公开发布到
+  PyPI 由 `v*` tag 触发的 `release.yml` 完成（见 §7.5）。**首个 tag 发布之前**，
+  `pip install guardrail-engine` 仍会 404，此时用源码树 `pip install .` 或离线安装包。
 - Claude 插件原型按机器打戳（配置含绝对路径），宿主市场分发形态未验证（见 `COMPAT.md`）。
 - `bypass` 只记录"声明"，无法强制拦截 `--no-verify`（需钩子侧配合，属后续增量）。
 - MCP/CLI 的**持久化回归测试已入库**（`tests/test_agentguard.py`，10 例：协议 fixtures / 工具行为 / 三入口一致性）。
 - 台账写入失败**不阻断**门禁（设计如此，日志绝不挡提交）；2026-09-16 起会在 stderr 打一行
   `[run_gate] ⚠ 判定台账写入失败…`，不再完全静默（此前只有一个 `except: pass`，写失败了没人知道）。
+
+## 7.5 发版（维护者）：tag → GitHub Release → PyPI
+
+发版动作只有一个：在 `main` 上对齐 `VERSION` 与 `CHANGELOG.md` 后打 tag。
+
+```bash
+# 1) VERSION 与 CHANGELOG 同一次提交：把 [Unreleased] 内容移入 ## [<版本>] — <日期>
+# 2) 打 tag 并推送（release.yml 会校验 tag ↔ VERSION 一致，不一致直接失败）
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+`release.yml` 依次做：单元测试 → 变异冒烟 → 构建离线安装包与 wheel → 真产物锁 →
+`gh release create` → **PyPI 可信发布**（`publish` job）。
+
+PyPI `publish` job 用的是 OIDC 短时凭证，仓库里**不需要** `PYPI_API_TOKEN`。首次发布前
+要在 PyPI 网页端登记一次 trusted publisher：
+
+| 字段 | 值 |
+|---|---|
+| PyPI project | `guardrail-engine`（首次发布前在 PyPI 创建同名 project，或让首次上传自动创建 —— 需要在该 project 的 Publishing 页登记 pending publisher） |
+| Owner | `rain610` |
+| Repository | `guardrail-engine` |
+| Workflow | `release.yml` |
+| Environment | `pypi` |
+
+仓库侧对应设置：GitHub → Settings → Environments 新建 `pypi`（可按需加 required reviewers，
+发布前人工确认）。`publish` job 通过 `python -m build` 先打 sdist、**再从 sdist** 打 wheel，
+这一步会暴露 `MANIFEST.in` 漏带引擎的问题；随后在干净 venv 里 `init` 并取版本，失败则不上传。
+
+失败处置：
+
+- `tag 与 VERSION 不一致`：删 tag（`git tag -d` / `git push origin :refs/tags/<tag>`）后重打；
+- PyPI 报 `File already exists`：同一版本不能重传，升 `VERSION` 再发；
+- `publish` 在 `gh release create` 之后失败：GitHub Release 已建，但 PyPI 没有该版本 ——
+  修好后用 `workflow_dispatch`（若已开启）或补一个新 tag 重跑；不要手工 `twine upload`
+  绕过冒烟。
 
 ## 8. 后续演进建议
 

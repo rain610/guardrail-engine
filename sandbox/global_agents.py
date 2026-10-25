@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`~/.agentguard/GLOBAL_AGENTS.md` 的**唯一**渲染器（正文 + 哨兵分区拼装）。
+"""`~/.guardrail-engine/GLOBAL_AGENTS.md` 的**唯一**渲染器（正文 + 哨兵分区拼装）。
 
 为什么是「唯一」（2026-09-19）
 --------------------------------------------------------------------------------
@@ -131,8 +131,12 @@ _MIGRATE_NOTE = (
 
 
 def target():
-    """默认目标：`~/.agentguard/GLOBAL_AGENTS.md`（`~` 走 expanduser，随 HOME/USERPROFILE）。"""
-    return os.path.join(os.path.expanduser("~"), ".agentguard", "GLOBAL_AGENTS.md")
+    """默认目标：`~/.guardrail-engine/GLOBAL_AGENTS.md`（已有旧 `~/.agentguard/` 时留在旧目录）。"""
+    home = os.path.expanduser("~")
+    new = os.path.join(home, ".guardrail-engine")
+    old = os.path.join(home, ".agentguard")
+    base = new if (os.path.isdir(new) or not os.path.isdir(old)) else old
+    return os.path.join(base, "GLOBAL_AGENTS.md")
 
 
 def looks_like_msys(root):
@@ -371,7 +375,7 @@ def brief(path=None, root=None):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="渲染 ~/.agentguard/GLOBAL_AGENTS.md（守则正文的唯一来源）")
+    ap = argparse.ArgumentParser(description="渲染 ~/.guardrail-engine/GLOBAL_AGENTS.md（守则正文的唯一来源）")
     ap.add_argument("root", nargs="?",
                     help="HARNESS 工程根（Windows 形态正斜杠路径；渲染时烘进正文；缺省走统一解析链）")
     ap.add_argument("--check", action="store_true",
@@ -383,7 +387,7 @@ def main():
     if not root:
         # 尝试从统一解析链获取
         try:
-            sys.path.insert(0, os.path.join(ENGINE_ROOT, "agentguard"))
+            sys.path.insert(0, os.path.join(ENGINE_ROOT, "guardrail_engine"))
             from _shell import find_root
             root = find_root()
         except Exception:
@@ -394,7 +398,7 @@ def main():
         # —— 例：`--check D:/别的克隆`，想知道手上这份守则指的是不是它。
         return 0 if check(root=root or ENGINE_ROOT) else 1
     if not root:
-        print("✗ 找不到 HARNESS 工程根：设 AGENTGUARD_DIR 环境变量，"
+        print("✗ 找不到引擎根：设 GUARDRAIL_ENGINE_DIR 环境变量（旧名 AGENTGUARD_DIR / HARNESS_DIR 也可），"
               "或在 config/harness.local.toml 里写 `harness:` 键，"
               "或 `python sandbox/global_agents.py <HARNESS>` 显式传", file=sys.stderr)
         return 2
@@ -402,7 +406,7 @@ def main():
         print("⚠ 这个路径看着是 git-bash 形态（%s）—— MSYS 会让你这条命令**跑成功**，"
               "但它是**原样**烘进守则正文的，Windows 上的 AI 工具按它找不到引擎仓。\n"
               "  请换成盘符形态重跑一次（哨兵区每次整段重渲染，直接覆盖，不用先清理）：\n"
-              "    sh sandbox/where.sh --win        # 打印本机形态，例如 D:/dev/agentguard"
+              "    sh sandbox/where.sh --win        # 打印本机形态，例如 D:/dev/guardrail-engine"
               % root, file=sys.stderr)
     try:
         action, backup = write(root)

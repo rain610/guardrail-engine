@@ -1,4 +1,4 @@
-# ZCode 接入 agentguard
+# ZCode 接入 guardrail-engine
 
 > **2026-09-13 实证更新**：ZCode **不是黑盒**——它的内置运行时 `resources/glm/zcode.cjs` 里能直接读到它的约定：
 > - **支持 `AGENTS.md`**（bundle 内命中 20 次，其自带说明文本写作 *"instruction files such as AGENTS.md in the ZCode client"*）；
@@ -28,7 +28,7 @@
 **参数三行**（逐行填）：
 
 ```
-C:\Users\HP\.agentguard\hooks\agentguard-gate.py
+C:\Users\HP\.guardrail-engine\hooks\agentguard-gate.py
 zcode
 PostToolUse
 ```

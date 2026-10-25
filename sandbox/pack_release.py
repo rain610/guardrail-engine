@@ -8,15 +8,15 @@
 
 产物（默认 DIR = <仓库根>/dist/install-package）：
 
-    agentguard-package-v<版本>/        ← 文件包（stage）
-        agentguard-*.whl                  ← 由本仓库现场构建（或用 --wheel 复用已有轮子）
+    guardrail-engine-package-v<版本>/  ← 文件包（stage）
+        guardrail_engine-*.whl            ← 由本仓库现场构建（或用 --wheel 复用已有轮子）
         marketplace/                         ← Claude 兼容插件市场（build_marketplace.py 现场构建）
         OPENCLAW.md / LICENSE / 安装说明.md   ← 文档（单一来源：仓库 docs/ 与 LICENSE）
         fix_paths.py / uninstall.py / upgrade.py
                                              ← 换机器路径适配 + 一键卸载 + 一键升级（随包分发）
         PACK-INFO.json                       ← 出货件身份：版本 / 构建时刻 / **整包指纹**（+ 市场子树指纹）
         SHA1SUMS.txt                         ← 文件包内全部文件的 SHA1
-    agentguard-package-v<版本>.zip     ← 上述文件包的 zip（zip 内根目录同名）
+    guardrail-engine-package-v<版本>.zip ← 上述文件包的 zip（zip 内根目录同名）
 
 出货件与机器无关（2026-09-17 起）
 ================================================================================
@@ -142,7 +142,7 @@ def content_sha1(path):
         return eol_text.canon_sha1(f.read())
 
 
-BUILD_POLLUTION = ("build", "agentguard.egg-info")  # setuptools 就地构建的副产物
+BUILD_POLLUTION = ("build", "guardrail_engine.egg-info", "agentguard.egg-info")  # setuptools 就地构建的副产物
 
 
 def build_wheel(out_dir):
@@ -198,7 +198,7 @@ def wheel_content_sha1(src):
 
     为什么不能直接用文件字节：wheel 是 zip，条目时间戳由构建时刻决定 —— 同一份源码连打两次，
     文件字节不同，而里面的**内容**一模一样。实测（2026-09-17，连打两次同一份源码）：
-      agentguard-0.1.2.dev0-py3-none-any.whl  abc2802cb6… / d603c169bd…
+      guardrail_engine-0.1.2.dev0-py3-none-any.whl  abc2802cb6… / d603c169bd…
     而同一对包的 `marketplace_sha1` 完全相同、安装说明也完全相同 —— 差别只在轮子这个 zip 的
     时间戳。所以整包指纹里轮子必须按内容算：按字节算的话，G3 那句"同版本号、内容不同"会变成
     **每次重打包都响**的噪音，人很快学会无视它，真正该看见的那一次也就看不见了 ——
@@ -346,7 +346,7 @@ def main(argv=None):
     if not version:
         log("✗ VERSION 文件为空")
         return 1
-    pkg_name = "agentguard-package-v%s" % version
+    pkg_name = "guardrail-engine-package-v%s" % version
     out = os.path.abspath(a.out)
     stage = os.path.join(out, pkg_name)
     zip_path = os.path.join(out, pkg_name + ".zip")

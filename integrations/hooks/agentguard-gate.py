@@ -71,7 +71,7 @@ def _env_positive_int(name, default):
         if name not in _ENV_WARNED:
             _ENV_WARNED.add(name)
             try:
-                sys.stderr.write("[agentguard] 环境变量 %s=%r 不是正整数，已回退默认值 %d"
+                sys.stderr.write("[guardrail-engine] 环境变量 %s=%r 不是正整数，已回退默认值 %d"
                                  "（本次仍照常跑，不会因此失效）\n" % (name, raw, default))
             except Exception:
                 pass
@@ -95,10 +95,11 @@ def _resolve_harness():
         cands.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     except Exception:
         pass
-    env = (os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
+    env = (os.environ.get("GUARDRAIL_ENGINE_DIR") or os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
     if env:
         cands.append(env)
-    for ptr in (os.path.join(os.path.expanduser("~"), ".agentguard", "harness.path"),
+    for ptr in (os.path.join(os.path.expanduser("~"), ".guardrail-engine", "harness.path"),
+                os.path.join(os.path.expanduser("~"), ".agentguard", "harness.path"),
                 os.path.join(os.path.expanduser("~"), ".agentguard.path")):
         try:
             with open(ptr, encoding="utf-8") as f:
@@ -107,10 +108,11 @@ def _resolve_harness():
                 cands.append(v)
         except OSError:
             pass
-    cands.append(os.path.expanduser("~/agentguard"))
+    cands.append(os.path.expanduser("~/guardrail-engine"))
     d = os.path.abspath(os.getcwd())
     for _ in range(6):
-        cands.append(os.path.join(d, "agentguard"))
+        cands.append(os.path.join(d, "guardrail-engine"))
+        cands.append(os.path.join(d, "agentguard"))   # 旧 clone 目录名
         cands.append(d)
         d = os.path.dirname(d)
     partial = None    # K8：像工程根、但缺 auto-gate.py（clone 半残/被误清理）
@@ -128,15 +130,15 @@ def _resolve_harness():
             continue
     if partial and not _RESOLVE_WARNED[0]:
         _RESOLVE_WARNED[0] = True
-        sys.stderr.write("[agentguard] 工程根看起来是 %s，但缺 harness/agents/auto-gate.py："
+        sys.stderr.write("[guardrail-engine] 工程根看起来是 %s，但缺 harness/agents/auto-gate.py："
                          "本次放行不阻塞，但门禁**没有生效**，请检查工程仓完整性\n" % partial)
     # G3：全链失败仍**不阻塞**（"没装 harness 不卡同事"是硬承诺），但也不再完全静默 ——
     # 出声一次（stderr），把"门禁这次没生效"讲明白，避免同事以为一直在被检查。
     if not _RESOLVE_WARNED[0]:
         _RESOLVE_WARNED[0] = True
         sys.stderr.write(
-            "[agentguard] 未找到工程根（AGENTGUARD_DIR / HARNESS_DIR / 指针 / 常见位置 / 向上搜索 / 脚本自身位置均未命中）："
-            "本次**放行不阻塞**；如需门禁请设置 AGENTGUARD_DIR（旧名 HARNESS_DIR 兼容）或写 ~/.agentguard/harness.path\n")
+            "[guardrail-engine] 未找到工程根（GUARDRAIL_ENGINE_DIR / AGENTGUARD_DIR / HARNESS_DIR / 指针 / 常见位置 / 向上搜索 / 脚本自身位置均未命中）："
+            "本次**放行不阻塞**；如需门禁请设置 GUARDRAIL_ENGINE_DIR（旧名 AGENTGUARD_DIR / HARNESS_DIR 兼容）或写 ~/.guardrail-engine/harness.path\n")
     return None
 
 
@@ -162,7 +164,7 @@ def _stdin_watchdog(seconds):
     def _fire():
         if not done.wait(seconds):
             try:
-                sys.stderr.write("[agentguard] 等宿主写完 hook 的 stdin 超过 %d 秒，"
+                sys.stderr.write("[guardrail-engine] 等宿主写完 hook 的 stdin 超过 %d 秒，"
                                  "本次按「放行不检查」处理（避免把会话卡死）\n" % seconds)
                 sys.stderr.flush()
             except Exception:
@@ -355,7 +357,7 @@ def _repo_root_for(path):
 # 隐私：活动/跳过只记决策与路径；dump 默认脱敏、开关关掉即完全不写盘。
 
 _ACTIVITY_DIR = (os.environ.get("HARNESS_HOOK_ACTIVITY_DIR")
-                 or os.path.join(os.path.expanduser("~"), ".agentguard"))
+                 or os.path.join(os.path.expanduser("~"), ".guardrail-engine"))
 
 
 def _now():

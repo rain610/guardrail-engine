@@ -1,5 +1,5 @@
 #!/bin/sh
-# agentguard/sandbox/doctor.sh —— 接入自检/终检（2026-09-10）
+# guardrail-engine/sandbox/doctor.sh —— 接入自检/终检（2026-09-10）
 # ============================================================
 # 四项检查，逐项 ✅/⚠/❌：
 #   1. 环境：python 可用 + 全部门禁入口脚本带 UTF-8 输出兜底
@@ -11,7 +11,7 @@
 #      探针不依赖任何受管仓。
 #   3. hook 活性：主仓 .git/hooks 里装的 gate 必须在 config 中 enabled——
 #      防「装了 hook + gate 关着」双重失效静默放行（2026-09-08 实测教训）。
-#   4. skill 软链：codebuddy / claude / opencode 的 agentguard 软链可达
+#   4. skill 软链：codebuddy / claude / opencode 的 guardrail-engine 软链可达（旧 agentguard 也算）
 #      （仅加速项，缺失不拦接入）。
 #   另含 1.5/1.6 解析链自检（harness: 键 / 指针文件新鲜度）——后补项，编号沿用。
 # 用法：sh <harness>/sandbox/doctor.sh
@@ -65,7 +65,7 @@ fi
 # 调用处一律写 $HARNESS_PY 且**不加引号**（"py -3" 需要按空格拆成两个词）。
 # ------------------------------------------------------------------------------
 
-echo "=== agentguard doctor 自检（harness=$HARNESS_WIN）==="
+echo "=== guardrail-engine doctor 自检（engine=$HARNESS_WIN）==="
 echo ""
 
 # ---------- 1/4 环境 ----------
@@ -123,12 +123,13 @@ else
 fi
 echo ""
 
-# ---------- 1.6/4 指针文件新鲜度（~/.agentguard/harness.path）----------
-echo "--- 1.6/4 指针文件新鲜度（~/.agentguard/harness.path）---"
+# ---------- 1.6/4 指针文件新鲜度（新 ~/.guardrail-engine/harness.path，旧 ~/.agentguard/ 也认）----------
+echo "--- 1.6/4 指针文件新鲜度（~/.guardrail-engine/ 或 ~/.guardrail-engine/）---"
 # 2026-10-15 批次 5（评审遗留项）：业务仓 AGENTS.md 的「路径约定」第 2 级靠这个文件；
 # 挪仓/换克隆后它会变**陈旧指针** —— AI 拿旧路径敲命令、屏幕上一切正常（同 09-19 那族
 # 「看起来装好了其实没有」的失效）。判据：文件存在时，指向的目录必须含 harness/run_gate.py。
-PTR_FILE="$HOME/.agentguard/harness.path"
+PTR_FILE="$HOME/.guardrail-engine/harness.path"
+[ -f "$PTR_FILE" ] || PTR_FILE="$HOME/.agentguard/harness.path"
 if [ ! -f "$PTR_FILE" ]; then
     echo "  ℹ 未写指针文件（$PTR_FILE）—— 新机器没跑过接入脚本时可接受；"
     echo "    但业务仓 AGENTS.md 的路径约定第 2 级要靠它，建议补跑：sh $HARNESS_WIN/sandbox/setup_machine.sh"
@@ -339,12 +340,13 @@ echo ""
 # ---------- 4/4 skill 软链 ----------
 echo "--- 4/4 skill 软链检查（自动加载加速项，缺失不拦接入）---"
 for SKILL_DIR in "$HOME/.codebuddy/skills" "$HOME/.claude/skills" "$HOME/.config/opencode/skills"; do
-    LINK="$SKILL_DIR/agentguard"
+    LINK="$SKILL_DIR/guardrail-engine"
+    LINK_OLD="$SKILL_DIR/agentguard"
     TOOL=$(basename "$(dirname "$SKILL_DIR")")
-    if [ -e "$LINK/SKILL.md" ]; then
+    if [ -e "$LINK/SKILL.md" ] || [ -e "$LINK_OLD/SKILL.md" ]; then
         ok "skill 软链可达（$TOOL）"
     else
-        warn "skill 软链缺失/断链（$TOOL）——不影响门禁，仅少自动加载；可选修复：ln -s \"$HARNESS_WIN/integrations/agentguard-skill\" \"$LINK\""
+        warn "skill 软链缺失/断链（$TOOL）——不影响门禁，仅少自动加载；可选修复：ln -s \"$HARNESS_WIN/integrations/guardrail-engine-skill\" \"$LINK\""
     fi
 done
 echo ""

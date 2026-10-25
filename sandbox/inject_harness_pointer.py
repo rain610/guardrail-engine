@@ -2,7 +2,8 @@
 """为 30 个业务仓 AGENTS.md 注入指针写法（P1#3）
 
 在标题行后插入路径解析说明，让 AI 知道如何把 <HARNESS> 解析成真实路径。
-解析链：$AGENTGUARD_DIR（旧名 $HARNESS_DIR 兼用）环境变量 → ~/.agentguard/harness.path 文件内容。
+解析链：$GUARDRAIL_ENGINE_DIR（旧名 $AGENTGUARD_DIR / $HARNESS_DIR 兼用）环境变量
+→ ~/.guardrail-engine/harness.path（旧 ~/.agentguard/harness.path 同样可读）文件内容。
 
 幂等：已含 POINTER_MARKER 的文件跳过。
 """
@@ -24,9 +25,9 @@ import _config  # noqa: E402  （零依赖 mini-yaml + 本机覆盖层，禁止 
 POINTER_MARKER = "<!-- harness-pointer-injected -->"
 POINTER_NOTE = r"""
 > **路径约定**：下文 `<HARNESS>` 指本机 harness 工程根目录，按序取：
-> 1. 环境变量 `$AGENTGUARD_DIR`（旧名 `$HARNESS_DIR` 同样可用）
-> 2. `~/.agentguard/harness.path` 文件内容（接入脚本生成；Windows 上同一路径写作
->    `%USERPROFILE%\.agentguard\harness.path`）
+> 1. 环境变量 `$GUARDRAIL_ENGINE_DIR`（旧名 `$AGENTGUARD_DIR` / `$HARNESS_DIR` 同样可用）
+> 2. `~/.guardrail-engine/harness.path` 文件内容（接入脚本生成；旧 `~/.agentguard/harness.path`
+>    同样可读；Windows 上同一路径写作 `%USERPROFILE%\.guardrail-engine\harness.path`）
 > 3. 都没有 → 本机没跑过接入脚本。**别猜路径**：请让用户重跑一次接入脚本
 >    （`sandbox/setup_machine.sh`），跑完上面第 2 条就有了。
 >

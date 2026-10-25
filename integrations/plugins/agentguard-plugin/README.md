@@ -14,7 +14,7 @@
 | 组件 | 内容 |
 |---|---|
 | `.mcp.json` | 启动 agentguard MCP 薄服务（单文件零依赖）。工具：`harness_check_file` / `harness_run_gate` / `harness_list_gates` / `harness_summary` / `harness_coverage` / `harness_doctor` |
-| `skills/agentguard/` | 使用规范：何时跑、怎么读裁决、修复建议、安全边界（从主仓 `integrations/agentguard-skill` 同源复制） |
+| `skills/agentguard/` | 使用规范：何时跑、怎么读裁决、修复建议、安全边界（从主仓 `integrations/guardrail-engine-skill` 同源复制） |
 | `.claude-plugin/plugin.json` | 插件清单（version 取自主仓 `VERSION`，单一来源） |
 
 ## 限制（诚实版）

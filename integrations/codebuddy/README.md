@@ -1,14 +1,14 @@
-# CodeBuddy 接入 agentguard
+# CodeBuddy 接入 guardrail-engine
 
 > **2026-09-13 实测升级**：CodeBuddy **支持原生钩子**（与 Claude Code 同族），本机已接好并**端到端验证通过**——
 > 它从"自觉型"升级为**强制型**：AI 写完文件 → 自动跑门禁 → 结论回灌模型（模型会据此自修）。
 
 ## 1. 规则注入（必做）
 
-`agentguard` skill 已软链到 `~/.codebuddy/skills/`；仓库根 `AGENTS.md` 也已含门禁段。
+`guardrail-engine` skill 已软链到 `~/.codebuddy/skills/`；仓库根 `AGENTS.md` 也已含门禁段。
 
 **用户级（跨仓 / 不在受管仓里工作时也生效）**：`sandbox/bootstrap_agent_env.sh` 会写
-`~/.codebuddy/rules/agentguard.md` —— 一份指向 `~/.agentguard/GLOBAL_AGENTS.md`
+`~/.codebuddy/rules/agentguard.md` —— 一份指向 `~/.guardrail-engine/GLOBAL_AGENTS.md`
 的**薄壳**（不是正文副本）。它是 **rules 目录**形态，且该目录默认不存在，由脚本 mkdir 现建。
 
 > ⚠ 别把 `integrations/agent-rule-snippet.md` 的正文**复制**进 `~/.codebuddy/rules/`：
@@ -89,7 +89,7 @@ codebuddy -p "<让 AI 写含违规的文件>" --permission-mode bypassPermission
 
 ## 7. 漏跑自查（2026-10-15 批次 4 起：心跳 / 跳过 / payload 捕获）
 
-IDE 插件形态若疑似漏跑，两步定位（都读 `~/.agentguard/`，不主动写盘）：
+IDE 插件形态若疑似漏跑，两步定位（都读 `~/.guardrail-engine/`，不主动写盘）：
 
 1. **心跳**：`hook-activity-codebuddy.json` 的 `last_ts` 是否在你那次编辑后更新？
    - 不更新 → **IDE 没调钩子**（形态/配置问题，回查 §2 配置是否生效）；
@@ -103,7 +103,7 @@ IDE 插件形态若疑似漏跑，两步定位（都读 `~/.agentguard/`，不�
 2. **跳过记录**：写类事件提取失败会落一行 `hook-skips-YYYY-MM.jsonl`（60s/客户端节流；
    读类事件只心跳不落行；行内的 `tool` 字段同样用于区分噪音与真漏）。`ran:rc=1` 但模型手里
    没有结论 → 回灌问题（不是提取问题）。
-3. **payload 捕获**（定案提取映射）：`touch ~/.agentguard/hook-dump.on` → 在 IDE 里编辑一次
+3. **payload 捕获**（定案提取映射）：`touch ~/.guardrail-engine/hook-dump.on` → 在 IDE 里编辑一次
    → 看 `hook-payload-last-codebuddy.json`（长串截断、默认脱敏）→ 交给 harness 负责人修取数。
    用完删掉开关文件即恢复「完全不写盘」。
 

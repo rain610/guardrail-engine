@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""引导：把门禁引擎仓（agentguard）clone 到本机。
+"""引导：把门禁引擎仓（guardrail-engine）clone 到本机。
 
 为什么包里要带这支
 ================================================================================
@@ -12,14 +12,14 @@
 而真正缺的是"还没 clone"。
 
 本脚本只做一件事：**把引擎 clone 到本机**（或如实报告它已经在了），再把后面两步打出来。
-它不装任何东西、不写任何配置、不碰 `~/.agentguard/` —— 所以它**不在 `uninstall.py`
+它不装任何东西、不写任何配置、不碰 `~/.guardrail-engine/` —— 所以它**不在 `uninstall.py`
 的五项清理里**：clone 出来的仓库是你自己的仓库，与"装了什么"是两回事
 （《安装说明》「四」也写着"本工具不动你的 `<HARNESS>` 仓库"）。
 
 用法
 ================================================================================
-    python bootstrap.py                              # clone 到 ~/agentguard
-    python bootstrap.py --dir D:/dev/agentguard
+    python bootstrap.py                              # clone 到 ~/guardrail-engine
+    python bootstrap.py --dir D:/dev/guardrail-engine
     python bootstrap.py --url git@...:xxx.git        # 换了地址 / 走 SSH
     python bootstrap.py --check                      # 只体检（git 在不在 / 目标什么状态），不动手
 
@@ -28,7 +28,7 @@
 
 三条刻意的"不做"
 ================================================================================
-· **不覆盖已存在的目录**：目标目录在、但里面不是引擎仓（没有 `agentguard/mcp.py`）
+· **不覆盖已存在的目录**：目标目录在、但里面不是引擎仓（没有 `guardrail_engine/mcp.py`）
   → 拒绝并退出，不删不并。别人的目录不该由安装包来处置。
 · **不动已有的引擎仓**：目标已经是引擎仓 → 只说"已经在了"，不 pull、不更新。更新是
   那个仓库自己的事（`git pull`），安装包没有资格替你决定升到哪个提交。
@@ -49,11 +49,12 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 #: 引擎仓地址（公开源）。私有镜像 / 内网部署用 `--url` 覆盖。
-DEFAULT_URL = "https://github.com/rain610/agentguard.git"
+DEFAULT_URL = "https://github.com/rain610/guardrail-engine.git"
 
 #: 引擎仓的判据。**与 `fix_paths.py` 的 fail-fast 用同一条**（它查的就是这个文件）：
 #: 两处判据不一致的话，会出现"本脚本说好了、下一步照样 ✗"的鬼故事。
-ENGINE_MARKER = os.path.join("agentguard", "mcp.py")
+ENGINE_MARKER = os.path.join("guardrail_engine", "mcp.py")
+LEGACY_ENGINE_MARKER = os.path.join("agentguard", "mcp.py")
 
 
 def _require_python(vi=None):
@@ -81,7 +82,8 @@ def norm(p):
 
 def is_engine(d):
     """这个目录是不是引擎仓 —— 判据见 `ENGINE_MARKER` 上面的说明。"""
-    return os.path.isfile(os.path.join(d, *ENGINE_MARKER.split("/")))
+    return any(os.path.isfile(os.path.join(d, *m.split("/")))
+               for m in (ENGINE_MARKER, LEGACY_ENGINE_MARKER))
 
 
 def _self_dir():
@@ -111,17 +113,17 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         description="把门禁引擎仓 clone 到本机（安装包内不含引擎，这是接入的第一步）")
     ap.add_argument("--dir", default=None,
-                    help="clone 到哪里（默认 ~/agentguard）")
+                    help="clone 到哪里（默认 ~/guardrail-engine）")
     ap.add_argument("--url", default=DEFAULT_URL,
                     help="引擎仓地址（默认公开源；私有镜像或走 SSH 时用）")
     ap.add_argument("--check", action="store_true",
                     help="只体检：git 在不在、目标目录什么状态，不动手")
     a = ap.parse_args(argv)
 
-    target = norm(a.dir or os.path.join(os.path.expanduser("~"), "agentguard"))
+    target = norm(a.dir or os.path.join(os.path.expanduser("~"), "guardrail-engine"))
     here = _self_dir()
 
-    print("== agentguard 引擎引导 ==================================")
+    print("== guardrail-engine 引擎引导 =============================")
     print("   目标目录: %s" % target)
     print("   仓库地址: %s" % a.url)
     print("")
@@ -187,7 +189,7 @@ def main(argv=None):
         for ln in (r.stderr or r.stdout or "").strip().splitlines()[-8:]:
             print("    %s" % ln)
         print("  最常见的原因：仓库地址不对，或没有该仓库的访问权限。")
-        print("  公开源：https://github.com/rain610/agentguard；私有镜像用 --url 指定（走 SSH 就给 SSH 地址）。")
+        print("  公开源：https://github.com/rain610/guardrail-engine；私有镜像用 --url 指定（走 SSH 就给 SSH 地址）。")
         return 1
 
     # clone 成功 ≠ 拿到的是引擎仓：域名/路径敲错时 git 可能克隆到**别的**仓。

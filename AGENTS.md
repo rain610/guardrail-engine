@@ -1,4 +1,4 @@
-# AgentGuard —— 统一门禁工程地图（所有 AI agent 通用）
+# Guardrail Engine（原 AgentGuard）—— 统一门禁工程地图（所有 AI agent 通用）
 
 > 本文件是给任何 AI agent 读的「这是哪里、有哪些规则、怎么触发」。Claude Code /
 > Codex / OpenCode / CodeBuddy / Hermes 只要能执行 shell 命令即可遵守本工程。
@@ -6,7 +6,7 @@
 
 ## 这个工程是什么
 
-AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交期自动检查代码是否符合团队约定。
+Guardrail Engine 是一个**通用代码门禁框架**，用于在编辑期和提交期自动检查代码是否符合团队约定。
 各仓库通过固定路径引用本工程。约束规则全部集中在 `checks/`，策略集中在配置，
 **规则是单一事实源，不要在业务代码仓库里各写一套。**
 
@@ -82,7 +82,7 @@ if (DEBUG) console.log("debug info")
 - 改 `checks/*.py` 或 `config/harness.toml` 属于 harness 维护，需 commit 消息带 `[harness]`。
 - 带 `[harness]` 的提交还要在消息末尾加一行 `Engine-Sha: <16 位哈希>`，值取自
   `python harness/run_gate.py --engine-sha`；CI 会按该提交内容重算并比对（不一致即失败）。
-  台账里的 `engine_sha` 靠这组尾注归因（`agentguard/cli.py log --verify --engine`）。
+  台账里的 `engine_sha` 靠这组尾注归因（`guardrail_engine/cli.py log --verify --engine`）。
 - 规则对齐真实架构，别照搬教条。
 
 ## 快速命令
@@ -148,14 +148,14 @@ python checks/example_code_check.py --repo <仓库路径> --all
 
 ```bash
 # ① 环境变量
-echo "$AGENTGUARD_DIR"
+echo "$GUARDRAIL_ENGINE_DIR"
 
 # ② 本机配置文件（config/harness.local.toml → harness 键）
-# ③ 指针文件（~/.agentguard/harness.path）
+# ③ 指针文件（~/.guardrail-engine/harness.path）
 # ④ 从 cwd 向上找（兜底）
 
 # 不确定工程根时跑
-python agentguard/cli.py where
+python guardrail_engine/cli.py where
 ```
 
 ## 给 Agent 的提醒

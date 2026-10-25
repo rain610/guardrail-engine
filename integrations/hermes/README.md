@@ -1,13 +1,13 @@
-# Hermes 接入 agentguard
+# Hermes 接入 guardrail-engine
 
-Hermes 用本工程的两条通路：`AGENTS.md` 地图 + skill（`agentguard`，已分发进各 agent skills/）。
+Hermes 用本工程的两条通路：`AGENTS.md` 地图 + skill（`guardrail-engine`，已分发进各 agent skills/）。
 
 ## 1. 地图：仓库根 AGENTS.md（已就位）
 
 `<HARNESS>/AGENTS.md` —— 任何 agent 打开本工程即可读；在端仓库改码时
 Hermes 靠 `auto-gate.py` 的「改码后跑门禁」约定执行。
 
-## 2. skill：agentguard（已分发给 Hermes skills）
+## 2. skill：guardrail-engine（已分发给 Hermes skills）
 
 由 `skills-manager` 分发到 Hermes 的 skills/ 目录，Hermes 在进入受管仓库改码场景时
 自动加载，按其中「跑门禁」规则执行。
@@ -26,7 +26,7 @@ Hermes 没有 pre-edit / post-edit 编辑器钩子，编辑期唯一的强制点
 
 1. 「在受管仓改码，改完先跑
    `python <HARNESS>/harness/agents/auto-gate.py`，退出码 0 才算写完」
-2. 「任务收尾用 `python <HARNESS>/agentguard/cli.py done --repo <仓>` 收口（跑门禁 + 打凭证行）；
+2. 「任务收尾用 `python <HARNESS>/guardrail_engine/cli.py done --repo <仓>` 收口（跑门禁 + 打凭证行）；
    把凭证行粘进回复；没跑门禁的任务不算完成」
 
 ## 5. 写码前先读黄金范式（同 skill 约定）

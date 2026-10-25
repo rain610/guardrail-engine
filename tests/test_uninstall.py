@@ -13,7 +13,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(ROOT, "sandbox", "uninstall.py")
-SKILL_NAME = "agentguard"
+SKILL_NAME = "guardrail-engine"
 
 
 def _read(path):
@@ -47,6 +47,7 @@ class UninstallTest(unittest.TestCase):
         env = dict(os.environ)
         env["HOME"] = home or self.home            # POSIX expanduser
         env["USERPROFILE"] = home or self.home     # Windows expanduser
+        env.pop("GUARDRAIL_ENGINE_DIR", None)
         env.pop("AGENTGUARD_DIR", None)
         env.pop("HARNESS_DIR", None)
         env.pop("OPENCLAW_STATE_DIR", None)
@@ -141,9 +142,9 @@ class ShimStepTest(unittest.TestCase):
     """[6/6] 编辑期 shim（剖析报告 G5）。
 
     G5：shim 与指针此前在安装说明、本脚本里**都没有名字**，"整机退出"之后
-    `~/.agentguard/` 下会原样留着它们、指针还指着别人的引擎仓。
+    `~/.guardrail-engine/`（旧 `~/.agentguard/`）下会原样留着它们、指针还指着别人的引擎仓。
 
-    全部在临时 HOME 里跑（HOME/USERPROFILE 重定向）——本机真实的 ~/.agentguard/
+    全部在临时 HOME 里跑（HOME/USERPROFILE 重定向）——本机真实的 ~/.guardrail-engine/
     放着别的东西（GLOBAL_AGENTS.md 等），一个字节都不许碰。
     """
 
@@ -152,7 +153,7 @@ class ShimStepTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.base = self.tmp.name
         self.home = os.path.join(self.base, "home")
-        self.agents = os.path.join(self.home, ".agentguard")
+        self.agents = os.path.join(self.home, ".guardrail-engine")
         os.makedirs(os.path.join(self.agents, "hooks"))
         self.shim = os.path.join(self.agents, "hooks", "agentguard-gate.py")
         self.ptr = os.path.join(self.agents, "harness.path")
@@ -168,6 +169,7 @@ class ShimStepTest(unittest.TestCase):
         env = dict(os.environ)
         env["HOME"] = self.home
         env["USERPROFILE"] = self.home
+        env.pop("GUARDRAIL_ENGINE_DIR", None)
         env.pop("AGENTGUARD_DIR", None)
         env.pop("HARNESS_DIR", None)
         env["AGENTGUARD_OPS_LOG"] = os.path.join(self.base, "ops.jsonl")
@@ -267,7 +269,7 @@ class SurfaceConsistencyTest(unittest.TestCase):
         self.assertTrue(uninstall, "安装说明里找不到「四、」这一节（改了标题请同步本锁）")
         for sec_name, body in ((u"二（安装面）", install), (u"四（卸载面）", uninstall)):
             self.assertIn("install_shim.py", body, u"安装说明「%s」没提编辑期 shim" % sec_name)
-            self.assertIn(".agentguard", body, u"安装说明「%s」没写它落在哪" % sec_name)
+            self.assertIn(".guardrail-engine", body, u"安装说明「%s」没写它落在哪" % sec_name)
         self.assertIn("--uninstall", uninstall, u"卸载面没写撤回入口 --uninstall")
         self.assertIn(u"残骸", uninstall, u"卸载面没写归档的代价（G8 的另一半）")
         # 「对照装过什么逐项撤回」是那张表在管：正文里提一句"验证时可以看看 shim"**不算**
@@ -293,9 +295,9 @@ class ArchiveNameDoesNotDrift(unittest.TestCase):
     def _mods(self):
         import importlib.util
         out = {}
-        sys.path.insert(0, os.path.join(ROOT, "agentguard"))
+        sys.path.insert(0, ROOT)
         try:
-            from agentguard import cli as cli_mod
+            from guardrail_engine import cli as cli_mod
         except Exception:                                    # 无包上下文时裸导入
             import cli as cli_mod
         out["cli.py"] = cli_mod
@@ -315,7 +317,7 @@ class ArchiveNameDoesNotDrift(unittest.TestCase):
 
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        target = os.path.join(tmp.name, "skills", "agentguard")
+        target = os.path.join(tmp.name, "skills", "guardrail-engine")
         os.makedirs(target)
         want = target + ".disabled-20260101-000000"
         for label, mod in self._mods().items():
@@ -338,7 +340,7 @@ class ArchiveNameDoesNotDrift(unittest.TestCase):
                 mod.time = real
 
     def test_same_suffix_constant(self):
-        for label, rel in (("cli.py", os.path.join("agentguard", "cli.py")),
+        for label, rel in (("cli.py", os.path.join("guardrail_engine", "cli.py")),
                            ("install_shim.py", os.path.join("sandbox", "install_shim.py")),
                            ("uninstall.py", os.path.join("sandbox", "uninstall.py"))):
             self.assertIn('ARCHIVE_SUFFIX = ".disabled-"', _read(os.path.join(ROOT, rel)),

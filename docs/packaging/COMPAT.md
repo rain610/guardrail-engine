@@ -1,10 +1,10 @@
-# 客户端接入兼容矩阵（agentguard · 推荐版）
+# 客户端接入兼容矩阵（guardrail-engine · 推荐版）
 
 > 验证等级：**✅ 已验证（本轮实测）** ｜ **◐ 部分验证（见备注）** ｜ **✗ 未验证（不默认可用的默认项）**。
 > 验证环境：Windows 11 · Git-for-Windows(MSYS bash) · Python 3.13 · 2026-09-14。
 > 原始证据：`证据/client_registrations.txt`、`证据/verify_entries.txt`（本轮交付包）。
 
-## 1. MCP 入口（`agentguard/mcp.py` · 单文件 · 零第三方依赖）
+## 1. MCP 入口（`guardrail_engine/mcp.py` · 单文件 · 零第三方依赖）
 
 | 客户端 | 接入方式 | 状态 | 验证内容 / 备注 |
 |---|---|---|---|
@@ -14,25 +14,25 @@
 | OpenClaw 2026.6.8 | 插件 bundle（`plugins install`，市场源） | ✅ | 2026-09-14 10:17 安装（用户侧执行）；inspect：Format: bundle / capabilities: skills, mcpServers；技能 `agentguard` 就绪；doctor 清洁；agent 会话实测可调用（AVAILABLE） |
 | Codex 0.154.0 | `codex mcp add` | ✅ | `Added global MCP server 'agentguard'`；`codex mcp list` 可见 |
 
-**注册命令实录（可直接复用 / 可逆）**：
+**注册命令实录（可直接复用 / 可逆）**。服务名统一用 `guardrail-engine`；迁移期旧键 `agentguard` 仍可读：
 
 ```bash
 # OpenClaw（保存前自动 probe）
-openclaw mcp add agentguard --command "<py>" --arg "<HARNESS>/agentguard/mcp.py" \
-  --env AGENTGUARD_DIR=<HARNESS 正斜杠形式>
-# 移除： openclaw mcp unset agentguard
+openclaw mcp add guardrail-engine --command "<py>" --arg "<HARNESS>/guardrail_engine/mcp.py" \
+  --env GUARDRAIL_ENGINE_DIR=<HARNESS 正斜杠形式>
+# 移除： openclaw mcp unset guardrail-engine
 
 # Claude Code（user 级；注意 -e 是变参，注册时不要塞多个裸词）
-claude mcp add -s user agentguard -- "<py>" "<HARNESS>/agentguard/mcp.py"
-# 移除： claude mcp remove -s user agentguard
+claude mcp add -s user guardrail-engine -- "<py>" "<HARNESS>/guardrail_engine/mcp.py"
+# 移除： claude mcp remove -s user guardrail-engine
 
 # Codex
-codex mcp add agentguard --env AGENTGUARD_DIR=<HARNESS 正斜杠形式> \
-  -- "<py>" "<HARNESS>/agentguard/mcp.py"
-# 移除： codex mcp remove agentguard
+codex mcp add guardrail-engine --env GUARDRAIL_ENGINE_DIR=<HARNESS 正斜杠形式> \
+  -- "<py>" "<HARNESS>/guardrail_engine/mcp.py"
+# 移除： codex mcp remove guardrail-engine
 ```
 
-## 2. CLI 入口（`agentguard/cli.py`）
+## 2. CLI 入口（`guardrail_engine/cli.py`）
 
 | 环境 | 状态 | 备注 |
 |---|---|---|
@@ -50,7 +50,7 @@ codex mcp add agentguard --env AGENTGUARD_DIR=<HARNESS 正斜杠形式> \
 | 未纳管仓库 fail-closed | ✅ | 既有能力（前几轮实测；本轮回归不变） |
 | Ubuntu / 无 bash 环境 | ◐ | 钩子依赖 bash；Windows 无 bash 时 CLI 明确报错而非静默 |
 
-## 4. 技能包（`integrations/agentguard-skill`）
+## 4. 技能包（`integrations/guardrail-engine-skill`）
 
 | 宿主 | 状态 | 备注 |
 |---|---|---|

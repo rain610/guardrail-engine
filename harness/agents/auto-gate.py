@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-agentguard/harness/agents/auto-gate.py —— 跨 Agent 通用门禁入口
+guardrail-engine/harness/agents/auto-gate.py —— 跨 Agent 通用门禁入口
 ================================================================================
 设计目标：任何 AI agent（Claude Code / Codex / OpenCode / CodeBuddy / Hermes）
 在任意端仓库工作目录下跑一行命令即可触发门禁，无需知道 gate 名。
@@ -27,8 +27,8 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-HARNESS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = agentguard/
-ROOT = os.path.dirname(HARNESS)                                        # = agentguard 工程根
+HARNESS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # = <engine>/harness/
+ROOT = os.path.dirname(HARNESS)                                        # = 引擎根
 
 # 台账「来源入口」：cli/mcp/hook 都设了自己的值，auto-gate 缺失 → 台账 entry 恒空。
 # 中 16（评审 v13）：原先 setdefault —— 由 MCP/CLI 拉起时（MCP 的 repo 分支正是这么做的）

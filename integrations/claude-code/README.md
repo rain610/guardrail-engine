@@ -1,4 +1,4 @@
-# Claude Code 接入 agentguard
+# Claude Code 接入 guardrail-engine
 
 Claude Code 原生读 `AGENTS.md`（仓库根已有）+ 支持 `settings.json` hooks（边改边拦）。
 若你的 `~/.claude/settings.json` 里**已有** hooks 段（例如 codebase-memory 之类工具装的钩子），**不要覆盖整个文件**，只并入新增条目；若还没有 hooks 段，直接新增即可。
@@ -27,8 +27,8 @@ Claude Code 原生读 `AGENTS.md`（仓库根已有）+ 支持 `settings.json` h
 
 说明：
 - 只在用户 isProject 打开某个端仓库时触发；command 在项目 cwd 运行，钩子脚本自动识别 gate。
-- 钩子脚本**找不到 harness 工程就静默放行**（不阻塞任何人）；路径可用环境变量 `AGENTGUARD_DIR`（旧名 `HARNESS_DIR` 兼容）
-  或指针文件 `~/.agentguard/harness.path`（内容=工程根）指定，实测两种都生效。
+- 钩子脚本**找不到 harness 工程就静默放行**（不阻塞任何人）；路径可用环境变量 `GUARDRAIL_ENGINE_DIR`（旧名 `HARNESS_DIR` 兼容）
+  或指针文件 `~/.guardrail-engine/harness.path`（内容=工程根）指定，实测两种都生效。
 - 拦截时它以 exit 2 + stderr 把门禁问题回灌给模型（模型会接着改）；通过时不产生任何输出。
 - 维护 skills 时 settings.json 常被官方工具重写，若丢失重加即可。
 

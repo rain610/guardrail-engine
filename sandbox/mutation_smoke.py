@@ -105,7 +105,7 @@ MUTATIONS = [
      "expect": "test_diagnostic_noise_does_not_flood_hook_context",
      "why": "诊断退回逐 gate 各一条 → 同事机器上 30+ 条灌满 40 行回灌窗口，"
             "模型看不到要改哪一行（与 M11 同源的噪声侧）"},
-    {"id": "M13-version-fork", "file": "agentguard/mcp.py", "kind": "exact",
+    {"id": "M13-version-fork", "file": "guardrail_engine/mcp.py", "kind": "exact",
      "old": '    return _shell.read_version(ROOT)',
      "new": ('    if not ROOT:  # mutation-smoke\n'
              '        return "0.0.0-dev"\n'
@@ -118,10 +118,15 @@ MUTATIONS = [
      "expect": "test_all_entries_agree_without_version_file",
      "why": "MCP 壳退回「只读 VERSION、缺失即 0.0.0-dev」的自备实现 → 轮子安装形态下"
             "同一个包报出两个版本号（剖析报告 N1：ADR 铁律 3「版本单一来源」在安装形态下失效）"},
-    {"id": "M14-version-nofallback", "file": "agentguard/_shell.py", "kind": "exact",
-     "old": ('    try:  # 轮子安装形态（无 VERSION 文件）：回退到包元数据\n'
+    {"id": "M14-version-nofallback", "file": "guardrail_engine/_shell.py", "kind": "exact",
+     "old": ('    try:  # 轮子安装形态（无 VERSION 文件）：回退到包元数据（新名 → 旧名）\n'
              '        from importlib import metadata\n'
-             '        return metadata.version("agentguard")\n'
+             '        for dist in (BRAND, "agentguard"):\n'
+             '            try:\n'
+             '                return metadata.version(dist)\n'
+             '            except Exception:\n'
+             '                continue\n'
+             '        return fallback\n'
              '    except Exception:\n'
              '        return fallback\n'),
      "new": '    return fallback  # mutation-smoke',
@@ -238,7 +243,7 @@ MUTATIONS = [
             "扩展目录里那份共享文件永远停在上一个版本，而脚本照样报「已覆盖」、rc=0。"
             "这条变异同时钉住那条锁的**两个方向**：只断言「B 的新文件在」是不够的 —— "
             "新文件照抄进来、旧文件原地不动，那句话照样成立。判据必须是**共享文件的内容**。"},
-    {"id": "M27-skill-copy-no-overwrite", "file": "agentguard/cli.py", "kind": "exact",
+    {"id": "M27-skill-copy-no-overwrite", "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": ('                    if old == data:\n'
              '                        same += 1\n'
              '                        continue\n'),
@@ -282,7 +287,7 @@ MUTATIONS = [
             "一个**已经升过**的号，然后困惑为什么还是没换。假警报比漏报更磨损可信度 —— "
             "诊断错方向等于没诊断。（这条只改诊断、不改裁决，所以只能由锁的那句"
             "「不许拿错的理由解释」来拦 —— 这正是它必须单独存在的原因。）"},
-    {"id": "M31-skill-matrix-blind", "file": "agentguard/cli.py", "kind": "exact",
+    {"id": "M31-skill-matrix-blind", "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": '            if a == b:',
      "new": '            if True:  # mutation-smoke',
      "lock": "test_upgrade_path.py",
@@ -549,7 +554,7 @@ MUTATIONS = [
 
 
     {"id": "M63-cli-last-zero-reads-everything",
-     "file": "agentguard/cli.py", "kind": "exact",
+     "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": '    if last is None or last <= 0:\n',
      "new": '    if False:\n',
      "lock": "test_review_2026_09_23.py",
@@ -693,7 +698,7 @@ MUTATIONS = [
     # 或干脆不做契约校验（`repo` 只验 isdir）—— 门禁把错因说得越像自己的毛病，
     # 越会被当成环境噪声绕过去。五条变异覆盖四个判据点 + 一个"判据收过头"的方向。
     {"id": "M77-l7-name-no-typecheck",
-     "file": "agentguard/mcp.py", "kind": "exact",
+     "file": "guardrail_engine/mcp.py", "kind": "exact",
      "old": '    if name is not None and not isinstance(name, str):\n',
      "new": '    if False:  # 变异：撤掉 name 类型校验（回到 L7 原缺陷）\n',
      "lock": "test_review_2026_09_23.py",
@@ -704,7 +709,7 @@ MUTATIONS = [
             "传了个列表 ⇒ 该报 **-32602**。★ 期望的那条锁必须断言**错误码**，不能只断言「有错」："
             "两种归因下 isError 都是真，只有码能分开。"},
     {"id": "M78-l7-params-no-typecheck",
-     "file": "agentguard/mcp.py", "kind": "exact",
+     "file": "guardrail_engine/mcp.py", "kind": "exact",
      "old": '    if not isinstance(params, dict):\n',
      "new": '    if False:  # 变异：撤掉 params 类型校验（回到 L7 原缺陷）\n',
      "lock": "test_review_2026_09_23.py",
@@ -712,7 +717,7 @@ MUTATIONS = [
      "why": "同族：`params` 是列表/标量时，`params.get` 直接 `AttributeError` —— 连 -32603 都"
             "不是「渲染出来的」，而是靠外层兜底接住的偶然而已。"},
     {"id": "M79-l7-arguments-no-typecheck",
-     "file": "agentguard/mcp.py", "kind": "exact",
+     "file": "guardrail_engine/mcp.py", "kind": "exact",
      "old": '    elif not isinstance(args, dict):\n',
      "new": '    elif False:  # 变异：撤掉 arguments 类型校验（回到 L7 原缺陷）\n',
      "lock": "test_review_2026_09_23.py",
@@ -723,7 +728,7 @@ MUTATIONS = [
             "人话，程序判不出「我参数传错了」。锁因此断言的是返回结构（`__rpc_error__` 的码），"
             "不是文案。"},
     {"id": "M80-l9-repo-any-directory",
-     "file": "agentguard/mcp.py", "kind": "exact",
+     "file": "guardrail_engine/mcp.py", "kind": "exact",
      "old": '        if not os.path.exists(os.path.join(rp, ".git")):\n',
      "new": '        if False:  # 变异：撤掉 L9 的「得像仓库」判据\n',
      "lock": "test_review_2026_09_23.py",
@@ -733,7 +738,7 @@ MUTATIONS = [
             "① 拒绝了；② **没起子进程** —— 只判 ① 的话，一个「先起进程再拒绝」的实现照样全绿，"
             "而扫目录的成本已经付掉了。"},
     {"id": "M81-l9-dot-git-must-be-a-dir",
-     "file": "agentguard/mcp.py", "kind": "exact",
+     "file": "guardrail_engine/mcp.py", "kind": "exact",
      "old": 'os.path.exists(os.path.join(rp, ".git"))',
      "new": 'os.path.isdir(os.path.join(rp, ".git"))',
      "lock": "test_review_2026_09_23.py",
@@ -821,7 +826,7 @@ MUTATIONS = [
     # 的错觉上）。本变异把 cli 输出里那句抹掉 —— README / RUNBOOK 里还有，所以只有
     # "命令输出"那一条锁该红，正是要证明三处是**各量各的**。
     {"id": "M89-l19-bypass-gate-wording-dropped",
-     "file": "agentguard/cli.py", "kind": "exact",
+     "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": "，不是权限闸 —— 它不拦任何提交",
      "new": " —— 它不拦任何提交",
      "lock": "test_review_2026_09_23.py",
@@ -846,7 +851,7 @@ MUTATIONS = [
     #   `test_review_2026_09_23.py::test_git_that_cannot_start_is_127_not_a_crash`）。
     #   教训与 `c2b6e1b` 同族：**夹具依赖的运行时事实，先问一句「这在另一个平台成立吗」。**
     {"id": "M90-l6-timeout-labeled-as-a-block",
-     "file": "agentguard/cli.py", "kind": "exact",
+     "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": "        return (2, \"\", \"✗ 子进程超时",
      "new": "        return (1, \"\", \"✗ 子进程超时",
      "lock": "test_review_2026_09_23.py",
@@ -854,14 +859,14 @@ MUTATIONS = [
      "why": "L6：超时归 1 = 与「门禁拦截」同码 —— 一个卡住的钩子会被读成「代码不合规」，"
             "而 `if rc==1 then 修代码` 是所有人的第一反应。基础设施故障不许冒充业务结论。"},
     {"id": "M91-l6-bad-cwd-labeled-as-a-block",
-     "file": "agentguard/cli.py", "kind": "exact",
+     "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": "        return (2, \"\", \"✗ 起不了子进程",
      "new": "        return (1, \"\", \"✗ 起不了子进程",
      "lock": "test_review_2026_09_23.py",
      "expect": "test_a_missing_cwd_is_rc2_not_a_crash",
      "why": "L6：cwd 不存在时归 1 —— 同一种归错码（环境问题冒充门禁拦截）。"},
     {"id": "M92-l6-git-cannot-start-reports-success",
-     "file": "agentguard/cli.py", "kind": "exact",
+     "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": "        return 127, \"\", \"git 起不来",
      "new": "        return 0, \"\", \"git 起不来",
      "lock": "test_review_2026_09_23.py",
@@ -869,7 +874,7 @@ MUTATIONS = [
      "why": "L6：git 起不来却报 rc=0 —— 调用方（hooks status/install/uninstall、"
             "read_prev_hookspath）全按 `rc != 0` 分支理解结果，rc=0 等于**谎报「查到了」**。"},
     {"id": "M93-l6-git-missing-reports-success",
-     "file": "agentguard/cli.py", "kind": "exact",
+     "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": "        return 127, \"\", \"找不到 git",
      "new": "        return 0, \"\", \"找不到 git",
      "lock": "test_review_2026_09_23.py",
@@ -877,7 +882,7 @@ MUTATIONS = [
      "why": "L6：`FileNotFoundError` 那一支（机器上没装 git）—— 与 M92 **不是同一支**，"
             "见上面那段说明：这两条必须分开打，否则其中一条打的是永不执行的行。"},
     {"id": "M94-l6-hooks-install-skips-isdir",
-     "file": "agentguard/cli.py", "kind": "exact",
+     "file": "guardrail_engine/cli.py", "kind": "exact",
      "old": "        if not os.path.isdir(repo):\n            print(\"repo 不存在: %s\" % repo)\n            return 2\n        b = _bash()",
      "new": "        b = _bash()",
      "lock": "test_review_2026_09_23.py",
@@ -886,7 +891,7 @@ MUTATIONS = [
             "`setup --repo <不存在的目录>` 一路走到 subprocess 的 cwd 才崩。注意判据钉的是"
             "**拒绝发生在起子进程之前**（`_record_op` 在校验之后 ⇒ 被拒的那次不落台账）。"},
     {"id": "M95-l8-mcp-actually-goes-concurrent",
-     "file": "agentguard/mcp.py", "kind": "exact",
+     "file": "guardrail_engine/mcp.py", "kind": "exact",
      "old": "def serve():", "new": "import threading\ndef serve():",
      "lock": "test_review_2026_09_23.py",
      "expect": "test_the_claim_and_the_code_are_same_true_same_false",
@@ -894,7 +899,7 @@ MUTATIONS = [
             "—— 文档随即变成过期件，而它会让人**不去查**真因（宿主超时/重连）。"
             "锁做成「承诺与事实同真同假」：真并发化**且**把承诺改成并发描述 → 照样绿。"},
     {"id": "M96-l8-host-facing-promise-deleted",
-     "file": "agentguard/mcp.py", "kind": "exact",
+     "file": "guardrail_engine/mcp.py", "kind": "exact",
      "old": "SINGLE-THREADED and strictly serial",
      "new": "SINGLE-PROCESS and strictly serial",
      "lock": "test_review_2026_09_23.py",
@@ -962,7 +967,7 @@ MUTATIONS = [
             "→ rc=0 被读成绿），只是入口换成了过滤器：**空结论不得报成绿**。前三处挡的是「没跑成」，"
             "这一处挡的是「没让你跑」—— 所以它不能被前三条`_ran_nothing`覆盖，得单独一条。"
             "★ 与 M102 成对：那半是“选择被放宽”，这半是“选择被清空却报绿”（见 M102 的 why）。"},
-    {"id": "M104-cli-corrupt-anchor-read-as-absent", "file": "agentguard/cli.py",
+    {"id": "M104-cli-corrupt-anchor-read-as-absent", "file": "guardrail_engine/cli.py",
      "kind": "exact",
      "old": '        return None, "corrupt"         # ★ 有内容但尾行不是 JSON —— 不许当成"没有锚点"',
      "new": '        return None, "absent"',
@@ -988,7 +993,7 @@ MUTATIONS = [
             "分开** —— 把损坏显示成「尚无锚点」，等于让人以为只是还没锚定，而锚点其实已被动过。"
             "★ 两处是各自独立的复制实现（不走同一个函数，只靠 tests 对拍咬住），"
             "所以「改了一处」推不出「另一处也改了」—— 与 M104 必须分开登记。"},
-    {"id": "M106-anchor-appends-on-corrupt-tail", "file": "agentguard/cli.py",
+    {"id": "M106-anchor-appends-on-corrupt-tail", "file": "guardrail_engine/cli.py",
      "kind": "exact",
      "old": '    prev, pstate = _anchor_probe()\n    if pstate == "corrupt":',
      "new": '    prev, pstate = _anchor_probe()\n    if False:',
@@ -1332,7 +1337,7 @@ MUTATIONS = [
             "（与 M139 是两半，各自单独生效即红。）"},
 
     # ── done 选错仓（2026-10-15g：CodeBuddy 实测抓到的假凭证）──────────────────
-    {"id": "M141-done-ignores-caller-cwd", "file": "agentguard/cli.py",
+    {"id": "M141-done-ignores-caller-cwd", "file": "guardrail_engine/cli.py",
      "kind": "exact",
      "old": '    rc, out, err = _run(cmd, cwd=caller_cwd)\n',
      "new": '    rc, out, err = _run(cmd)  # mutation-smoke\n',
@@ -1354,7 +1359,7 @@ MUTATIONS = [
             "抓包实测的形状。反锁 test_file_outside_any_repo_still_skips 刻意不受影响。"},
 
     # ── 批次 7（2026-10-15）：超时杀整树 + 全量超时分档 ─────────────────────────
-    {"id": "M143-taskkill-loses-slash-T", "file": "agentguard/cli.py",
+    {"id": "M143-taskkill-loses-slash-T", "file": "guardrail_engine/cli.py",
      "kind": "exact",
      "old": '            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],\n',
      "new": '            subprocess.run(["taskkill", "/F", "/PID", str(proc.pid)],  # mutation-smoke\n',
@@ -1368,7 +1373,7 @@ MUTATIONS = [
      "blind_why": "`/T` 只出现在 `if os.name == \"nt\"` 分支里；POSIX 上该分支永不执行，"
                   "变异体与原体在 Linux 上语义相同，锁**没有理由**红。",
      "covered_by": "M145-killpg-becomes-proc-kill"},
-    {"id": "M144-run-all-timeout-back-to-300", "file": "agentguard/cli.py",
+    {"id": "M144-run-all-timeout-back-to-300", "file": "guardrail_engine/cli.py",
      "kind": "exact",
      "old": '        timeout = 3600\n',
      "new": '        timeout = 300  # mutation-smoke\n',
@@ -1376,7 +1381,7 @@ MUTATIONS = [
      "expect": "test_run_all_gets_the_longer_default_timeout",
      "why": "全量扫描默认超时退回 300s：大仓全扫必然超时（实测小时级 wall），用户的 --all 又"
             "变回一次「超时报错 + 输出全丢」。"},
-    {"id": "M145-killpg-becomes-proc-kill", "file": "agentguard/cli.py",
+    {"id": "M145-killpg-becomes-proc-kill", "file": "guardrail_engine/cli.py",
      "kind": "exact",
      "old": '                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)\n',
      "new": '                proc.kill()  # mutation-smoke\n',

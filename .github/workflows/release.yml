@@ -45,7 +45,7 @@ jobs:
           python sandbox/pack_release.py
           # 只数**出货目录**里那一个 wheel：dist/install-package/_wheel/ 是构建缓存，
           # 递归 find 会把它一起数进来（本机实测 2 个）。
-          STAGE="dist/install-package/agentguard-package-v$(tr -d '[:space:]' < VERSION)"
+          STAGE="dist/install-package/guardrail-engine-package-v$(tr -d '[:space:]' < VERSION)"
           N=$(find "$STAGE" -maxdepth 1 -name "*.whl" | wc -l)
           if [ "$N" -ne 1 ]; then
             echo "期望出货目录恰好一个 wheel，实际 $N 个（$STAGE）" >&2
@@ -62,7 +62,7 @@ jobs:
       - name: 干净 venv 安装冒烟（验证 wheel 自带引擎）
         run: |
           python -m venv /tmp/ag-venv
-          STAGE="dist/install-package/agentguard-package-v$(tr -d '[:space:]' < VERSION)"
+          STAGE="dist/install-package/guardrail-engine-package-v$(tr -d '[:space:]' < VERSION)"
           set -- "$STAGE"/*.whl
           if [ "$#" -ne 1 ]; then
             echo "出货目录里的 wheel 不是恰好一个（$# 个）：$STAGE" >&2
@@ -70,20 +70,20 @@ jobs:
           fi
           /tmp/ag-venv/bin/python -m pip install --no-index --no-deps --disable-pip-version-check "$1"
           # 轮子自带引擎：init 会把副本落盘，并在内部跑一次 run_gate --list 自检。
-          # 不再用 AGENTGUARD_DIR 指向检出目录 —— 那样即使 wheel 漏带引擎也会假绿。
+          # 不再用 GUARDRAIL_ENGINE_DIR 指向检出目录 —— 那样即使 wheel 漏带引擎也会假绿。
           ENGINE="/tmp/ag-engine"
-          /tmp/ag-venv/bin/agentguard init --dir "$ENGINE"
-          if [ ! -f "$ENGINE/.agentguard-init.json" ]; then
-            echo "init 没写下所有权标记：$ENGINE/.agentguard-init.json" >&2
+          /tmp/ag-venv/bin/guardrail-engine init --dir "$ENGINE"
+          if [ ! -f "$ENGINE/.guardrail-engine-init.json" ]; then
+            echo "init 没写下所有权标记：$ENGINE/.guardrail-engine-init.json" >&2
             exit 1
           fi
-          GOT="$(AGENTGUARD_DIR="$ENGINE" /tmp/ag-venv/bin/agentguard --version | tr -d '[:space:]')"
+          GOT="$(GUARDRAIL_ENGINE_DIR="$ENGINE" /tmp/ag-venv/bin/guardrail-engine --version | tr -d '[:space:]')"
           WANT="$(tr -d '[:space:]' < VERSION)"
           if [ "$GOT" != "$WANT" ]; then
-            echo "venv 里 agentguard --version 输出 '$GOT'，VERSION 是 '$WANT'" >&2
+            echo "venv 里 guardrail-engine --version 输出 '$GOT'，VERSION 是 '$WANT'" >&2
             exit 1
           fi
-          echo "OK: 干净 venv 安装后 init 落盘自带引擎，agentguard --version = $GOT"
+          echo "OK: 干净 venv 安装后 init 落盘自带引擎，guardrail-engine --version = $GOT"
 
       - name: 创建 GitHub Release
         env:
@@ -93,3 +93,55 @@ jobs:
             dist/install-package/*.zip \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes
+
+  # PyPI 可信发布（OIDC）：不用任何长期 token。首次发布前要在 PyPI 网页端登记
+  # trusted publisher（project: guardrail-engine / owner: rain610 / repo: guardrail-engine /
+  # workflow: release.yml / environment: pypi），见 docs/packaging/RUNBOOK.md。
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/guardrail-engine/
+    permissions:
+      contents: read      # checkout 需要
+      id-token: write     # OIDC 换发短时上传凭证
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # `python -m build` 默认先从源码打 sdist、**再从 sdist** 打 wheel ——
+      # 后一步正是 sdist 完整性（MANIFEST.in 有没有带上整个引擎）的判据：
+      # 少一棵子树，wheel 里就没有 guardrail_engine/_engine/，装完跑不起来。
+      - name: 构建 sdist + wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: 干净 venv 安装冒烟（sdist 产出的 wheel 也必须自带引擎）
+        run: |
+          python -m venv /tmp/pypi-venv
+          /tmp/pypi-venv/bin/python -m pip install --no-index --no-deps --disable-pip-version-check dist/*.whl
+          ENGINE="/tmp/pypi-engine"
+          /tmp/pypi-venv/bin/guardrail-engine init --dir "$ENGINE"
+          if [ ! -f "$ENGINE/.guardrail-engine-init.json" ]; then
+            echo "init 没写下所有权标记：$ENGINE/.guardrail-engine-init.json" >&2
+            exit 1
+          fi
+          GOT="$(GUARDRAIL_ENGINE_DIR="$ENGINE" /tmp/pypi-venv/bin/guardrail-engine --version | tr -d '[:space:]')"
+          WANT="$(tr -d '[:space:]' < VERSION)"
+          if [ "$GOT" != "$WANT" ]; then
+            echo "venv 里 guardrail-engine --version 输出 '$GOT'，VERSION 是 '$WANT'" >&2
+            exit 1
+          fi
+          echo "OK: sdist → wheel → init 自带引擎，guardrail-engine --version = $GOT"
+
+      - name: 发布到 PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

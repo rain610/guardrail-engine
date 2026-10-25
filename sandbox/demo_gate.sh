@@ -1,5 +1,5 @@
 #!/bin/sh
-# agentguard/sandbox/demo_gate.sh —— 60 秒门禁现场演示（不需要配置任何业务仓）
+# guardrail-engine/sandbox/demo_gate.sh —— 60 秒门禁现场演示（不需要配置任何业务仓）
 # ============================================================
 # 演示内容（三步）：
 #   1. 在临时目录写一个含 console.log 的 .js → 跑示例门禁 → 必须 rc=1 且点名 NO-CONSOLE
@@ -59,7 +59,7 @@ fi
 # 调用处一律写 $HARNESS_PY 且**不加引号**（"py -3" 需要按空格拆成两个词）。
 # ------------------------------------------------------------------------------
 
-DEMO_DIR=$(mktemp -d "${TMPDIR:-/tmp}/agentguard-demo.XXXXXX") || {
+DEMO_DIR=$(mktemp -d "${TMPDIR:-/tmp}/guardrail-engine-demo.XXXXXX") || {
     echo "✗ 无法创建临时目录（mktemp -d 失败）"
     exit 2
 }
@@ -79,7 +79,7 @@ run_demo() {
 }
 
 echo "============================================================"
-echo " agentguard 门禁演示（gate=$GATE，临时仓=$DEMO_DIR_WIN）"
+echo " guardrail-engine 门禁演示（gate=$GATE，临时仓=$DEMO_DIR_WIN）"
 echo "============================================================"
 echo ""
 

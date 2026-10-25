@@ -205,7 +205,7 @@ class UpgradeTest(unittest.TestCase):
         mj = os.path.join(pack, "marketplace", "plugins", "agentguard", ".mcp.json")
         got = json.loads(_read(mj))["mcpServers"]["agentguard"]
         self.assertNotIn("__", got["command"], "占位符没被填掉：%r" % got["command"])
-        self.assertEqual(got["env"]["AGENTGUARD_DIR"], h.replace("\\", "/"),
+        self.assertEqual(got["env"]["GUARDRAIL_ENGINE_DIR"], h.replace("\\", "/"),
                          "引擎路径没适配到 --harness 指定的那份")
         log = _read(self.ops)
         self.assertIn("machine_upgrade", log)
@@ -214,7 +214,7 @@ class UpgradeTest(unittest.TestCase):
     def test_path_adaptation_failure_aborts_every_channel(self):
         """适配不过 → **后面一律不做**（只跳过适配继续刷通道，等于把坏路径装进副本）。"""
         pack = self._pack()
-        bad = os.path.join(self.base, "not-a-harness")   # 没有 agentguard/mcp.py
+        bad = os.path.join(self.base, "not-a-harness")   # 没有 guardrail_engine/mcp.py（也没有旧 agentguard/mcp.py）
         r = self._run("--pack", pack, "--harness", bad, "--yes", "--skip", "claude,openclaw,pip,skills,shim")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("路径适配失败", r.stdout)
@@ -230,7 +230,7 @@ class UpgradeTest(unittest.TestCase):
                       "--skip", "claude,pip,skills,shim")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("升级不替你新增通道", r.stdout)
-        for unexpected in (".agentguard", ".openclaw-autoclaw"):
+        for unexpected in (".guardrail-engine", ".agentguard", ".openclaw-autoclaw"):
             self.assertNotIn(unexpected, sorted(os.listdir(self.home)),
                              "假 HOME 里凭空多出了 %s（升级不许新增通道）" % unexpected)
 
@@ -326,10 +326,13 @@ class TestInitMarkerContract(unittest.TestCase):
 
     def test_marker_constants_are_the_same_on_both_sides(self):
         names = {"INIT_MARKER", "INIT_MARKER_KIND"}
-        cli = _consts(os.path.join(ROOT, "agentguard", "cli.py"), names)
+        # 改名后标记文件名在壳层 _shell.py，kind 在 cli.py（cli 里的 INIT_MARKER 是转发别名）。
+        marker = _consts(os.path.join(ROOT, "guardrail_engine", "_shell.py"), {"INIT_MARKER"})
+        cli = _consts(os.path.join(ROOT, "guardrail_engine", "cli.py"), {"INIT_MARKER_KIND"})
+        cli.update(marker)
         up = _consts(SCRIPT, names)
         self.assertEqual(sorted(cli), sorted(names),
-                         "agentguard/cli.py 里的标记常量被改名/删掉了：%s" % sorted(cli))
+                         "guardrail_engine 里的标记常量被改名/删掉了：%s" % sorted(cli))
         self.assertEqual(sorted(up), sorted(names),
                          "sandbox/upgrade.py 里的标记常量被改名/删掉了：%s" % sorted(up))
         self.assertEqual(up, cli,

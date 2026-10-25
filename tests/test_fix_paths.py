@@ -21,13 +21,13 @@ def norm(p):
 
 TEMPLATE = """{
   "mcpServers": {
-    "agentguard": {
+    "guardrail-engine": {
       "command": "D:/old-machine/python.exe",
       "args": [
-        "D:/old-machine/harness/agentguard/mcp.py"
+        "D:/old-machine/harness/guardrail_engine/mcp.py"
       ],
       "env": {
-        "AGENTGUARD_DIR": "D:/old-machine/harness"
+        "GUARDRAIL_ENGINE_DIR": "D:/old-machine/harness"
       }
     }
   }
@@ -42,14 +42,14 @@ class FixPathsTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.base = self.tmp.name
         self.harness = os.path.join(self.base, "myharness")
-        os.makedirs(os.path.join(self.harness, "agentguard"))
-        with io.open(os.path.join(self.harness, "agentguard", "mcp.py"), "w",
+        os.makedirs(os.path.join(self.harness, "guardrail_engine"))
+        with io.open(os.path.join(self.harness, "guardrail_engine", "mcp.py"), "w",
                      encoding="utf-8") as f:
             f.write("# test\n")
         with io.open(os.path.join(self.harness, "VERSION"), "w", encoding="utf-8") as f:
             f.write("9.9.9-dev\n")
         self.mkt = os.path.join(self.base, "pkg", "marketplace")
-        d = os.path.join(self.mkt, "plugins", "agentguard")
+        d = os.path.join(self.mkt, "plugins", "guardrail-engine")
         os.makedirs(d)
         self.mj = os.path.join(d, ".mcp.json")
         with io.open(self.mj, "w", encoding="utf-8") as f:
@@ -67,10 +67,10 @@ class FixPathsTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         with io.open(self.mj, encoding="utf-8") as f:
             data = json.loads(f.read())
-        srv = data["mcpServers"]["agentguard"]
+        srv = data["mcpServers"]["guardrail-engine"]
         self.assertEqual(srv["command"], norm(sys.executable))
-        self.assertEqual(srv["args"][0], norm(self.harness) + "/agentguard/mcp.py")
-        self.assertEqual(srv["env"]["AGENTGUARD_DIR"], norm(self.harness))
+        self.assertEqual(srv["args"][0], norm(self.harness) + "/guardrail_engine/mcp.py")
+        self.assertEqual(srv["env"]["GUARDRAIL_ENGINE_DIR"], norm(self.harness))
         # 幂等：再跑一次结果不变
         r2 = self._run("--harness", self.harness, "--marketplace", self.mkt, "--python", sys.executable)
         self.assertEqual(r2.returncode, 0)
@@ -103,10 +103,26 @@ class FixPathsTest(unittest.TestCase):
         ghost = os.path.join(self.base, "never-cloned")     # 刻意不创建
         r = self._run("--harness", ghost, "--marketplace", self.mkt)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("agentguard.git", r.stdout,
+        self.assertIn("guardrail-engine.git", r.stdout,
                       "目录不存在时没给出可复制的 clone 命令（用户只能自己猜仓库地址）：\n%s" % r.stdout)
         self.assertIn("零", r.stdout,
                       "没把用户指到包内《安装说明》的对应一节：\n%s" % r.stdout)
+
+    def test_legacy_server_key_is_still_adapted(self):
+        """迁移期：老安装写的是 `agentguard` 键 + `AGENTGUARD_DIR`，适配器必须继续认。"""
+        legacy = os.path.join(self.base, "legacy.mcp.json")
+        with io.open(legacy, "w", encoding="utf-8") as f:
+            f.write(TEMPLATE.replace('"guardrail-engine"', '"agentguard"')
+                    .replace("guardrail_engine/mcp.py", "agentguard/mcp.py")
+                    .replace("GUARDRAIL_ENGINE_DIR", "AGENTGUARD_DIR"))
+        r = self._run("--mcp-json", legacy, "--harness", self.harness,
+                      "--python", sys.executable)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with io.open(legacy, encoding="utf-8") as f:
+            data = json.loads(f.read())
+        srv = data["mcpServers"]["agentguard"]
+        self.assertEqual(srv["env"]["GUARDRAIL_ENGINE_DIR"], norm(self.harness))
+        self.assertNotIn("AGENTGUARD_DIR", srv["env"], "旧环境变量应被新名取代")
 
     def test_fails_when_mcp_json_missing(self):
         empty = os.path.join(self.base, "emptymkt")

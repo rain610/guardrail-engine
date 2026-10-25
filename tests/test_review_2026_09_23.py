@@ -69,13 +69,13 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 PY = sys.executable
-CLI_PY = os.path.join(ROOT, "agentguard", "cli.py")
+CLI_PY = os.path.join(ROOT, "guardrail_engine", "cli.py")
 
 
 def _load_cli():
-    """把 `agentguard/cli.py` 当模块导进来（它有 `__main__` 守卫，导入无副作用）。"""
-    sys.path.insert(0, os.path.join(ROOT, "agentguard"))
-    import cli
+    """把 `guardrail_engine/cli.py` 当模块导进来（它有 `__main__` 守卫，导入无副作用）。"""
+    sys.path.insert(0, ROOT)
+    from guardrail_engine import cli
     return cli
 HOOK = os.path.join(ROOT, "integrations", "hooks", "agentguard-gate.py")
 PLUGIN = os.path.join(ROOT, "integrations", "opencode", "agentguard-gate.ts")
@@ -549,7 +549,7 @@ class TestL10ReadJsonlZeroMeansNoRecords(unittest.TestCase):
     def _load(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location(
-            "l10_cli", os.path.join(ROOT, "agentguard", "cli.py"))
+            "l10_cli", os.path.join(ROOT, "guardrail_engine", "cli.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod
@@ -881,8 +881,8 @@ class _McpInProcess(unittest.TestCase):
     """
 
     def setUp(self):
-        sys.path.insert(0, os.path.join(ROOT, "agentguard"))
-        import mcp
+        sys.path.insert(0, ROOT)
+        from guardrail_engine import mcp
         self.mcp = mcp
         self.dir = tempfile.mkdtemp(prefix="l7l9-")
         self.addCleanup(shutil.rmtree, self.dir, True)
@@ -1274,9 +1274,9 @@ class TestL14BatchFileIsNotHandedToAShell(unittest.TestCase):
     # ---- ② companion：mcp.py 那份本来就没有这一支，钉住它 ----
 
     def test_mcp_run_cmd_hands_them_straight_through_too(self):
-        """`agentguard/mcp.py::run_cmd` 从来没有 `.cmd` 分支 —— 别哪天有人"补"上它。"""
-        sys.path.insert(0, os.path.join(ROOT, "agentguard"))
-        import mcp
+        """`guardrail_engine/mcp.py::run_cmd` 从来没有 `.cmd` 分支 —— 别哪天有人"补"上它。"""
+        sys.path.insert(0, ROOT)
+        from guardrail_engine import mcp
         exe = self._batch_file()
         seen, fake = self._record(text=False)
         real_run = subprocess.run
@@ -1442,9 +1442,9 @@ class TestL19BypassIsNotAPermissionGate(unittest.TestCase):
         """真跑一次 CLI（子进程），把运维台账重定向到临时文件 —— 不脏本机 `reports/`。"""
         tmp = tempfile.mkdtemp(prefix="l19-")
         ops = os.path.join(tmp, "ops_log.jsonl")
-        env = dict(os.environ, PYTHONUTF8="1", AGENTGUARD_OPS_LOG=ops)
+        env = dict(os.environ, PYTHONUTF8="1", GUARDRAIL_OPS_LOG=ops)
         r = subprocess.run(
-            [PY, os.path.join(ROOT, "agentguard", "cli.py"), "bypass",
+            [PY, os.path.join(ROOT, "guardrail_engine", "cli.py"), "bypass",
              "--reason", reason, "--repo", ROOT],
             cwd=ROOT, env=env, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=180)
@@ -1587,7 +1587,7 @@ class TestL6InfrastructureFailureIsNotABusinessVerdict(unittest.TestCase):
 
 
 # ── L8：对宿主说的「单线程串行」必须与 `serve()` 的事实一致（2026-09-23）──────────────
-MCP_PY = os.path.join(ROOT, "agentguard", "mcp.py")
+MCP_PY = os.path.join(ROOT, "guardrail_engine", "mcp.py")
 SERIAL_CLAIM_HOST = "SINGLE-THREADED and strictly serial"   # 宿主经 initialize 读到的那段
 SERIAL_CLAIM_SELF = "单线程串行"                             # 模块 docstring（维护者读的那份）
 _CONCURRENCY_ROOTS = ("threading", "asyncio", "concurrent", "multiprocessing")
@@ -1648,8 +1648,8 @@ class TestL8SerialClaimAndCodeAgree(unittest.TestCase):
         模块 docstring 是维护者读的；宿主只经 `initialize` 拿 `INSTRUCTIONS`。
         只写 docstring 等于没告诉当事人。
         """
-        sys.path.insert(0, os.path.join(ROOT, "agentguard"))
-        import mcp
+        sys.path.insert(0, ROOT)
+        from guardrail_engine import mcp
         self.assertIn(SERIAL_CLAIM_HOST, mcp.INSTRUCTIONS,
                       "宿主面的 `INSTRUCTIONS` 里没有串行说明")
         self.assertIn("harness_doctor", mcp.INSTRUCTIONS,

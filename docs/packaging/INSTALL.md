@@ -54,7 +54,7 @@ python -c "import shutil; print('node :', shutil.which('node') or '✗ 未找到
   **不调 node 的规则（纯 Python 规则等）不依赖 node** ✓。
 - 可选：AI 客户端（Claude Code / OpenClaw / CodeBuddy / Codex…）；只用 CLI 则不需要。
 - **不需要预先 clone 引擎**：包里的 wheel 自带引擎。装完 wheel 后跑一次
-  `agentguard init`，引擎就落到本机（下称 `<HARNESS>`，默认 `~/.agentguard/engine`）—— 见「零」
+  `guardrail-engine init`，引擎就落到本机（下称 `<HARNESS>`，默认 `~/.guardrail-engine/engine`）—— 见「零」
 
 > **与本机布局无关，不依赖任何个人工具**：本包运行时只依赖 **Python + git + 你机器上的仓库路径** ——
 > 不需要任何个人 skill 或个人工具（`worktree-manager` / `huayu-manager` 这类是维护者自用的辅助
@@ -69,35 +69,35 @@ python -c "import shutil; print('node :', shutil.which('node') or '✗ 未找到
 
 ```bash
 pip install "<本包目录>\__WHEEL__"
-agentguard init          # 复制到 ~/.agentguard/engine，并写 ~/.agentguard/harness.path
+guardrail-engine init          # 复制到 ~/.guardrail-engine/engine，并写 ~/.guardrail-engine/harness.path
 ```
 
 `init` **只复制、不删除**：目标已存在且内容不同时要求 `--force`，旧目录会改名归档为
 `<dir>.disabled-<时间戳>`（可回退）；`--dir` 可指定安装位置。它会在结束时跑一次
 `run_gate.py --list` 自检 —— 看到 `self-check : list-gates rc=0` 才算引擎真的能起。
 
-- 下面全文的 `<HARNESS>` 指的就是 **init 出来的引擎目录**（默认 `~/.agentguard/engine`）。
-- 引擎目录同时是 `agentguard/mcp.py`、`harness/`、`checks/` 的所在地，MCP 注册与提交钩子
+- 下面全文的 `<HARNESS>` 指的就是 **init 出来的引擎目录**（默认 `~/.guardrail-engine/engine`）。
+- 引擎目录同时是 `guardrail_engine/mcp.py`、`harness/`、`checks/` 的所在地，MCP 注册与提交钩子
   都按它定位；换目录只需要重新 `init --dir`（指针会跟着改）。
 - 自检（init 完跑一下，3 秒）：
 
   ```bash
-  agentguard where -v
+  guardrail-engine where -v
   sh <HARNESS>/sandbox/where.sh      # 打印 <HARNESS> 的实际位置
   ```
 
-- **没 init 会怎样**：`agentguard list` / `run` 会以 rc=2 退出并明确提示 `agentguard init`；
-  下一步「二」的第 0 步 `fix_paths.py` 会校验 `<HARNESS>/agentguard/mcp.py` 在不在，
-  不在就直接退出并报 `✗ 在 X 下没找到 agentguard/mcp.py`。看到这句先回头看本节。
+- **没 init 会怎样**：`guardrail-engine list` / `run` 会以 rc=2 退出并明确提示 `guardrail-engine init`；
+  下一步「二」的第 0 步 `fix_paths.py` 会校验 `<HARNESS>/guardrail_engine/mcp.py` 在不在，
+  不在就直接退出并报 `✗ 在 X 下没找到 guardrail_engine/mcp.py`。看到这句先回头看本节。
 - **想用 git 跟踪引擎更新**（开发 / 维护者）：包里仍带 `bootstrap.py`，它把引擎仓 clone 到
   本机 —— 这是一条**替代**路径，不是安装的前置条件：
 
   ```bash
-  python "<本包目录>\bootstrap.py" --dir D:/dev/agentguard
+  python "<本包目录>\bootstrap.py" --dir D:/dev/guardrail-engine
   ```
 
   跑完按它打印的命令继续（路径适配 + 生成覆盖层）。公开源在
-  `github.com/rain610/agentguard`；内网/私有镜像用 `bootstrap.py --url <地址>` 换源。
+  `github.com/rain610/guardrail-engine`；内网/私有镜像用 `bootstrap.py --url <地址>` 换源。
 
 ### 第 1 步：把 repos 填成本机路径（**不做 = 本机零受管**）
 
@@ -150,9 +150,9 @@ sh <HARNESS>/sandbox/setup_machine.sh    # 首次会生成 config/harness.local.
 
 ```bash
 pip install "<本包目录>\__WHEEL__"
-agentguard init           # 引擎落到 ~/.agentguard/engine（见「零」）
-agentguard quickstart     # 自检 + 使用引导
-agentguard --help
+guardrail-engine init           # 引擎落到 ~/.guardrail-engine/engine（见「零」）
+guardrail-engine quickstart     # 自检 + 使用引导
+guardrail-engine --help
 ```
 
 ## 二、Agent 接入
@@ -162,7 +162,7 @@ agentguard --help
 > 装到本机时用这个脚本填成**你本机**的 python 与引擎路径：
 >
 > ```bash
-> python "<本包目录>\fix_paths.py" --harness "<你的 agentguard 路径>"
+> python "<本包目录>\fix_paths.py" --harness "<你的 guardrail-engine 路径>"
 > ```
 >
 > 看到 `✅ 适配完成`，且输出里三行箭头右边都是本机路径，再继续。
@@ -183,7 +183,7 @@ agentguard --help
 - 其他支持 MCP 的客户端（通用一行；路径以第 0 步适配结果为准）：
   ```
   command = <python 解释器>
-  args    = ["<HARNESS>/agentguard/mcp.py"]
+  args    = ["<HARNESS>/guardrail_engine/mcp.py"]
   ```
 - 编辑期 hook（**多个客户端共用同一个入口**；装了它才有"改完文件立刻检查"，只有提交期兜底
   也是能用的——这一路是可选加强，但**属于安装面，退的时候要一起退**；⚠ 唯一例外是下面第三样
@@ -198,9 +198,9 @@ agentguard --help
 
   | 产出 | 是什么 |
   |---|---|
-  | `~/.agentguard/hooks/agentguard-gate.py` | 薄转发器，指向**仓库**，所以引擎更新即生效 |
-  | `~/.agentguard/harness.path` | 指针（运行链以它优先） |
-  | `~/.agentguard/GLOBAL_AGENTS.md` | **全局守则**：各 AI 工具自动加载的入口路由 |
+  | `~/.guardrail-engine/hooks/agentguard-gate.py` | 薄转发器，指向**仓库**，所以引擎更新即生效 |
+  | `~/.guardrail-engine/harness.path` | 指针（运行链以它优先） |
+  | `~/.guardrail-engine/GLOBAL_AGENTS.md` | **全局守则**：各 AI 工具自动加载的入口路由 |
 
   前两样按各客户端的方式配 hook，配置位置见 `integrations/<客户端>/README.md`。
 
@@ -234,8 +234,8 @@ git config core.hooksPath <HARNESS>/harness/hooks-dir
 一条命令（推荐）——**默认只预演，`--yes` 才动手**：
 
 ```bash
-python "<本包目录>\uninstall.py" --harness "<你的 agentguard 路径>"          # 预演：列出将清理的每一项
-python "<本包目录>\uninstall.py" --harness "<你的 agentguard 路径>" --yes     # 真执行
+python "<本包目录>\uninstall.py" --harness "<你的 guardrail-engine 路径>"          # 预演：列出将清理的每一项
+python "<本包目录>\uninstall.py" --harness "<你的 guardrail-engine 路径>" --yes     # 真执行
 ```
 
 它会按「装过什么」逐项撤回（能自动做的自动做，够不着的打印现成命令）：
@@ -246,23 +246,23 @@ python "<本包目录>\uninstall.py" --harness "<你的 agentguard 路径>" --ye
 | 提交期钩子（`core.hooksPath`） | 加 `--unhook <端仓>`，每个仓库撤回一次（不删文件） | ⚙️ 按仓库手动触发 |
 | Claude Code 插件 | `plugin uninstall` + `marketplace remove` | ✅ 检测到 `claude` CLI 时自动 |
 | OpenClaw 扩展 | 把 `extensions/agentguard` 移出归档，**重启桌面端生效** | ✅ 自动（特征不符会拒绝，防误删） |
-| 人用 CLI（pip 包） | `pip uninstall agentguard` | ✅ 自动（不同 python 加 `--python`） |
-| 编辑期 shim（`install_shim.py`） | 两支文件改名归档（可逆）：`~/.agentguard/hooks/agentguard-gate.py` 与 `harness.path` | ✅ 自动（转发 `install_shim.py --uninstall`；特征不符会拒绝，防误删） |
-| 全局守则（`~/.agentguard/GLOBAL_AGENTS.md`） | **不退**（见「二」：哨兵区之外是你自己写的规矩，撤走等于把它们一起拿走） | — 留在原地，退出后照常可用 |
+| 人用 CLI（pip 包） | `pip uninstall guardrail-engine` | ✅ 自动（不同 python 加 `--python`） |
+| 编辑期 shim（`install_shim.py`） | 两支文件改名归档（可逆）：`~/.guardrail-engine/hooks/agentguard-gate.py` 与 `harness.path` | ✅ 自动（转发 `install_shim.py --uninstall`；特征不符会拒绝，防误删） |
+| 全局守则（`~/.guardrail-engine/GLOBAL_AGENTS.md`） | **不退**（见「二」：哨兵区之外是你自己写的规矩，撤走等于把它们一起拿走） | — 留在原地，退出后照常可用 |
 
 > **归档是"可逆"，不是"干净"（这条以前没写）**：改名归档**不删任何文件**，所以每退一次就
 > 永久留下一份**完整副本**（技能是一整棵目录树、shim 是两支文件）。反复「卸载 + 重装」只涨不落。
 > 怎么看得见、怎么清：
-> - `python <HARNESS>/agentguard/cli.py skill status` 会列出技能残骸（`<技能名>.disabled-*`）
+> - `python <HARNESS>/guardrail_engine/cli.py skill status` 会列出技能残骸（`<技能名>.disabled-*`）
 >   与份数；确认不要了，手工删掉那些目录即可（**门禁不会替你删**——它只归档）。
 > - shim 的归档是 `...agentguard-gate.py.disabled-<时间戳>` 与 `harness.path.disabled-<时间戳>`，
->   同样在 `~/.agentguard/` 下，确认不要了手工删（该目录里还有别的东西，本工具不碰目录本身）。
+>   同样在 `~/.guardrail-engine/` 下，确认不要了手工删（该目录里还有别的东西，本工具不碰目录本身）。
 
-- 其他手写过 MCP 注册的客户端：到各自配置里删掉 `agentguard` 条目（`claude mcp remove` 等，见 RUNBOOK）。
+- 其他手写过 MCP 注册的客户端：到各自配置里删掉 `guardrail-engine` 条目（旧配的 `agentguard` 键同样可用；`claude mcp remove` 等，见 RUNBOOK）。
 - **编辑期 hook 的配置**：shim 归档后，各客户端 hook 配置里仍写着那个路径 → 到宿主配置里删掉该 hook。
   只归档文件不改配置，编辑期门禁会**静默失效**（跟它装不上时是同一个失效模式）。
 - 本工具**不动你的 `<HARNESS>` 仓库**；安装包目录不再需要时，整目录删除即可。
-- 验证（都应查无）：`pip show agentguard` ｜ `claude plugin list` ｜ OpenClaw `plugins list` ｜ `python <HARNESS>/agentguard/cli.py skill status`（顺带报残骸）｜ `python <HARNESS>/sandbox/install_shim.py --check`。
+- 验证（都应查无）：`pip show guardrail-engine` ｜ `claude plugin list` ｜ OpenClaw `plugins list` ｜ `python <HARNESS>/guardrail_engine/cli.py skill status`（顺带报残骸）｜ `python <HARNESS>/sandbox/install_shim.py --check`。
   （末一条的输出里会多一行 `[check] · 全局守则：已生成` —— 那是**预期**的：全局守则按上表**刻意不退**，
   且这一行不参与该命令的成败判定；shim 查无时它照样以退出码 1 报红。）
 - 想只退单项：细粒度命令（钩子 / 技能 / MCP）见仓库 `docs/packaging/RUNBOOK.md`「4. 卸载与回滚」。
@@ -275,18 +275,18 @@ python "<本包目录>\uninstall.py" --harness "<你的 agentguard 路径>" --ye
 它不是"什么都不用管"，也不是"重新装一遍"—— 它说的是**包目录的位置不变**，而不是
 "安装动作可以省"。
 
-**推荐（默认）：固定目录。** 约定包目录为 `%USERPROFILE%\agentguard\`，里面直接放着
+**推荐（默认）：固定目录。** 约定包目录为 `%USERPROFILE%\guardrail-engine\`，里面直接放着
 `fix_paths.py` / `marketplace/` / 轮子这些（**不是**再套一层带版本号的目录）。这样本文档
 里所有 `<本包目录>` 指的永远是同一个路径，第 0 步那条命令每次**原样重打**即可，不用记住
 "这版解压到哪了"。
 
-> ⚠️ **一个包内现实**：zip 解开后自带一层带版本号的目录（`agentguard-package-v<版本>\`
+> ⚠️ **一个包内现实**：zip 解开后自带一层带版本号的目录（`guardrail-engine-package-v<版本>\`
 > —— 打包脚本按版本命名，见 `sandbox/pack_release.py`）。所以要落到固定目录，需要多一步：
 >
 > ```
-> 第一次：解压 → 把里面那层 agentguard-package-v<版本>\ 整个改名成 agentguard\，
+> 第一次：解压 → 把里面那层 guardrail-engine-package-v<版本>\ 整个改名成 guardrail-engine\，
 >         放到 %USERPROFILE% 下
-> 以后每次：解压 → 用它那层目录**里面的内容**覆盖 %USERPROFILE%\agentguard\
+> 以后每次：解压 → 用它那层目录**里面的内容**覆盖 %USERPROFILE%\guardrail-engine\
 >         （资源管理器里"替换目标中的文件"即可，覆盖掉的是上一版的包，没有任何损失）
 > ```
 >
@@ -307,15 +307,15 @@ python "<本包目录>\uninstall.py" --harness "<你的 agentguard 路径>" --ye
 **推荐一条命令**（默认只预演，`--yes` 才动手；**不做任何撤回**，不卸载、不删文件）：
 
 ```bash
-python "<本包目录>\upgrade.py" --harness "<你的 agentguard 路径>"          # 预演：逐通道列出将做什么
-python "<本包目录>\upgrade.py" --harness "<你的 agentguard 路径>" --yes     # 真执行
+python "<本包目录>\upgrade.py" --harness "<你的 guardrail-engine 路径>"          # 预演：逐通道列出将做什么
+python "<本包目录>\upgrade.py" --harness "<你的 guardrail-engine 路径>" --yes     # 真执行
 ```
 
 它会按 [1] 路径适配（不可跳过）→ [2] Claude 插件 → [3] OpenClaw 扩展 → [4] pip 包
 → [5] 引擎副本 → [6] 技能副本 → [7] 编辑期 shim 的顺序**逐通道幂等刷新**，并打印**升级前后的
 本机安装矩阵**（引擎 / pip / 插件 / 技能各自是哪一版）。三条硬规矩：**只刷新已经装过的通道**
 （没装的不替你装，那是「安装」）；**旧文件只列出来交给人判断，不替人删**；**仓库一律不碰**
-（引擎副本只认 `agentguard init` 写下的所有权标记，旧副本改名归档可回退）。
+（引擎副本只认 `guardrail-engine init` 写下的所有权标记，旧副本改名归档可回退）。
 
 两个当场会出声的坑（都是"看起来升了、其实没换"）：
 - **同版本号**：`claude plugin update` 会打印绿色「已是最新」然后**什么都不换**；pip 那一路同理
@@ -341,13 +341,13 @@ python "<本包目录>\upgrade.py" --harness "<你的 agentguard 路径>" --yes 
 
 | 接入形态 | 怎么升级 |
 |---|---|
-| 引擎副本（`agentguard init` 出来的 `<HARNESS>`，默认 `~/.agentguard/engine`） | `upgrade.py` 的 [5/7] 会自动刷新（源是本包轮子自带的引擎；装完逐字节对账，旧副本改名归档可回退）。手动等价命令：装新 wheel 后跑 `agentguard init --force`；内容相同则幂等（`引擎已是最新`） |
-| MCP 注册（args 指 `<HARNESS>/agentguard/mcp.py`） | **无需重新注册**——路径不变；引擎内容按上一行更新 |
+| 引擎副本（`guardrail-engine init` 出来的 `<HARNESS>`，默认 `~/.guardrail-engine/engine`） | `upgrade.py` 的 [5/7] 会自动刷新（源是本包轮子自带的引擎；装完逐字节对账，旧副本改名归档可回退）。手动等价命令：装新 wheel 后跑 `guardrail-engine init --force`；内容相同则幂等（`引擎已是最新`） |
+| MCP 注册（args 指 `<HARNESS>/guardrail_engine/mcp.py`） | **无需重新注册**——路径不变；引擎内容按上一行更新 |
 | git 提交钩子（`core.hooksPath → <HARNESS>/harness/hooks-dir`） | **无需重装**——路径不变；引擎内容按上一行更新（**不要**为了升级把钩子重装一遍） |
-| 编辑期 shim（`~/.agentguard/hooks/` 与 `harness.path`） | **无需重装**——它只存指针；只有**换过机器 / 挪过引擎目录**时才重跑 `python <HARNESS>/sandbox/install_shim.py`（体检：`--check`） |
-| 全局守则（`~/.agentguard/GLOBAL_AGENTS.md`） | ⚠ **这一样要重跑才更新**（与上一条不同）：它是**渲染出来的正文**，不是指针。引擎仓里那份守则改了（`git pull` 拿到）之后，跑一次 `python <HARNESS>/sandbox/install_shim.py` 才会重渲染哨兵区；**哨兵区之外你自己写的部分不受影响**。`--check` 会报三样：状态、哨兵是否齐、**以及哨兵区里烘的路径还是不是当前这个仓**（挪过引擎仓却没重跑时，它会当场说出来 —— 只提醒、不影响退出码） |
-| 技能副本（`skill install` 装入宿主目录） | 重跑 `python <HARNESS>/agentguard/cli.py skill install --target <宿主>`（幂等，增量更新） |
-| 人用 CLI（pip 装过 wheel） | `pip install -U "<本包目录>\__WHEEL__"`，随后引擎副本由 `upgrade.py` 的 [5/7] 自动刷新（手动等价：`agentguard init --force`）；**同版本号**时 pip 会说 `is already installed with the same version as the provided wheel` 而**一个字节都不换**（rc 仍是 0），改用 `pip install --force-reinstall "<本包目录>\__WHEEL__"`（`upgrade.py` 会装完对账产物，遇到同版本号时**替你跑掉这一条**再对一次账） |
+| 编辑期 shim（`~/.guardrail-engine/hooks/` 与 `harness.path`） | **无需重装**——它只存指针；只有**换过机器 / 挪过引擎目录**时才重跑 `python <HARNESS>/sandbox/install_shim.py`（体检：`--check`） |
+| 全局守则（`~/.guardrail-engine/GLOBAL_AGENTS.md`） | ⚠ **这一样要重跑才更新**（与上一条不同）：它是**渲染出来的正文**，不是指针。引擎仓里那份守则改了（`git pull` 拿到）之后，跑一次 `python <HARNESS>/sandbox/install_shim.py` 才会重渲染哨兵区；**哨兵区之外你自己写的部分不受影响**。`--check` 会报三样：状态、哨兵是否齐、**以及哨兵区里烘的路径还是不是当前这个仓**（挪过引擎仓却没重跑时，它会当场说出来 —— 只提醒、不影响退出码） |
+| 技能副本（`skill install` 装入宿主目录） | 重跑 `python <HARNESS>/guardrail_engine/cli.py skill install --target <宿主>`（幂等，增量更新） |
+| 人用 CLI（pip 装过 wheel） | `pip install -U "<本包目录>\__WHEEL__"`，随后引擎副本由 `upgrade.py` 的 [5/7] 自动刷新（手动等价：`guardrail-engine init --force`）；**同版本号**时 pip 会说 `is already installed with the same version as the provided wheel` 而**一个字节都不换**（rc 仍是 0），改用 `pip install --force-reinstall "<本包目录>\__WHEEL__"`（`upgrade.py` 会装完对账产物，遇到同版本号时**替你跑掉这一条**再对一次账） |
 | Claude Code 插件 | 固定目录：`claude plugin marketplace update agentguard-tools` → `claude plugin update agentguard@agentguard-tools` → 重启宿主<br>**换过目录**：第一步改成 `claude plugin marketplace add "<新包目录>\marketplace"` —— 同名市场会被**静默改指**到新路径，`plugin update` 照常生效<br>两种都不需要 `uninstall` / `marketplace remove`（同版本号见 5.1 第一个坑） |
 | OpenClaw 扩展 | 用新包 marketplace 重装，或让 `upgrade.py` 就地覆盖 `extensions/agentguard` → 重启桌面端（完整步骤见 `OPENCLAW.md`） |
 
@@ -356,12 +356,12 @@ python "<本包目录>\upgrade.py" --harness "<你的 agentguard 路径>" --yes 
 
 > **引擎副本由 `upgrade.py` 的 [5/7] 自动刷新**：源是本包轮子自带的引擎（不经 pip 安装状态，
 > `--skip pip` 时同样成立）；装完**逐字节对账**，内容没变时 init 幂等返回 `引擎已是最新`，
-> 内容变了才归档旧目录再复制。它只认 `agentguard init` 写下的所有权标记
-> （`<HARNESS>/.agentguard-init.json`）：`--harness` 是仓库（带 `.git`）或来历不明的目录时
+> 内容变了才归档旧目录再复制。它只认 `guardrail-engine init` 写下的所有权标记
+> （`<HARNESS>/.guardrail-engine-init.json`）：`--harness` 是仓库（带 `.git`）或来历不明的目录时
 > **不刷新** —— 对仓库跑 `init --force` 会把源改名归档。手动等价命令：
-> `agentguard init --force --dir "<HARNESS>"`。
+> `guardrail-engine init --force --dir "<HARNESS>"`。
 
-升级后自检：`python <HARNESS>/agentguard/cli.py installed`（本机安装矩阵：哪几路是哪一版）
+升级后自检：`python <HARNESS>/guardrail_engine/cli.py installed`（本机安装矩阵：哪几路是哪一版）
 ｜ `claude plugin validate --strict "<本包目录>\marketplace"` ｜ OpenClaw `plugins list`
 ｜ `python <HARNESS>/sandbox/install_shim.py --check`。
 

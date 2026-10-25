@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-agentguard/hooks/pre-edit.py —— 改码前门禁（编辑期提示点）
+guardrail-engine/hooks/pre-edit.py —— 改码前门禁（编辑期提示点）
 ================================================================================
 职责：校验「方案已确认」（工单系统走 confirm_items；对话驱动模式仅提示，不阻断）
 用法：python harness/hooks/pre-edit.py <gate名>

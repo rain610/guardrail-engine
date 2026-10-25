@@ -1,25 +1,46 @@
-# agentguard 打包配置（M1 · 推荐版尾巴）
+# guardrail-engine 打包配置
 # 原则（ADR-0001）：壳只转发；版本单一来源 = VERSION 文件（构建时读取）。
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentguard"
-description = "A stdlib-only code-gate engine for AI-assisted repos: one shared rule engine, with CLI and MCP shells. Wheels bundle the engine (agentguard init)."
+name = "guardrail-engine"
+description = "A stdlib-only code-gate engine for AI-assisted repos: one shared rule engine, with CLI and MCP shells. Wheels bundle the engine (guardrail-engine init)."
 readme = "README.md"
 # 与《安装说明》和入口守卫一致：实测 3.11/3.12/3.13；引擎用到 3.9+ 的 API（is_relative_to），
 # 3.11 以下从未测试 —— 别再写 >=3.8（那会让用户装完撞 AttributeError）。
 requires-python = ">=3.11"
-authors = [{ name = "agentguard" }]
+authors = [{ name = "rain610" }]
 license = { text = "MIT" }
 dynamic = ["version"]
+keywords = ["code-quality", "lint", "gate", "pre-commit", "ai-agents", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Homepage = "https://github.com/rain610/guardrail-engine"
+Repository = "https://github.com/rain610/guardrail-engine"
+Issues = "https://github.com/rain610/guardrail-engine/issues"
+Changelog = "https://github.com/rain610/guardrail-engine/blob/main/CHANGELOG.md"
 
 [project.scripts]
+guardrail-engine = "guardrail_engine.cli:main"
+# 迁移期别名（v0.3 移除）：老脚本/文档里的 `agentguard` 命令继续可用。
 agentguard = "agentguard.cli:main"
 
 [tool.setuptools]
-packages = ["agentguard"]
+packages = ["guardrail_engine", "agentguard"]
 
 [tool.setuptools.dynamic]
 version = { file = "VERSION" }

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""构建 Claude 兼容 marketplace（内含 agentguard 插件）——Claude Code 与 OpenClaw 双消费。
+"""构建 Claude 兼容 marketplace（内含 agentguard 插件，产品名 guardrail-engine）——Claude Code 与 OpenClaw 双消费。
 
 用法：
   python integrations/plugins/build_marketplace.py --harness <HARNESS> --out <DIR> [--python <PY>]
   python integrations/plugins/build_marketplace.py --harness <HARNESS> --out <DIR> --keep-placeholders
 
 产物（OUT，可直接被 claude / openclaw 消费）：
-  .claude-plugin/marketplace.json   市场清单（声明 agentguard）
+  .claude-plugin/marketplace.json   市场清单（扩展 ID 迁移期仍叫 agentguard）
   plugins/agentguard/…           由 build_plugin.py 按机器打戳生成（同源复制 + 技能）
   README.md                         市场说明
 
@@ -45,7 +45,7 @@ def _copy_text(src, dst):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="构建 agentguard-tools 插件市场（Claude 兼容）")
-    ap.add_argument("--harness", required=True, help="agentguard 工程根")
+    ap.add_argument("--harness", required=True, help="guardrail-engine 工程根")
     ap.add_argument("--out", required=True, help="输出目录（不存在则创建）")
     ap.add_argument("--python", default=sys.executable or "python", help="写入配置的 python 解释器")
     ap.add_argument("--keep-placeholders", action="store_true",

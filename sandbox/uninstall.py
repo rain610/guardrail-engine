@@ -39,7 +39,7 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-SKILL_NAME = "agentguard"
+SKILL_NAMES = ("guardrail-engine", "agentguard")   # 新名优先；旧名卷进迁移期
 ARCHIVE_SUFFIX = ".disabled-"      # 与 cli.py 同口径（见 archive_name 的说明）
 # 与 agentguard/cli.py 的 SKILL_PRESETS 保持一致（壳层常量镜像，别单边改）
 SKILL_PRESETS = {
@@ -160,8 +160,9 @@ def run_cmd(args, timeout=300):
 
 def record(a, step, result, reason=""):
     """运维台账：与 cli.py 同文件同风格（entry=uninstall）；失败提示但不阻断。"""
-    p = os.environ.get("AGENTGUARD_OPS_LOG") or (
-        os.path.join(a.harness_norm, "reports", "ops_log.jsonl") if a.harness_norm else "")
+    p = (os.environ.get("GUARDRAIL_OPS_LOG") or os.environ.get("AGENTGUARD_OPS_LOG")
+         or (
+        os.path.join(a.harness_norm, "reports", "ops_log.jsonl") if a.harness_norm else ""))
     if not p:
         return
     try:
@@ -185,20 +186,25 @@ def step_skills(a):
     fails = []
     targets = []
     for name, base in sorted(SKILL_PRESETS.items()):
-        t = os.path.join(base, SKILL_NAME)
-        if os.path.isdir(t):
-            targets.append((name, t))
+        for skill in SKILL_NAMES:
+            t = os.path.join(base, skill)
+            if os.path.isdir(t):
+                targets.append((name, t))
     for d in a.skill_dir:
         d = os.path.abspath(d)
-        if os.path.basename(d) == SKILL_NAME:
-            t = d
-        elif os.path.isdir(os.path.join(d, SKILL_NAME)):
-            t = os.path.join(d, SKILL_NAME)
+        hit = None
+        if os.path.basename(d) in SKILL_NAMES:
+            hit = d
         else:
-            print("  · 自定义目录未见 %s/：%s（跳过）" % (SKILL_NAME, norm(d)))
+            for skill in SKILL_NAMES:
+                if os.path.isdir(os.path.join(d, skill)):
+                    hit = os.path.join(d, skill)
+                    break
+        if hit is None:
+            print("  · 自定义目录未见 %s/：%s（跳过）" % (" 或 ".join(SKILL_NAMES), norm(d)))
             continue
-        if os.path.isdir(t):
-            targets.append(("custom", t))
+        if os.path.isdir(hit):
+            targets.append(("custom", hit))
     if not targets:
         print("  · 未发现技能副本（无需处理）")
         return fails
@@ -344,22 +350,25 @@ def step_openclaw(a):
 
 
 def step_pip(a):
-    """[5/6] 人用 CLI：pip uninstall agentguard（-y；用 --python 指定解释器）。"""
+    """[5/6] 人用 CLI：pip uninstall guardrail-engine / 旧 agentguard（-y；用 --python 指定解释器）。"""
     fails = []
-    rc, out = run_cmd([a.python, "-m", "pip", "show", "agentguard"])
-    if rc != 0:
-        print("  · pip 未见 agentguard（无需处理）")
+    found = [d for d in ("guardrail-engine", "agentguard")
+             if run_cmd([a.python, "-m", "pip", "show", d])[0] == 0]
+    if not found:
+        print("  · pip 未见 guardrail-engine / agentguard（无需处理）")
         return fails
     if not a.yes:
-        print("  · 将执行：%s -m pip uninstall -y agentguard" % a.python)
+        for d in found:
+            print("  · 将执行：%s -m pip uninstall -y %s" % (a.python, d))
         return fails
-    rc, out = run_cmd([a.python, "-m", "pip", "uninstall", "-y", "agentguard"], timeout=600)
-    ok = rc == 0
-    tail = " ｜ ".join(ln.strip() for ln in out.strip().splitlines()[-2:] if ln.strip())
-    print("  · pip uninstall → rc=%s%s" % (rc, ("：" + tail[:160]) if tail else ""))
-    if not ok:
-        fails.append("pip 卸载失败（解释器：%s）" % a.python)
-    record(a, "pip", "ok" if ok else "fail", a.python)
+    for d in found:
+        rc, out = run_cmd([a.python, "-m", "pip", "uninstall", "-y", d], timeout=600)
+        ok = rc == 0
+        tail = " ｜ ".join(ln.strip() for ln in out.strip().splitlines()[-2:] if ln.strip())
+        print("  · pip uninstall %s → rc=%s%s" % (d, rc, ("：" + tail[:160]) if tail else ""))
+        if not ok:
+            fails.append("pip 卸载失败（%s，解释器：%s）" % (d, a.python))
+        record(a, "pip", "ok" if ok else "fail", "%s @ %s" % (d, a.python))
     return fails
 
 
@@ -371,9 +380,15 @@ def step_shim(a):
     （本脚本随包分发，正是"包还在、仓联系不上"的场景）时按同一命名口径归档。
     """
     fails = []
-    agents = os.path.join(os.path.expanduser("~"), ".agentguard")
-    have = [p for p in (os.path.join(agents, "hooks", "agentguard-gate.py"),
-                        os.path.join(agents, "harness.path")) if os.path.isfile(p)]
+    home = os.path.expanduser("~")
+    agents = None
+    have = []
+    for d in (os.path.join(home, ".guardrail-engine"), os.path.join(home, ".agentguard")):
+        got = [p for p in (os.path.join(d, "hooks", "agentguard-gate.py"),
+                           os.path.join(d, "harness.path")) if os.path.isfile(p)]
+        if got and agents is None:
+            agents = d
+        have += got
     if not have:
         print("  · 未装编辑期 shim（无需处理）")
         return fails
@@ -430,7 +445,7 @@ def main(argv=None):
     _require_python()   # 前置检查（Python 3.11+）
     ap = argparse.ArgumentParser(description="一键卸载：把「离线安装包」装过的东西逐项撤回（默认预演）")
     ap.add_argument("--harness", default=None,
-                    help="你的 agentguard 仓库路径（用于转发 cli.py / 写台账；缺省读 AGENTGUARD_DIR、HARNESS_DIR）")
+                    help="你的 guardrail-engine 仓库路径（用于转发 cli.py / 写台账；缺省读 GUARDRAIL_ENGINE_DIR、AGENTGUARD_DIR、HARNESS_DIR）")
     ap.add_argument("--python", default=None, help="pip 卸载用的解释器（默认：当前解释器）")
     ap.add_argument("--yes", action="store_true", help="确认执行（缺省只预演，不改任何东西）")
     ap.add_argument("--dry-run", action="store_true", help="与缺省相同的显式预演开关")
@@ -451,20 +466,23 @@ def main(argv=None):
         print("✗ --skip 不认识这几项：%s（可选：%s）" % (",".join(sorted(unknown)), ",".join(SKIP_KEYS)))
         return 1
 
-    harness = (a.harness or os.environ.get("AGENTGUARD_DIR")
+    harness = (a.harness or os.environ.get("GUARDRAIL_ENGINE_DIR")
+               or os.environ.get("AGENTGUARD_DIR")
                or os.environ.get("HARNESS_DIR") or "").strip()
     a.harness_norm = norm(harness) if harness else ""
     a.harness_cli = ""
     if a.harness_norm:
-        c = os.path.join(a.harness_norm, "agentguard", "cli.py")
-        if os.path.isfile(c):
-            a.harness_cli = c
-        else:
-            print("提示：%s 下没找到 agentguard/cli.py —— 技能/钩子将走内置同规则处理" % a.harness_norm)
+        for rel in (("guardrail_engine", "cli.py"), ("agentguard", "cli.py")):
+            c = os.path.join(a.harness_norm, *rel)
+            if os.path.isfile(c):
+                a.harness_cli = c
+                break
+        if not a.harness_cli:
+            print("提示：%s 下没找到 guardrail_engine/cli.py —— 技能/钩子将走内置同规则处理" % a.harness_norm)
 
     state_show = (a.openclaw_state or os.environ.get("OPENCLAW_STATE_DIR")
                   or os.path.join(os.path.expanduser("~"), ".openclaw-autoclaw"))
-    print("== agentguard 一键卸载 ==================================")
+    print("== guardrail-engine 一键卸载 =============================")
     print("   模式    : %s" % ("执行（--yes）" if a.yes else "预演（不改任何东西；确认后加 --yes 执行）"))
     print("   引擎库  : %s" % (a.harness_norm or "(未指定——技能/钩子走内置处理)"))
     print("   解释器  : %s（pip 卸载目标）" % a.python)
@@ -478,7 +496,7 @@ def main(argv=None):
         ("claude", "[3/6] Claude Code 插件", step_claude),
         ("openclaw", "[4/6] OpenClaw 扩展", step_openclaw),
         ("pip", "[5/6] 人用 CLI（pip 包）", step_pip),
-        ("shim", "[6/6] 编辑期 shim（~/.agentguard/）", step_shim),
+        ("shim", "[6/6] 编辑期 shim（~/.guardrail-engine/ 或旧 ~/.agentguard/）", step_shim),
     )
     for key, title, fn in steps:
         if key in skip:
@@ -495,7 +513,7 @@ def main(argv=None):
     print(" · 你的引擎仓库：本工具全程未改动%s；去留由你决定。" % (("（%s）" % a.harness_norm) if a.harness_norm else ""))
     print(" · 客户端 hook 配置：编辑期 shim 已归档，但各家 hook 配置里还写着它 → 到宿主配置里删掉该 hook，")
     print("   否则编辑期门禁会静默失效（见 RUNBOOK「4. 卸载与回滚」）。")
-    print(" · 验证查无：pip show agentguard ｜ claude plugin list ｜ OpenClaw plugins list ｜ cli.py skill status"
+    print(" · 验证查无：pip show guardrail-engine ｜ claude plugin list ｜ OpenClaw plugins list ｜ cli.py skill status"
           "（会列归档残骸）｜ python <HARNESS>/sandbox/install_shim.py --check。")
     if not a.yes:
         print("")

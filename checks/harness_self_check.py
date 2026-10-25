@@ -7,7 +7,7 @@
 
 检查项（**全部是仓库级、秒级**，不做全量套件——套件交给 CI）：
   ① 输出型入口必须带 UTF-8 兜底（机器推导清单，见 sandbox/list_entries.py）
-  ② 引擎层与打包壳零第三方依赖（AST 扫 harness/ checks/ sandbox/ agentguard/，
+  ② 引擎层与打包壳零第三方依赖（AST 扫 harness/ checks/ sandbox/ guardrail_engine/ agentguard/，
      用 sys.stdlib_module_names 判定）
   ③ 分发器完整性：hooks-dir 分发器 + hooks/pre-commit.py 都在位（G2 的周期自检）
   ④ 规则能力边界：单行正则规则必须自报 heuristic，并在自检输出里可见
@@ -41,9 +41,10 @@ CONFIG_KEYS = frozenset()
 
 problems, warns = [], []
 
-# ② 零第三方依赖的扫描范围：引擎层 + 打包壳（2026-09-16 补 agentguard，
+# ② 零第三方依赖的扫描范围：引擎层 + 打包壳（2026-09-16 补打包壳；
+# 2026-10-25 改名后主包是 guardrail_engine、agentguard 是迁移期兼容壳，
 # 与 tests/test_stdlib_only.py 的 SCAN_DIRS 保持一致——两处都用手写清单，别单边改）。
-_SCAN_SUBS = ("harness", "checks", "sandbox", "agentguard")
+_SCAN_SUBS = ("harness", "checks", "sandbox", "guardrail_engine", "agentguard")
 
 
 def _load_by_path(rel, name):
@@ -94,6 +95,9 @@ def check_stdlib_only():
     import sys as _sys
     local = set()
     for sub in _SCAN_SUBS:
+        # 顶层包目录（guardrail_engine/ agentguard/）本身也是合法导入名
+        if os.path.isfile(os.path.join(ROOT, sub, "__init__.py")):
+            local.add(sub)
         for dirpath, _, files in os.walk(os.path.join(ROOT, sub)):
             for f in files:
                 if f.endswith(".py"):

@@ -79,7 +79,7 @@ def _msys_bash():
 
 # 「会随包分发、同事机器上会跑的」代码所在处。**不含 tests/**（测试要断言正文，那是另一回事）
 # 也不含 docs/ 与 dist/（文档引用正文、包里是渲染产物）。
-CODE_DIRS = ("sandbox", "harness", "checks", "agentguard", "integrations")
+CODE_DIRS = ("sandbox", "harness", "checks", "guardrail_engine", "agentguard", "integrations")
 
 # 端级模板**是要下发到每个受管仓的**（M2 的产物）—— 它们正是「正文会不会被再抄一份」的
 # 高风险地带：模板看着"只是几行摘要"，往里面补一句规则正文是最自然不过的动作。
@@ -474,7 +474,7 @@ class TestStdoutIsOnlyTheActionWord(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = os.path.join(self.tmp.name, "home")
         os.makedirs(self.home)
-        self.target = os.path.join(self.home, ".agentguard", "GLOBAL_AGENTS.md")
+        self.target = os.path.join(self.home, ".guardrail-engine", "GLOBAL_AGENTS.md")
 
     def _run(self, *args):
         env = dict(os.environ)

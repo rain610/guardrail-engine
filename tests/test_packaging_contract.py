@@ -17,14 +17,22 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # M1 起逐个加入，例如：
 #   "agentguard/cli.py"、"agentguard/mcp.py"、
-#   "integrations/agentguard-skill/scripts/gate.py"、宿主插件转发文件……
+#   "integrations/guardrail-engine-skill/scripts/gate.py"、宿主插件转发文件……
 SHELL_FILES = [
     # 打包路线壳（ADR-0001：壳只转发、禁行号运算）——2026-09-14 起逐个注册
+    "guardrail_engine/__init__.py",
+    "guardrail_engine/_shell.py",
+    "guardrail_engine/cli.py",
+    "guardrail_engine/mcp.py",
+    # 迁移期兼容壳（v0.3 移除）：同样受禁令约束
     "agentguard/__init__.py",
     "agentguard/_shell.py",
     "agentguard/cli.py",
     "agentguard/mcp.py",
 ]
+
+# 自动登记要覆盖的包目录：漏登记 = 新壳不受禁令约束，而契约锁仍然全绿。
+SHELL_DIRS = ("guardrail_engine", "agentguard")
 
 # 引擎符号：壳内出现这些「定义」 = 双实现开始漂移（ADR-0001 铁律 1）
 BANNED_ENGINE_DEFS = (
@@ -46,16 +54,19 @@ class TestPackagingContract(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(ROOT, rel)), "壳文件不存在：%s" % rel)
 
     def test_every_gate_module_is_registered(self):
-        """`agentguard/` 下的每个 .py 都必须在 SHELL_FILES 里登记（机器推导，不靠手抄）。
+        """包目录下的每个 .py 都必须在 SHELL_FILES 里登记（机器推导，不靠手抄）。
 
         为什么要这条：手工清单的危险不在「有人偷懒」，而在**漏登记时本文件会静默变成不设防**
         —— 新壳不受任何禁令约束，而契约锁仍然是绿的（这正是 ADR-0001 铁律 2 要求登记、
         却一直只有人眼在守的那条）。2026-09-16 剖析报告 A3 抽公用件时补上。
+        2026-10-25 改名：新主包与兼容壳两个目录都要枚举，只盯旧目录会让新壳变成盲区。
         """
-        d = os.path.join(ROOT, "agentguard")
-        present = sorted("agentguard/" + n for n in os.listdir(d) if n.endswith(".py"))
-        self.assertIn("agentguard/cli.py", present,
-                      "枚举 agentguard/ 失败（目录或路径写错了？本锁会因此空转）")
+        present = []
+        for pkg in SHELL_DIRS:
+            d = os.path.join(ROOT, pkg)
+            present += sorted(pkg + "/" + n for n in os.listdir(d) if n.endswith(".py"))
+            self.assertTrue(any(p.startswith(pkg + "/") for p in present),
+                            "枚举 %s/ 失败（目录或路径写错了？本锁会因此空转）" % pkg)
         missing = [p for p in present if p not in SHELL_FILES]
         self.assertEqual(missing, [],
                          "这些打包壳没登记进 SHELL_FILES（漏登记 = 不受禁令约束且无人知道）：%s"

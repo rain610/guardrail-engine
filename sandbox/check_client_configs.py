@@ -170,8 +170,8 @@ def _interpreter_finding(cmd):
 
 
 
-# 本机 shim 的目录特征：客户端配置里写的是 ~/.agentguard/hooks/…（转发到工程仓里的正本）
-_SHIM_DIR_HINT = ".agentguard"
+# 本机 shim 的目录特征：客户端配置里写的是 ~/.guardrail-engine/hooks/…（旧 ~/.agentguard/hooks/… 仍认）
+_SHIM_DIR_HINTS = (".guardrail-engine", ".agentguard")
 
 
 def _shim_target_problem(shim_path, home):
@@ -195,13 +195,16 @@ def _shim_target_problem(shim_path, home):
     for pat in pats:
         for m in re.finditer(pat, src):
             roots.append(m.group(1))
-    ptr = os.path.join(home, ".agentguard", "harness.path")   # 必须用传入的 home（证伪测试抓到过：用真实 ~ 会假绿）
-    if os.path.isfile(ptr):
-        try:
-            roots.append(pathlib.Path(ptr).read_text(encoding="utf-8").strip())
-        except Exception:
-            pass
-    env = (os.environ.get("AGENTGUARD_DIR") or os.environ.get("HARNESS_DIR") or "").strip()
+    # 必须用传入的 home（证伪测试抓到过：用真实 ~ 会假绿）
+    for sub in (".guardrail-engine", ".agentguard"):
+        ptr = os.path.join(home, sub, "harness.path")
+        if os.path.isfile(ptr):
+            try:
+                roots.append(pathlib.Path(ptr).read_text(encoding="utf-8").strip())
+            except Exception:
+                pass
+    env = (os.environ.get("GUARDRAIL_ENGINE_DIR") or os.environ.get("AGENTGUARD_DIR")
+           or os.environ.get("HARNESS_DIR") or "").strip()
     if env:
         roots.append(env)
     for r in roots:

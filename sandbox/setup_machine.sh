@@ -80,7 +80,7 @@ case "$LOCAL" in
 esac
 LOCAL_REL="${LOCAL#$HARNESS/}"
 
-echo "=== agentguard 新机器接入（harness=$HARNESS_WIN）==="
+echo "=== guardrail-engine 新机器接入（engine=$HARNESS_WIN）==="
 echo ""
 
 # ---------- 第 1.5 步：确保 local 覆盖层里有 harness 键 ----------
@@ -128,24 +128,29 @@ else
     fi
 fi
 
-# ---------- 第 1.6 步：写 ~/.agentguard/harness.path ----------
-# 业务仓 AGENTS.md 的「路径约定」让 AI 按顺序取工程根：① $AGENTGUARD_DIR（旧名 $HARNESS_DIR 兼容）② 本文件。
+# ---------- 第 1.6 步：写指针文件（新 ~/.guardrail-engine/，已有旧 ~/.agentguard/ 则沿用）----------
+# 业务仓 AGENTS.md 的「路径约定」让 AI 按顺序取工程根：① $GUARDRAIL_ENGINE_DIR
+# （旧名 $GUARDRAIL_ENGINE_DIR / $HARNESS_DIR 兼容）② 本文件。
 # 不写本文件 → 同事跑完 setup_machine.sh 后第 ② 级落空，AI 在业务仓里照样解析不出 <HARNESS>
 # （指针写法就白注入了）。此前只有 install_shim.py / bootstrap_agent_env.sh 写它，
 # 而标准三步接入只跑本脚本 —— 缺口就在这。
 # 幂等：内容已是当前工程根就不重写。
-AGENTGUARD_HOME="$HOME/.agentguard"
-if [ ! -f "$AGENTGUARD_HOME/harness.path" ] || [ "$(cat "$AGENTGUARD_HOME/harness.path" 2>/dev/null)" != "$HARNESS_WIN" ]; then
+if [ -d "$HOME/.guardrail-engine" ] || [ ! -d "$HOME/.agentguard" ]; then
+    CFG_HOME="$HOME/.guardrail-engine"
+else
+    CFG_HOME="$HOME/.agentguard"       # 旧机器继续用旧目录（不迁移、不丢配置）
+fi
+if [ ! -f "$CFG_HOME/harness.path" ] || [ "$(cat "$CFG_HOME/harness.path" 2>/dev/null)" != "$HARNESS_WIN" ]; then
     if [ "$DRY_RUN" = "1" ]; then
         # dry-run 只预览：不建目录、不落文件，否则"预览"就有了副作用
-        echo "⏭️  [dry-run] 将写 ~/.agentguard/harness.path → $HARNESS_WIN"
+        echo "⏭️  [dry-run] 将写 $CFG_HOME/harness.path → $HARNESS_WIN"
     else
-        mkdir -p "$AGENTGUARD_HOME"
-        printf '%s\n' "$HARNESS_WIN" > "$AGENTGUARD_HOME/harness.path"
-        echo "✅ 已写 ~/.agentguard/harness.path → $HARNESS_WIN"
+        mkdir -p "$CFG_HOME"
+        printf '%s\n' "$HARNESS_WIN" > "$CFG_HOME/harness.path"
+        echo "✅ 已写 $CFG_HOME/harness.path → $HARNESS_WIN"
     fi
 else
-    echo "⏭️  ~/.agentguard/harness.path 已是当前工程根，未改动"
+    echo "⏭️  $CFG_HOME/harness.path 已是当前工程根，未改动"
 fi
 
 # ---------- 第 2 步：枚举 gate，逐仓装 hook ----------

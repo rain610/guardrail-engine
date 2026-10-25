@@ -1,4 +1,4 @@
-# Qoder CN IDE 接入 agentguard
+# Qoder CN IDE 接入 guardrail-engine
 
 > 实证：Qoder CN IDE 包内 **34 个文件出现 `AGENTS.md`**，并自带一个叫 `better-harness` 的插件
 > （含 `agent-customize/agents-md-review.md`、`platforms/qoder.md`）→ **原生支持 AGENTS.md 规则**。
@@ -99,7 +99,7 @@ qoder: {
 }
 ```
 
-`<HARNESS_SHIM>` = 我们那份通用钩子（本机 `C:\Users\HP\.agentguard\hooks\agentguard-gate.py`，
+`<HARNESS_SHIM>` = 我们那份通用钩子（本机 `C:\Users\HP\.guardrail-engine\hooks\agentguard-gate.py`，
 转发到仓内正本）。
 
 ### 5.4 已做的验证（本机实测）

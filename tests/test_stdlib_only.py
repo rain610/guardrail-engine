@@ -6,7 +6,8 @@ CI 容器、同事新装的 Python 都会当场跑不起来——而这类破坏
 直到别人接入才暴露。本守卫把这条承诺变成可执行断言。
 
 扫描范围：checks/*.py、harness/*.py、harness/hooks/*.py、harness/agents/*.py、
-          agentguard/*.py（打包壳——与引擎同为「同事机器上必须开箱能跑」，2026-09-16 补）
+          guardrail_engine/*.py（打包壳——与引擎同为「同事机器上必须开箱能跑」）
+          agentguard/*.py（迁移期兼容壳，v0.3 移除）
 判定规则：模块名 ∈ 标准库（sys.stdlib_module_names，3.10+）或 ∈ 本工程模块（同目录 .py 文件名）
           → 放行；名单外的再看模块来源，落在 site-packages/dist-packages 或定位不到 → 判为第三方。
           第二步不依赖名单完整性，因而在 3.9 及更早解释器上同样可信。
@@ -23,7 +24,8 @@ SCAN_DIRS = [
     os.path.join(ROOT, "harness"),
     os.path.join(ROOT, "harness", "hooks"),
     os.path.join(ROOT, "harness", "agents"),
-    os.path.join(ROOT, "agentguard"),      # 打包壳（ADR-0001：壳也零第三方依赖）
+    os.path.join(ROOT, "guardrail_engine"),  # 打包壳（ADR-0001：壳也零第三方依赖）
+    os.path.join(ROOT, "agentguard"),        # 迁移期兼容壳（v0.3 移除）
 ]
 
 # sys.stdlib_module_names 是 3.10+ 才有的权威清单；旧解释器上用本回落表

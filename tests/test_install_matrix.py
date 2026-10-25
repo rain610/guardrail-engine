@@ -16,7 +16,7 @@ G4 说的是：装出来的副本各自读各自的地方，谁都不报自己�
    而且判据是拿**提示文案**去比 —— 改一句话就静默失效。
 
 安全约定：全部在**临时 HOME** 里跑（重定向 HOME/USERPROFILE/CLAUDE_CONFIG_DIR），
-绝不读改本机真实的 ~/.claude 与 ~/.agentguard。
+绝不读改本机真实的 ~/.claude 与 ~/.guardrail-engine。
 """
 import io
 import json
@@ -27,8 +27,8 @@ import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CLI = os.path.join(ROOT, "agentguard", "cli.py")
-SKILL_SRC = os.path.join(ROOT, "integrations", "agentguard-skill")
+CLI = os.path.join(ROOT, "guardrail_engine", "cli.py")
+SKILL_SRC = os.path.join(ROOT, "integrations", "guardrail-engine-skill")
 DRIFT_MARK = "有副本与引擎仓不同版/不同内容"
 
 
@@ -74,7 +74,7 @@ class InstallMatrixTest(unittest.TestCase):
 
     def test_stale_skill_copy_is_reported(self):
         """阴性对照（防"把警告删了了事"）：技能副本落后于引擎仓时，必须报出来。"""
-        t = os.path.join(self.home, ".claude", "skills", "agentguard")
+        t = os.path.join(self.home, ".claude", "skills", "guardrail-engine")
         _write(os.path.join(t, "SKILL.md"), "# 上一版的内容（与引擎仓不同）\n")
         rc, out = self._run()
         self.assertEqual(rc, 0, out)
@@ -87,7 +87,7 @@ class InstallMatrixTest(unittest.TestCase):
         它的现场是"7 家客户端的编辑期门禁整体无声失效"：shim 在、路径在、什么也不报，
         只是每次检查都读不到引擎。所以它必须算偏差（与"没装"刚好相反）。
         """
-        agents = os.path.join(self.home, ".agentguard")
+        agents = os.path.join(self.home, ".guardrail-engine")
         _write(os.path.join(agents, "hooks", "agentguard-gate.py"), "# 探针\n")
         _write(os.path.join(agents, "harness.path"),
                os.path.join(self.tmp.name, "gone-repo").replace("\\", "/") + "\n")

@@ -104,7 +104,7 @@ def main(argv=None):
 
     r0 = req("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                             "clientInfo": {"name": "verify-plugin", "version": "0"}})
-    ok_init = r0.get("result", {}).get("serverInfo", {}).get("name") == "agentguard"
+    ok_init = r0.get("result", {}).get("serverInfo", {}).get("name") == "guardrail-engine"
     print("initialize: serverInfo=%s" % r0.get("result", {}).get("serverInfo"))
 
     p.stdin.write((json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n").encode())

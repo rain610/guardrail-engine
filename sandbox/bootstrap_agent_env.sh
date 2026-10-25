@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# agentguard/sandbox/bootstrap_agent_env.sh
+# guardrail-engine/sandbox/bootstrap_agent_env.sh
 # ==============================================================================
 # AI Agent 环境一键装配（新机器/新同事/新工具接入用）
 # 做四件事：
 #   1. 全局引导统一：~/.codex/AGENTS.md、~/.config/opencode/AGENTS.md、
 #      ~/.claude/CLAUDE.md、~/.codebuddy/rules/agentguard.md
-#      写薄壳指向 ~/.agentguard/GLOBAL_AGENTS.md（唯一权威源）
+#      写薄壳指向 ~/.guardrail-engine/GLOBAL_AGENTS.md（旧 ~/.agentguard/ 仍认）
 #      （原文件自动备份为 *.bak-<日期>，MCP 注入块会由工具自动重建）
 #      ⚠ 只写**已确认该工具会自动加载**的位置（判据见 make_shell 调用处）：
 #        往一个没人读的路径里写薄壳 = "装好了"的假象，比不写更糟。
@@ -16,13 +16,17 @@
 # ==============================================================================
 set -u
 
-HARNESS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # = agentguard/
+HARNESS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # = guardrail-engine/
 # Windows 风格正斜杠路径（cygpath -m）：喂给 **Windows 上的 python / git** 时必须用它 ——
 # git-bash 的 `/d/...` 那边的程序打不开（实测踩到，见本文件末尾指针那段）。
 # cygpath 不存在时（WSL / Linux）原样返回 `/mnt/d/...` 或 `/home/...`，正是那边要的形态。
 HARNESS_WIN="$(sh "$HARNESS_ROOT/sandbox/where.sh" --win 2>/dev/null)"
 [ -n "$HARNESS_WIN" ] || HARNESS_WIN="$HARNESS_ROOT"
-GLOBAL_DIR="$HOME/.agentguard"
+if [ -d "$HOME/.guardrail-engine" ] || [ ! -d "$HOME/.agentguard" ]; then
+  GLOBAL_DIR="$HOME/.guardrail-engine"
+else
+  GLOBAL_DIR="$HOME/.agentguard"       # 旧机器继续用旧目录（不迁移、不丢配置）
+fi
 GLOBAL_SRC="$GLOBAL_DIR/GLOBAL_AGENTS.md"
 DATE_TAG="$(date +%Y%m%d)"
 SKILLS_SRC="$HOME/.skills-manager/skills"
@@ -398,14 +402,14 @@ fi
 
 echo "--- 5. 门禁钩子定位指针 ---"
 # 第三轮 N-ε：钩子脚本（integrations/hooks/）定位工程根的顺序是
-# AGENTGUARD_DIR（旧名 HARNESS_DIR 兼容）→ ~/.agentguard/harness.path → 常见位置 → 从 cwd 向上找。
+# GUARDRAIL_ENGINE_DIR（旧名 AGENTGUARD_DIR / HARNESS_DIR 兼容）→ 指针文件 → 常见位置 → 从 cwd 向上找。
 # 指针这一环原先没有任何脚本生成 = 文档里的选项②空转，这里补上（幂等）。
-mkdir -p "$HOME/.agentguard"
+mkdir -p "$GLOBAL_DIR"
 # 指针是给 **Python 钩子**读的，必须写 Windows 风格正斜杠路径：git-bash 的 `pwd` 给的是
 # `/d/...`，Python 在 Windows 上打不开（实测踩到）。取值在文件顶部统一算好（HARNESS_WIN ←
 # where.sh --win，内部走 cygpath -m），此处直接复用 —— 一处求值，两处受用。
-printf '%s\n' "$HARNESS_WIN" > "$HOME/.agentguard/harness.path"
-echo "  ✓ 已写入 $HOME/.agentguard/harness.path → $HARNESS_WIN"
+printf '%s\n' "$HARNESS_WIN" > "$GLOBAL_DIR/harness.path"
+echo "  ✓ 已写入 $GLOBAL_DIR/harness.path → $HARNESS_WIN"
 echo "    （供 Claude/Codex 钩子在无环境变量时定位工程；换工程位置重跑本脚本即可）"
 
 echo "=== 装配完成。所有 AI 工具现在读取同一份守则 ==="
