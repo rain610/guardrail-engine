@@ -44,7 +44,12 @@ def _stdlib_set():
 
 
 def _local_modules():
-    """本工程内可直接 import 的模块名（各扫描目录下的 .py 文件名）。"""
+    """本工程内可直接 import 的模块名（.py 文件名 + 包目录名）。
+
+    包目录（带 `__init__.py`）本身也是合法导入名：兼容壳 `agentguard/` 里写的是
+    `from guardrail_engine import ...`，只收文件名会把它误判成第三方（CI 的同类
+    扫描器 2026-10-25 正是这样红过一次）。
+    """
     names = set()
     for d in SCAN_DIRS:
         if not os.path.isdir(d):
@@ -52,6 +57,8 @@ def _local_modules():
         for fn in os.listdir(d):
             if fn.endswith(".py"):
                 names.add(fn[:-3])
+        if os.path.isfile(os.path.join(d, "__init__.py")):
+            names.add(os.path.basename(d))
     return names
 
 
@@ -124,6 +131,13 @@ class TestStdlibOnly(unittest.TestCase):
         self.assertEqual(offenders, [],
                          "引擎层出现第三方依赖（破坏'纯标准库'承诺，干净机器会跑不起来）:\n  "
                          + "\n  ".join(offenders))
+
+    def test_package_dirs_are_local_import_names(self):
+        """包目录本身必须算「本工程模块」——兼容壳 import 主包不能报第三方。"""
+        local = _local_modules()
+        for pkg in ("guardrail_engine", "agentguard"):
+            self.assertIn(pkg, local, "包目录 %s 没进本工程模块名单" % pkg)
+        self.assertEqual(_third_party("from guardrail_engine import cli\n", local), [])
 
     def test_guard_actually_detects_violation(self):
         """守卫自检：合成源码里的第三方 import 必须被抓到（防守卫自身失效）；

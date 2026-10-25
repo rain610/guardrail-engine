@@ -33,6 +33,10 @@ jobs:
           for d in SCAN_DIRS:
               if os.path.isdir(d):
                   local.update(fn[:-3] for fn in os.listdir(d) if fn.endswith(".py"))
+                  # 包目录本身也是合法导入名（guardrail_engine / agentguard），
+                  # 只收 .py 文件名会把 `from guardrail_engine import ...` 误判成第三方。
+                  if os.path.isfile(os.path.join(d, "__init__.py")):
+                      local.add(d.split("/")[0])
 
           stdlib = set(getattr(sys, "stdlib_module_names", ()))
           offenders = []
