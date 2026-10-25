@@ -64,6 +64,8 @@ def _in_protected(rel):
     # 2026-10-21（外部评审 5.7-C）：审计器与锁清单同属「让证据好看」的入口 ——
     # 改弱它们同样能冒充通过，不能只在 checks/ 里设防。
     if r in ("harness/run_gate.py", "harness/_config.py",
+             "harness/_validate.py", "harness/_engine_meta.py",
+             "harness/_yaml_compat.py", "harness/_errors.py",
              "harness/coverage.py", "harness/_eol_policy.py",
              "harness/hooks-dir/pre-commit",
              # N5 修复（第二轮评审）：commit-msg 同属共享分发器实体，漏保护=可被静默改弱

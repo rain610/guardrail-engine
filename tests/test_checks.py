@@ -785,6 +785,11 @@ class TestGuard(unittest.TestCase):
             "integrations/hooks/agentguard-gate.py": True,
             "integrations/codex/README.md": False,
             "harness/_config.py": True,
+            # 2026-10-25 拆分：校验 / 版本 / 解析模块与调度器同等保护
+            "harness/_validate.py": True,
+            "harness/_engine_meta.py": True,
+            "harness/_yaml_compat.py": True,
+            "harness/_errors.py": True,
             "harness/hooks/pre-commit.py": True,
             "harness/hooks-dir/pre-commit": True,
             "harness/agents/auto-gate.py": True,

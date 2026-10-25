@@ -156,7 +156,7 @@ MUTATIONS = [
             "★ 2026-09-17 重新对锚：62811cc 给这条提示加了去重（_policy_notice_once），"
             "锚点因此失配、冒烟报 SKIP —— 而冒烟当时正因副本没有 .git 而空转，"
             "SKIP 没人看见。锚点跟着新写法重对，判据（泛泛提示 / 信号为空）一字未改。"},
-    {"id": "M17-runon-ghost-trigger", "file": "harness/run_gate.py", "kind": "exact",
+    {"id": "M17-runon-ghost-trigger", "file": "harness/_validate.py", "kind": "exact",
      "old": '        _RUN_ON_OK = {"pre_commit", "post_edit"}',
      "new": '        _RUN_ON_OK = {"pre_commit", "post_edit", "stop", "auto"}  # mutation-smoke',
      "lock": "test_review_v8_batch3.py",
@@ -455,7 +455,7 @@ MUTATIONS = [
             "而他自己的代码一个字节都没被检查过**（拦在自检这一步）。"
             "★ 为什么这条锁必须端到端：⑤ 跑在子进程里，事故现场就是它；只测 `_config` 的函数"
             "只能证明「引擎知道这个键没填」，证明不了「谁读了它、得出的结论是什么」。"},
-    {"id": "M48-validate-blocks-on-unfilled-key", "file": "harness/run_gate.py", "kind": "exact",
+    {"id": "M48-validate-blocks-on-unfilled-key", "file": "harness/_validate.py", "kind": "exact",
      "old": '        elif not rp:\n            norepo = True',
      "new": '        elif not rp:\n            issues.append("repo 未配置")   # mutation-smoke',
      "lock": "test_repo_key_registry.py",

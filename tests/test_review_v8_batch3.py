@@ -143,7 +143,7 @@ class TestD2ValidateValueDomain(unittest.TestCase):
         """
         import ast
         import re
-        src = _read("harness/run_gate.py")
+        src = _read("harness/_validate.py")
         allowed = None
         for node in ast.walk(ast.parse(src)):
             if isinstance(node, ast.Assign) and any(
@@ -166,7 +166,7 @@ class TestD2ValidateValueDomain(unittest.TestCase):
                          % (sorted(allowed - seen), sorted(seen - allowed)))
 
     def test_registry_covers_all_gates(self):
-        src = _read("harness/run_gate.py")
+        src = _read("harness/_validate.py")
         self.assertIn("script_for(_name)", src, "registry 校验必须遍历全部 gate，不是只抽查第一个")
 
 

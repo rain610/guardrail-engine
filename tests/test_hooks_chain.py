@@ -300,8 +300,10 @@ class TestSetupMachineScript(unittest.TestCase):
         for d in ("config", "sandbox", "harness"):
             os.makedirs(os.path.join(h2, d))
         shutil.copy(os.path.join(SANDBOX, "setup_machine.sh"), os.path.join(h2, "sandbox"))
-        shutil.copy(os.path.join(ROOT, "harness", "_config.py"),
-                    os.path.join(h2, "harness", "_config.py"))
+        # _config 的解析依赖已拆成同目录模块，最小树里一并带上（缺一个就 ImportError）。
+        for mod in ("_config.py", "_errors.py", "_yaml_compat.py"):
+            shutil.copy(os.path.join(ROOT, "harness", mod),
+                        os.path.join(h2, "harness", mod))
         # 端仓目录真实存在 → dry-run 才会打印 "[dry-run] <gate> -> <path>"
         repo = os.path.join(self.tmp, "fx_repo")
         os.makedirs(repo)

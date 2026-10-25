@@ -25,6 +25,11 @@
   `extensions/agentguard`。
 - 自带引擎的 wheel 与离线安装包的目录名改为 `guardrail-engine-package-v<版本>`；
   `sandbox/pack_release.py` 产出的内容与校验口径同步。
+- **调度层拆分**：`harness/run_gate.py` 只保留调度、台账与通知，配置体检拆到
+  `harness/_validate.py`，引擎版本/内容哈希拆到 `harness/_engine_meta.py`；
+  `_config.py` 的内置 YAML 兼容解析拆到 `_yaml_compat.py`、`ConfigError` 拆到
+  `_errors.py`。对外行为与既有导入名不变（`run_gate._validate` 等仍可调用），
+  变异锚点与受保护文件清单同步指向新模块。
 
 ### Added
 
