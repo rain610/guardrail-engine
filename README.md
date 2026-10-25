@@ -487,7 +487,7 @@ python -m unittest discover -s tests
 ```
 
 发布链（`.github/workflows/release.yml`）与每日定时（`.github/workflows/nightly.yml`）
-还会跑三类慢闸门：变异冒烟（105 条变异，验证锁真的会红）、真打包后的真产物锁、
+还会跑三类慢闸门：变异冒烟（106 条变异，验证锁真的会红）、真打包后的真产物锁、
 干净 venv 安装并执行 `agentguard --version`（轮子自带引擎，不依赖引擎检出）。
 本机复现：先 `python sandbox/pack_release.py`，再跑
 `python tests/test_release_artifact.py TestRealArtifactPasses -v`；venv 安装命令见

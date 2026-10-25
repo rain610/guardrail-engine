@@ -562,6 +562,11 @@ class TestLockInventory(unittest.TestCase):
     KNOWN_BLIND = {
         "M114-in-tree-drops-normcase": ("posix", "M115-in-tree-hardcoded-lower"),
         "M115-in-tree-hardcoded-lower": ("nt", "M114-in-tree-drops-normcase"),
+        # 2026-10-25（Nightly L2 实测：M143 在 Linux 上「变异后仍然绿」）：
+        # 杀整树的两份实现各绑一个平台 —— taskkill /T 只对 Windows 可见，
+        # killpg 只对 POSIX 可见。两条合起来才是「两个平台都有人守」。
+        "M143-taskkill-loses-slash-T": ("posix", "M145-killpg-becomes-proc-kill"),
+        "M145-killpg-becomes-proc-kill": ("nt", "M143-taskkill-loses-slash-T"),
     }
 
     def test_platform_scoped_shields_are_paired_and_inventoried(self):

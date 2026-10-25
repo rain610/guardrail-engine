@@ -162,7 +162,8 @@
     "M141-done-ignores-caller-cwd",
     "M142-repo-root-ignores-file",
     "M143-taskkill-loses-slash-T",
-    "M144-run-all-timeout-back-to-300"
+    "M144-run-all-timeout-back-to-300",
+    "M145-killpg-becomes-proc-kill"
   ],
   "_notes": [
     "锁数量与变异护盾清单：模块数、每模块 test 方法数、总数只增不减；有意减少必须同一次提交里更新本文件。",

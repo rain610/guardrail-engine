@@ -1361,7 +1361,13 @@ MUTATIONS = [
      "lock": "test_agentguard.py",
      "expect": "test_timeout_kills_grandchild_and_returns_fast",
      "why": "把 taskkill 的 /T（杀整棵）拆掉：回到「只杀直接子进程」的旧形状 —— 孙进程继续跑、"
-            "父进程又阻塞在管道 EOF 上，正是 100 分钟卡死的那个病灶。"},
+            "父进程又阻塞在管道 EOF 上，正是 100 分钟卡死的那个病灶。"
+            "⚠ 这条只对 Windows 分支可见（`os.name == \"nt\"`）；POSIX 走 killpg，"
+            "撤掉 /T 不改变任何行为。互补的那条是 `M145`（守 POSIX 半边）。",
+     "blind_on": ["posix"],
+     "blind_why": "`/T` 只出现在 `if os.name == \"nt\"` 分支里；POSIX 上该分支永不执行，"
+                  "变异体与原体在 Linux 上语义相同，锁**没有理由**红。",
+     "covered_by": "M145-killpg-becomes-proc-kill"},
     {"id": "M144-run-all-timeout-back-to-300", "file": "agentguard/cli.py",
      "kind": "exact",
      "old": '        timeout = 3600\n',
@@ -1370,6 +1376,20 @@ MUTATIONS = [
      "expect": "test_run_all_gets_the_longer_default_timeout",
      "why": "全量扫描默认超时退回 300s：大仓全扫必然超时（实测小时级 wall），用户的 --all 又"
             "变回一次「超时报错 + 输出全丢」。"},
+    {"id": "M145-killpg-becomes-proc-kill", "file": "agentguard/cli.py",
+     "kind": "exact",
+     "old": '                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)\n',
+     "new": '                proc.kill()  # mutation-smoke\n',
+     "lock": "test_agentguard.py",
+     "expect": "test_timeout_kills_grandchild_and_returns_fast",
+     "why": "把 POSIX 的「杀整个进程组」退化成「只杀直接子进程」—— 与 M143 在 Windows 上撤掉 /T "
+            "是同一个病灶的 POSIX 半边：孙进程继续跑、二次 communicate 被管道写端拖住，"
+            "超时路径重新变成 100 分钟卡死。"
+            "⚠ 它在 Windows 上不可见（走的是 taskkill 分支，killpg 永不执行）。",
+     "blind_on": ["nt"],
+     "blind_why": "Windows 走 `if os.name == \"nt\"` 的 taskkill 分支，killpg 那行永不执行 ⇒ "
+                  "变异体与原体在 Windows 上语义相同，锁**没有理由**红。",
+     "covered_by": "M143-taskkill-loses-slash-T"},
 ]
 
 

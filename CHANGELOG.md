@@ -46,6 +46,10 @@
   源被改过 → 误报「内容不同」（全量并行跑实测复现）。
 - 文档与元数据订正：README 的安装首步改为 `pip install .`（PyPI 未发布）、补 Git Bash
   前置条件与 `RULESETS` 登记说明、快跑耗时改为实测区间；`pyproject` 描述改为 wheel 自带引擎。
+- **变异冒烟给「杀整树」补上 POSIX 半边**：`M143` 撤掉的是 Windows 分支的 taskkill `/T`，
+  在 Linux 上走的是 killpg、该分支永不执行 —— Nightly L2 因此把它误报成「变异后仍然绿」。
+  `M143` 现声明 `blind_on: posix`，并新增互补的 `M145`（把 killpg 退化成 proc.kill，Windows 上盲），
+  两条互相兜底；平台盲区名单同步登记，仍由 `test_lock_inventory` 钉死「没有一条护盾两个平台都瞎」。
 
 ### Changed
 
