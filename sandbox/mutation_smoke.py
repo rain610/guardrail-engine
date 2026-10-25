@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """变异冒烟（评审 v11 §3-改进方案 1）：把「锁真的有牙齿」变成**可执行断言**。
 
-为什么需要它：`tests/test_lock_inventory.py` 只回答「锁在不在」；它挡不住
+为什么需要它：`tests/tooling/test_lock_inventory.py` 只回答「锁在不在」；它挡不住
 「方法在、但断言被弱化/方法体空转」——评审 v11 §3 现场演示过（弱化 L7 + M7 变异下，
 看守与套件同时全绿）。本脚本回答「锁还咬不咬」。
 
@@ -28,7 +28,7 @@
    处置**不是**删护盾（删掉就是把"让它闭嘴"当成"修好了"，本仓管这叫假绿），而是让冒烟
    认得「本平台看不见」并**明说**：声明要写进变异条目（`blind_on` + `blind_why` + `covered_by`），
    运行时打印 `BLIND` 行、汇总里单列计数、**不计入命中也不计入失败**。
-   ⚠ 这是个**逃生门**，所以它自己被上锁：`tests/test_lock_inventory.py::
+   ⚠ 这是个**逃生门**，所以它自己被上锁：`tests/tooling/test_lock_inventory.py::
    test_platform_scoped_shields_are_paired_and_inventoried` 钉死三件事 ——
    ① 声明集合是**逐个列举**的（增删都要动锁，不能悄悄多一条）；
    ② 每条必须有非空 `blind_why`；
@@ -363,7 +363,7 @@ MUTATIONS = [
             "的提醒变成**逢包必响**，人很快学会无视它，真正该看见的那次也就看不见了 —— "
             "漏报与噪音是同一种失败。★ 与 M34 互补：M34 管「覆盖得够不够宽」，本条管"
             "「进来的东西按什么算」。两条都会让 test_identical_repack_stays_quiet 变红。"},
-    {"id": "M38-lock-renamed-out-of-collection", "file": "tests/test_review_v13_batch1.py",
+    {"id": "M38-lock-renamed-out-of-collection", "file": "tests/review/test_review_v13_batch1.py",
      "kind": "exact",
      "old": '    def test_no_newline_marker_does_not_shift_lines(self):',
      "new": '    def _disabled_no_newline_marker_does_not_shift_lines(self):  # mutation-smoke',
@@ -1148,7 +1148,7 @@ MUTATIONS = [
             "（`Stop` 钩子还扫全仓，跨会话也成立）⇒ 注入通道可被第三方借用。"
             "与 ③ 是同一条通道的**第二个面**：③ 删的是「教语法」的两处，本条守的是「别搬运字」。"},
     {"id": "M117-probe-restore-truncates-then-writes",
-     "file": "tests/test_hooks_chain.py",
+     "file": "tests/engine/test_hooks_chain.py",
      "kind": "exact",
      "old": ('                with open(self._probe, "r+b") as f:\n'
              '                    f.truncate(n)           # ← 只改长度，不填空文件；读者见不到 0 字节\n'),
@@ -1479,12 +1479,12 @@ def run(cmd, cwd, timeout=600):
     """跑一次被测命令 —— **钉死在全严格档**，不跟调用方的 HARNESS_FAST 走。
 
     2026-09-17：本函数原先不传 `env=`，子进程**继承**调用方环境。而 M1/M3/M5/M7 四条变异的
-    lock 正是 `tests/test_review_v9_batch1.py` —— 那个文件接上快跑开关后，谁 shell 里带着
+    lock 正是 `tests/review/test_review_v9_batch1.py` —— 那个文件接上快跑开关后，谁 shell 里带着
     `HARNESS_FAST=1` 跑冒烟（README 把 `--fast` 列为日常档，export 出去很自然），这四条会报
     「变异后仍然绿」：**锁明明还在，却被读成"锁被弱化"**。假红与假绿同害 —— 都会把这条机制
     训成噪音，而冒烟这份"牙齿名单"一旦被训成噪音，就再没人信它了。
     所以只剔 `HARNESS_FAST` 这一个变量（不清空环境：其余变量照常继承，
-    见 tests/test_lock_inventory.py::test_smoke_run_is_pinned_to_full_mode 的两向断言）。
+    见 tests/tooling/test_lock_inventory.py::test_smoke_run_is_pinned_to_full_mode 的两向断言）。
     """
     env = dict(os.environ)
     env.pop("HARNESS_FAST", None)
@@ -1504,7 +1504,7 @@ def _lock_cmd(lock, expect):
     ★ `expect` 缺失时**退回整跑模块**（不是 `-k ""`）：`-k ""` 会匹配到全部用例、
     看起来"也跑了"，实际把「这条变异没登记期望锁」这件事藏了起来；退回整跑至少
     行为与旧版逐字相同，`main()` 里 `exp and …` 那一支也会照旧给出判定。
-    两向锁见 tests/test_lock_inventory.py::test_lock_run_targets_only_the_named_case。
+    两向锁见 tests/tooling/test_lock_inventory.py::test_lock_run_targets_only_the_named_case。
 
     ★ `--full-module-lock` 是**排查用的退路**，不是日常档：万一某条变异的失败依赖同模块
     里别的用例留下的状态，"点名跑"会与"整跑"给出不同判定 —— 那时用它对 A/B，别拿它当默认。
@@ -1683,7 +1683,7 @@ def main():
         # 起因是上面那两处修复的同一个现场：`--only=` 写成短 id → 空转一圈报绿；`--only ` 空格写法
         # 被静默忽略 → 本来只想跑一条、结果跑了全量（当时 95 条，约四十分钟）。两种错方向相反，根因是同一个：
         # **选择不可见** —— 敲下命令之后、出结论之前，没有任何一处告诉你"你选中的是这些"。
-        # 它也是 `tests/test_lock_inventory.py::test_only_filter_is_never_silently_ignored_or_widened`
+        # 它也是 `tests/tooling/test_lock_inventory.py::test_only_filter_is_never_silently_ignored_or_widened`
         # 的观察窗：那条锁要验的是**真入口怎么解析**，而真跑一条变异要 ~84s（对照段是大头），
         # 四向加起来小十分钟 —— 干跑把这件事变成毫秒级且不落盘。
         # ⚠ 位置要紧：它在守卫**之后**。摆在守卫前面的话，`--only <短 id>` 会打印「选中 0 个变异」

@@ -37,10 +37,10 @@ SKILLS_SRC="$HOME/.skills-manager/skills"
 # Windows 的 Microsoft Store python3.exe 别名（command -v 能命中、一跑就失败）/ 系统里是 Python 2。
 # HARNESS-PY-CANDIDATES: python3 python py -3
 #   ↑ 机器可读的单一事实来源（正本在 harness/hooks-dir/pre-commit）：
-#     tests/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
+#     tests/packaging/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
 #     候选顺序只允许在标记行改，改完各处必须同步。
 # 为什么内联、不 source 一个同级 _python.sh：本仓多条锁会搭**只拷单个脚本**的最小布局真跑
-# （如 tests/test_hooks_chain.py:238/261），同级新文件不会被拷过去 → 那些锁当场失效。
+# （如 tests/engine/test_hooks_chain.py:238/261），同级新文件不会被拷过去 → 那些锁当场失效。
 HARNESS_PY=""
 for _c in "${HARNESS_PYTHON:-}" python3 python; do
     [ -n "$_c" ] || continue
@@ -94,7 +94,7 @@ echo "harness: $HARNESS_ROOT"
 # 先写的那份就会被后写的那份判成"没有哨兵的老文件" → 走迁移分支，把整份旧内容追加到
 # 哨兵区之后；两个写入方交替跑（装 shim → 跑 bootstrap → 再装 shim…），文件每跑一次
 # 涨一倍，而屏幕上每次都打着绿色的 ✓。所以正文与拼装收进 sandbox/global_agents.py，
-# 两个写入方都调它 —— 没有第二份可漂。锁：tests/test_global_agents.py。
+# 两个写入方都调它 —— 没有第二份可漂。锁：tests/engine/test_global_agents.py。
 # 顺带修掉一个潜在 bug：原先那个占位符替换是拿 sed 的 s 命令做的，工程路径含竖线或 & 时
 # 会被 sed 当元字符吃掉/改写（仓放在 ~/a&b/ 下就是活例）；str.replace 不解释元字符。
 # 本脚本只留**人类文案**（下面 case 那段）；机读的动作词由模块打在 stdout，警告走 stderr。

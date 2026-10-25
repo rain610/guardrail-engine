@@ -107,7 +107,7 @@ qoder: {
 - **契约级**（不依赖模型）：用 Qoder 形态的 payload 直喂钩子 ——
   `PostToolUse` → `rc=0` + 结论在 **stdout JSON（additionalContext）**、stderr 同时有明文；
   `PreToolUse` → `rc=0` + JSON `permissionDecision=deny` ✅
-  另有 2 条回归锁（`tests/test_entry_level.py::TestAgentHookContracts`）。
+  另有 2 条回归锁（`tests/engine/test_entry_level.py::TestAgentHookContracts`）。
   > 2026-09-23 更正：本行原写「`PostToolUse` → `rc=2` + 结论在 stdout、stderr 为空」——
   > 那是 §7 改判**之前**的旧口径，照它验收会把"改对了"误判成"不符合预期"。
 - **端到端**（IDE 里让 agent 真去写违规）：**待你在 Qoder 里跑一次** —— `qoder-cn` 只有 IDE 启动器、
@@ -212,7 +212,7 @@ qoderclicn --version
 | 自带 better-harness 插件适配层 `renderQoderBlock` | 结论走 stdout | ✅ 方向对（结论要走 stdout JSON），但要配 **exit 0** |
 | **本仓实测（2026-09-13，见 §7）** | —— | ✅ **stdout JSON `additionalContext` + exit 0**（与 CodeBuddy/Codex 同族），stderr 明文保留给人看 |
 
-回归锁：`tests/test_entry_level.py::TestAgentHookContracts::test_qoder_posttooluse_json_contract`
+回归锁：`tests/engine/test_entry_level.py::TestAgentHookContracts::test_qoder_posttooluse_json_contract`
 （原名 `..._exit2_on_stdout`，按实测改写；docstring 里留了出处，防止后人"照文档改回去"）。
 
 ### 6.4 装了以后能干什么
@@ -250,7 +250,7 @@ Hook [...gate.py qoder PostToolUse] stdout:  harness 门禁未通过…  ← 结
 
 - 钩子 `client=qoder` 的非 `PreToolUse` 分支改为 **stdout JSON `additionalContext` + exit 0**
   （与 CodeBuddy/Codex 同族），stderr 明文保留（给人看/留档）。
-- 回归锁：`tests/test_entry_level.py::TestAgentHookContracts::test_qoder_posttooluse_json_contract`
+- 回归锁：`tests/engine/test_entry_level.py::TestAgentHookContracts::test_qoder_posttooluse_json_contract`
   （原来的 `..._exit2_on_stdout` 已按实测改写，并在 docstring 里留了这段出处，防止后人"按文档改回去"）。
 - `sandbox/verify_integrations.sh` 判据补充：Qoder CLI 有时不输出到 stdout（留档 0 字节），
   此时改看**它的会话段**里有没有「门禁未通过」。

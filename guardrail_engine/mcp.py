@@ -54,7 +54,7 @@ MAX_OUTPUT = int(os.environ.get("GUARDRAIL_MCP_MAX_OUTPUT")
 # ---------- 工程根定位 / 版本（转发壳层公用件 _shell.py，与 cli.py 同一份实现） ----------
 # 双形态导入（三种运行形态都要成立，详见 _shell.py 文件头）：
 #   ① 安装形态（包上下文）→ 相对导入；② 脚本直跑（脚本目录在 sys.path[0]）→ 裸导入；
-#   ③ exec_module（tests/test_preflight.py 按路径 exec 本文件）→ 无包上下文，补 sys.path 后裸导入。
+#   ③ exec_module（tests/engine/test_preflight.py 按路径 exec 本文件）→ 无包上下文，补 sys.path 后裸导入。
 try:
     from . import _shell
 except ImportError:      # 无包上下文；若是 _shell 自身的 ImportError，下面这句会原样再抛

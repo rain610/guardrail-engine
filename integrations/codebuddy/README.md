@@ -61,7 +61,7 @@ Other exit codes - show stderr to user only     ← 只给用户看，**不回�
 | `PreToolUse` | `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"<结论>"}}` | 真阻断（留给"危险命令"类前置判断） |
 
 > 我们那份正本 `integrations/hooks/agentguard-gate.py` 已含 `client=codebuddy` 分支，照上表输出；
-> 并有 2 条契约回归锁（`tests/test_entry_level.py::TestAgentHookContracts`）。
+> 并有 2 条契约回归锁（`tests/engine/test_entry_level.py::TestAgentHookContracts`）。
 
 ## 4. 强制层（工具无关）
 

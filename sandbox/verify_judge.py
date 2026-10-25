@@ -4,7 +4,7 @@
 
 为什么抽出来：回灌判据改过好几次（关键字口径过窄 → 放宽；Qoder 只输出最后一句 → 加行为证据；
 上游报错误判 → 加识别），每次都散落在 `verify_integrations.sh` 的 if/elif 链里，改一次要重新
-人肉回归一遍。抽成纯函数后，`tests/test_verify_judge.py` 用 ≥12 条**人造 fixture** 把"该判 yes /
+人肉回归一遍。抽成纯函数后，`tests/tooling/test_verify_judge.py` 用 ≥12 条**人造 fixture** 把"该判 yes /
 该判 no"钉死 —— 判据再改就是受控修改，而不是碰运气。
 
 输入（全部是数据，不做任何 I/O）：
@@ -30,7 +30,7 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-# ── 判据常量（历史沿革见上面的 docstring；改这里必须同步 tests/test_verify_judge.py）
+# ── 判据常量（历史沿革见上面的 docstring；改这里必须同步 tests/tooling/test_verify_judge.py）
 KEYWORD_RE = re.compile(
     r"门禁(未通过|调用出错)|harness 门禁|发现 [0-9]+ 个阻断级问题|门禁 \[strict\]|门禁 \[loose\]"
     r"|run_gate\] |门禁[^。\n]{0,10}(拦截|通过|阻断|已修)")

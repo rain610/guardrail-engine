@@ -336,7 +336,7 @@ waiver syntax, and exit-code semantics match built-in rules; severity is mapped 
 unknown → block).
 
 **Fail-closed semantics** (these three boundaries are locked in
-`tests/test_external_adapters.py`):
+`tests/engine/test_external_adapters.py`):
 
 | Situation | Exit code | Why it cannot pass |
 |---|---|---|
@@ -448,7 +448,7 @@ The `[harness]` commit marker is a **change declaration**, not a permission boun
 write it locally. The real enforcement lives in repository settings:
 
 - `.github/CODEOWNERS` assigns `checks/`, `harness/`, `config/`, `sandbox/mutation_smoke.py`,
-  `tests/test_lock_inventory.py`, `tests/lock-inventory.json`, and `.github/` to maintainers;
+  `tests/tooling/test_lock_inventory.py`, `tests/lock-inventory.json`, and `.github/` to maintainers;
 - In GitHub **Settings → Branches → Branch protection rules**, enable **Require a pull request
   before merging** and **Require review from Code Owners** for `main`. Committing CODEOWNERS alone
   only *requests* review; it does not block merges;
@@ -598,7 +598,7 @@ The release workflow (`.github/workflows/release.yml`) and the daily nightly
 proving the locks really fail), real-artifact locks on a real package, and a clean-venv install that
 runs `guardrail-engine --version` (the wheel bundles the engine; no checkout required). To reproduce
 locally: run `python sandbox/pack_release.py`, then
-`python tests/test_release_artifact.py TestRealArtifactPasses -v`; the venv command is the
+`python tests/packaging/test_release_artifact.py TestRealArtifactPasses -v`; the venv command is the
 "clean venv install smoke" step in `.github/workflows/release.yml`.
 
 ## Documentation

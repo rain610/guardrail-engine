@@ -104,7 +104,7 @@ cd "$ENGROOT"
 # Windows 的 Microsoft Store python3.exe 别名（command -v 能命中、一跑就失败）/ 系统里是 Python 2。
 # HARNESS-PY-CANDIDATES: python3 python py -3
 #   ↑ 机器可读的单一事实来源（正本在 harness/hooks-dir/pre-commit）：
-#     tests/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
+#     tests/packaging/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
 #     候选顺序只允许在标记行改，改完各处必须同步。
 HARNESS_PY=""
 for _c in "${HARNESS_PYTHON:-}" python3 python; do

@@ -31,7 +31,7 @@ import time
 
 # UTF-8 兜底（2026-09-13 评审 v3 H1 系统性修法）：宿主管道可能是 GBK/ASCII，
 # 打印中文/✗ 会抛 UnicodeEncodeError；errors=replace 最坏只是个别字符变问号。
-# 清单由 sandbox/list_entries.py 机器推导（tests/test_entry_level.py 有对应锁）。
+# 清单由 sandbox/list_entries.py 机器推导（tests/engine/test_entry_level.py 有对应锁）。
 for _stream in (sys.stdout, sys.stderr):
     try:
         _stream.reconfigure(encoding="utf-8", errors="replace")
@@ -53,9 +53,9 @@ CONFIG = os.path.join(ROOT, "config", "harness.toml")
 def ledger_files():
     """台账片全集（时间序）—— 与 harness/run_gate.py::_ledger_files 同判据（跨文件契约，对拍锁）。
 
-    HARNESS_LOG_FILE 密闭 → 只有那一个文件（tests/test_coverage.py 的隔离锁靠它，
+    HARNESS_LOG_FILE 密闭 → 只有那一个文件（tests/engine/test_coverage.py 的隔离锁靠它，
     行为与旧版逐字一致）；否则旧 gate_log.jsonl（若有，排最前）+ 月度片（字典序=月序）。
-    HARNESS_LOG_DIR 与引擎/壳两侧同源（三份判据必须逐字一致，tests/test_gate_log_anchor.py）。
+    HARNESS_LOG_DIR 与引擎/壳两侧同源（三份判据必须逐字一致，tests/engine/test_gate_log_anchor.py）。
     """
     if os.environ.get("HARNESS_LOG_FILE"):
         return [LOG_FILE]
@@ -484,7 +484,7 @@ def main(argv=None):
             last = int(argv[i + 1])
         elif a == "--log" and i + 1 < len(argv):
             log_path = argv[i + 1]
-    # 数据源：显式 --log 或 env 密闭 → 单文件（行为与旧版逐字一致，tests/test_coverage.py
+    # 数据源：显式 --log 或 env 密闭 → 单文件（行为与旧版逐字一致，tests/engine/test_coverage.py
     # 的隔离锁靠它）；否则 None = ledger_files() 月度分片全集，显示行随之一并点名。
     log_src = log_path if (log_path != LOG_FILE or os.environ.get("HARNESS_LOG_FILE")) else None
     if log_src is None:

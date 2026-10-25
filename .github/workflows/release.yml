@@ -53,7 +53,7 @@ jobs:
           fi
 
       - name: 真产物锁（必须在 pack 之后跑，否则 TestRealArtifactPasses 会 skip）
-        run: python tests/test_release_artifact.py TestRealArtifactPasses -v
+        run: python tests/packaging/test_release_artifact.py TestRealArtifactPasses -v
 
       - name: 校验出货件
         run: |

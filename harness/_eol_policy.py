@@ -48,7 +48,7 @@ CRLF → 每一个文件都被判"行尾异常"）。所以修法不是换个新
 
 `core.autocrlf=true` 是 git 对"**被检出的文本文件**"的保证 —— 一个文件都没有的仓里没有可保证的
 对象，可那时它照样返回 true（`git config --get` 会读全局配置），于是**任何空仓都会得到"CRLF"**。
-本仓的测试夹具（`tests/test_entry_level.py::_Fixture` 等）正是这种形态：`git init` + 写文件，
+本仓的测试夹具（`tests/engine/test_entry_level.py::_Fixture` 等）正是这种形态：`git init` + 写文件，
 但从不 `git add` → 索引为空。没有这一步，那些 **H5 夹具会在 Windows 开发机上解析成 CRLF、
 在 Linux CI 上解析成 LF** —— 同一个 fixture 随机器变，是本批最该消灭的那类差异。
 有这一步，它们的判据一律落端默认，与今天逐字节相同，因而**不需要逐个去钉 `line_ending`**。
@@ -67,8 +67,8 @@ CRLF → 每一个文件都被判"行尾异常"）。所以修法不是换个新
     所以必须比工作树侧 —— 拿索引侧比，那个 H5 仓那 1732 个 CRLF 照样全红（它 `i/lf w/crlf`）。
   · 位置也是硬约束：不能放 `sandbox/`（`tests/_engine_copy.py` 只拷 `checks/ harness/ config/`
     三棵子树，"工程副本"里根本没有 sandbox/），也不能 `import eol_text`
-    （`tests/test_stdlib_only.py` 只收引擎层模块 → 会走 find_spec 失败分支判"疑似第三方"）。
-  · 两份实现对"同一份 `--eol` 输出"的解析必须不漂移：`tests/test_review_v13_batch9.py`
+    （`tests/engine/test_stdlib_only.py` 只收引擎层模块 → 会走 find_spec 失败分支判"疑似第三方"）。
+  · 两份实现对"同一份 `--eol` 输出"的解析必须不漂移：`tests/review/test_review_v13_batch9.py`
     里有一条对拍锁，造一个「索引 LF / 工作树 CRLF」的真临时仓，断言两边各自与
     `git ls-files --eol` 的对应列**逐字相符**。
 """
@@ -223,7 +223,7 @@ def resolve(repo, gate_cfg, endpoint_default, gate_name=""):
     """→ `(期望行尾, 来源)`。**这是本模块唯一的对外入口。**
 
     `endpoint_default` 由调用方给（PC="CRLF" / H5="LF"），它同时是"判不出来"时的兜底 ——
-    刻意**不**按 `os.name` 判：夹具（`tests/test_entry_level.py::_Fixture`）只 `git init`
+    刻意**不**按 `os.name` 判：夹具（`tests/engine/test_entry_level.py::_Fixture`）只 `git init`
     从不 `git add`，`ls-files --eol` 输出为空 → 判据必然落兜底；按 OS 判会让 CI（ubuntu）
     与 Windows 上同一份夹具得出不同答案，而它们本来是完全一致的。端默认让两端都逐字节不变。
 

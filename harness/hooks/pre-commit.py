@@ -236,7 +236,7 @@ def _run_guard(gate_name, repo):
     "本仓提交"，再撞上"pre-commit 阶段读不到提交消息 → 本阶段放行"，哨兵在真实提交链路上
     **恒返回 0** —— 不是偶尔漏拦，是保护从未生效过一次，而输出里始终印着
     "保护循环：检查…"，看着一切正常。（回归锁把这条钉在源码上：
-    `tests/test_review_v13_batch5.py` 禁止本函数出现写死 cwd 的写法。）
+    `tests/review/test_review_v13_batch5.py` 禁止本函数出现写死 cwd 的写法。）
 
     修法两条，缺一不可：
       ① 不再改 cwd（继承调用方的 cwd，让 dispatcher / 手工调用那条"cwd 推断"老路径仍然成立）；

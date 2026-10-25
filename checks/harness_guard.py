@@ -71,7 +71,7 @@ def _in_protected(rel):
              # N5 修复（第二轮评审）：commit-msg 同属共享分发器实体，漏保护=可被静默改弱
              "harness/hooks-dir/commit-msg",
              "sandbox/mutation_smoke.py",
-             "tests/test_lock_inventory.py",
+             "tests/tooling/test_lock_inventory.py",
              "tests/lock-inventory.json"):
         return True
     if r.startswith("harness/hooks/") and r.endswith(".py"):

@@ -17,7 +17,7 @@ import tomllib
 
 # UTF-8 兜底（2026-09-13 评审 v3 H1 系统性修法）：宿主管道可能是 GBK/ASCII，
 # 打印中文/✗ 会抛 UnicodeEncodeError；errors=replace 最坏只是个别字符变问号。
-# 清单由 sandbox/list_entries.py 机器推导（tests/test_entry_level.py 有对应锁）。
+# 清单由 sandbox/list_entries.py 机器推导（tests/engine/test_entry_level.py 有对应锁）。
 for _stream in (sys.stdout, sys.stderr):
     try:
         _stream.reconfigure(encoding="utf-8", errors="replace")

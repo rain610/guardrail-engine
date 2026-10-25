@@ -13,7 +13,7 @@ sandbox / golden-patterns / integrations / docs + VERSION 等）复制进
 
 清单与 `guardrail_engine/_shell.py` 里的 `ENGINE_DIRS / ENGINE_FILES / ENGINE_EXCLUDE` **逐字相同**
 （构建脚本不能 import 包：构建阶段包还没进 sys.path）。两处漂移由
-`tests/test_init_bundle.py` 用 AST 对拍。
+`tests/packaging/test_init_bundle.py` 用 AST 对拍。
 
 引擎源缺失时**直接失败**，不产出"没有引擎的 wheel"：那正是 §5.2 的形状
 （装完看起来成功，跑起来才知道没有引擎）。

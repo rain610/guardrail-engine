@@ -199,7 +199,7 @@ Qoder 有独立产品 `qoderclicn`（未装，见 `integrations/qoder-cn/README.
 rc     = 2                                    ← Trae 认的阻断码
 stdout = {"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"harness 门禁未通过…"}}
 stderr = harness 门禁未通过…                  ← 官方口径那一路
-回归锁：tests/test_entry_level.py::TestAgentHookContracts::test_trae_contract_dual_channel_exit2
+回归锁：tests/engine/test_entry_level.py::TestAgentHookContracts::test_trae_contract_dual_channel_exit2
 ```
 
 > **改完要重载**：Trae 可能缓存了导入时的旧命令 —— 在设置 → Hooks 里把「已配置的 Hooks」关掉再打开
@@ -226,7 +226,7 @@ Windows 中文控制台给钩子的 stdout 是 **GBK(cp936)**，而我们的结�
 而且从现象上**完全看不出是编码问题**。
 修法：钩子启动即 `sys.stdout/stderr.reconfigure(encoding="utf-8", errors="replace")`
 （encoding 再怪也只是个别字符变问号，绝不因编码丢结论）。回归锁：
-`tests/test_entry_level.py::…::test_hook_survives_gbk_console`（在 `PYTHONIOENCODING=gbk` 下必须 rc=2 且结论完整）。
+`tests/engine/test_entry_level.py::…::test_hook_survives_gbk_console`（在 `PYTHONIOENCODING=gbk` 下必须 rc=2 且结论完整）。
 
 **根因 B：Trae 的「从 Claude 导入」会把导入的条目一起跑**
 

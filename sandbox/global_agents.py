@@ -15,7 +15,7 @@
   （装 shim → 跑 bootstrap → 再装 shim…），文件每跑一次涨一倍，而屏幕上每次都打印绿色 ✓。
 
 所以正文与拼装都收进本模块，两个写入方都调它 —— **没有第二份可漂**。
-`tests/test_global_agents.py` 里有一条锁直接盯这件事：正文标志行在 `sandbox/` 下只许出现在
+`tests/engine/test_global_agents.py` 里有一条锁直接盯这件事：正文标志行在 `sandbox/` 下只许出现在
 本文件里（判据来自本文档 §一「正文只有一份」）。
 
 顺带修掉一个潜在 bug：原写法是 `sed -i "s|__HARNESS__|$HARNESS_WIN|g"`，工程路径里含
@@ -63,7 +63,7 @@ import sys
 import time
 
 # UTF-8 兜底（宿主管道可能是 GBK/ASCII 控制台，打印中文会抛 UnicodeEncodeError）。
-# 锁：tests/test_entry_level.py::TestAllEntriesHaveUtf8Fallback（清单由 sandbox/list_entries.py
+# 锁：tests/engine/test_entry_level.py::TestAllEntriesHaveUtf8Fallback（清单由 sandbox/list_entries.py
 # 机器推导 —— 本文件在 sandbox/*.py 的候选范围内，会打印且含非 ASCII，故必须有这段）。
 for _stream in (sys.stdout, sys.stderr):
     try:

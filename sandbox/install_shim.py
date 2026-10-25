@@ -38,7 +38,7 @@ import time
 
 # UTF-8 兜底（2026-09-13 评审 v3 H1 的系统性修法）：宿主管道可能是 GBK/ASCII 控制台，
 # 打印中文/✗ 会抛 UnicodeEncodeError；errors=replace 保证最坏也只是个别字符变问号。
-# 锁：tests/test_entry_level.py::TestAllEntriesHaveUtf8Fallback（机器推导清单，别手删）。
+# 锁：tests/engine/test_entry_level.py::TestAllEntriesHaveUtf8Fallback（机器推导清单，别手删）。
 for _stream in (sys.stdout, sys.stderr):
     try:
         _stream.reconfigure(encoding="utf-8", errors="replace")
@@ -77,7 +77,7 @@ AGENTS = config_home()
 SHIM = os.path.join(AGENTS, "hooks", "agentguard-gate.py")
 POINTER = os.path.join(AGENTS, "harness.path")
 # shim 转发目标在候选目录下的**相对路径** —— 必须与模板里的 `REL` 逐字一致，否则体检的判据
-# 与运行时的判据分叉（L13：判据必须与产品同源）。锁：tests/test_install_shim.py::
+# 与运行时的判据分叉（L13：判据必须与产品同源）。锁：tests/packaging/test_install_shim.py::
 # TestCheckMatchesRuntimeChain::test_rel_matches_the_shim_template。
 REL = os.path.join("integrations", "hooks", "agentguard-gate.py")
 PLACEHOLDER = "__HARNESS__"
@@ -89,7 +89,7 @@ def archive_name(target):
 
     **跨文件同口径**：guardrail_engine/cli.py 与 sandbox/uninstall.py 各有一份镜像
     （本脚本随包/随仓分发，不能 import 包内模块）。改动任一侧都要同步，
-    tests/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一输入喂三份实现做对拍。
+    tests/packaging/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一输入喂三份实现做对拍。
 
     秒级戳不够用：脚本化的「装 → 卸 → 装 → 卸」会落在同一秒，Windows 上 os.rename
     撞到已存在的目录直接抛 OSError（剖析报告 G8 的根因修法：让撞车根本不发生）。
@@ -120,7 +120,7 @@ def uninstall():
     而"撤回"本该只退掉 harness 装的东西。所以它留在原地，退出后照常可用（哨兵区继续由
     harness 维护，下次装回来即是最新）。
     `~/.agentguard/` 下、`hooks/` 下还可能有别的东西：**目录本身一律不碰**，
-    也绝不做 rmtree/remove（tests/test_install_shim.py 有 AST 锁盯着）。
+    也绝不做 rmtree/remove（tests/packaging/test_install_shim.py 有 AST 锁盯着）。
     """
     labels = ((SHIM, "shim"), (POINTER, "指针"))
     if os.path.isfile(SHIM) and not _is_ours():

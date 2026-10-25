@@ -84,7 +84,7 @@ class NoConsoleRule(Rule):
 
 1. 从**已验收代码**提取，不凭印象编；
 2. 正文放核心骨架与坑，完整实现放 `reference/`；
-3. 入库时在本文的「按任务查」和「现有范式」表登记，漏登记会被 `tests/test_golden_patterns.py` 拦下。
+3. 入库时在本文的「按任务查」和「现有范式」表登记，漏登记会被 `tests/docs/test_golden_patterns.py` 拦下。
 
 ## 约定
 

@@ -12,7 +12,7 @@
 
 约定：hook/gate 层（pre-commit / post-edit / auto-gate）按 gate 名推端点，取该端点的**检查能力并集**；
 端点自己的 check 脚本仍可用自己的最小集扫描目标，但**不得超出**本模块声明的能力面。
-配套锁：tests/test_review_v8.py 断言 hook 层清单 ⊇ 各端点 check 脚本的清单。
+配套锁：tests/review/test_review_v8.py 断言 hook 层清单 ⊇ 各端点 check 脚本的清单。
 """
 
 PC_EXTS = (".vue", ".js", ".ts", ".jsx", ".tsx", ".css", ".scss")

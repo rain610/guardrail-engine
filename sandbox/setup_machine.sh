@@ -22,10 +22,10 @@ fi
 # Windows 的 Microsoft Store python3.exe 别名（command -v 能命中、一跑就失败）/ 系统里是 Python 2。
 # HARNESS-PY-CANDIDATES: python3 python py -3
 #   ↑ 机器可读的单一事实来源（正本在 harness/hooks-dir/pre-commit）：
-#     tests/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
+#     tests/packaging/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
 #     候选顺序只允许在标记行改，改完各处必须同步。
 # 为什么内联、不 source 一个同级 _python.sh：本仓多条锁会搭**只拷单个脚本**的最小布局真跑
-# （tests/test_hooks_chain.py:238/261 只拷 setup_machine.sh），同级新文件不会被拷过去 → 那些锁当场失效。
+# （tests/engine/test_hooks_chain.py:238/261 只拷 setup_machine.sh），同级新文件不会被拷过去 → 那些锁当场失效。
 HARNESS_PY=""
 for _c in "${HARNESS_PYTHON:-}" python3 python; do
     [ -n "$_c" ] || continue

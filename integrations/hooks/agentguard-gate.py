@@ -249,7 +249,7 @@ _CMD_PATH_PATTERNS = (
 #   会被当成"被编辑的文件" → `--only /tmp/t.log`（或 `/dev/null`）→ auto-gate 一个都匹配
 #   不上 → rc=2 fail-closed → **每一个带重定向的命令**都往模型回灌一条
 #   "harness 门禁调用出错 rc=2（多半是配置问题）"。模型于是被反复教"门禁坏了"，
-#   而真正的毛病在**提取**这一步、不在配置（2026-09-30 实测复现，见 tests/test_entry_level.py）。
+#   而真正的毛病在**提取**这一步、不在配置（2026-09-30 实测复现，见 tests/engine/test_entry_level.py）。
 # 为什么只给 Codex：它的写入就是 shell 命令（Windows 上只有 PowerShell），且在调用本函数
 # 之前已经过了 `WRITE_HINTS`（`> ` / `>>` 都在表里）—— 即"重定向出现在**已判定像写操作**
 # 的命令里"才是它的语境。ZCode 的写入走 Write/Edit 工具（带 file_path、**没有 command**），
@@ -464,7 +464,7 @@ def _dump_payload(client, event, payload):
         pass
 
 
-# HARNESS-KILLTREE-BEGIN（跨文件契约：本块与另一端**逐字节相同**；对拍锁 tests/test_agentguard.py）
+# HARNESS-KILLTREE-BEGIN（跨文件契约：本块与另一端**逐字节相同**；对拍锁 tests/engine/test_agentguard.py）
 # 2026-10-15 批次 7（实测病灶）：`subprocess.run(timeout=...)` 超时只 kill **直接子进程** ——
 # 孙进程（例：cli→run_gate→检查脚本里的最后那个）变孤儿继续跑：一次「300s 超时」的全量扫描
 # 实测孤儿又跑了约 100 分钟，父进程阻塞在管道 EOF 上，最终输出全丢。

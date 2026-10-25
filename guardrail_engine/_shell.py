@@ -20,14 +20,14 @@ ADR-0001 铁律 3 写着「版本单一来源（四处一致，测试锁定）�
 纪律
 ====
 本模块仍属**壳层**：只做环境与转发，不做行号运算、不重定义引擎符号。它登记在
-`tests/test_packaging_contract.py` 的 `SHELL_FILES` 里，接受与其它壳完全相同的禁令检查。
+`tests/packaging/test_packaging_contract.py` 的 `SHELL_FILES` 里，接受与其它壳完全相同的禁令检查。
 
 导入方式（三种运行形态都要成立，改这里前先读这三行）
 ==================================================
   · 脚本形态 `python guardrail_engine/cli.py` → 脚本目录本就在 sys.path[0]，`import _shell` 可；
   · 安装形态 `guardrail_engine.cli:main`（entry_points）→ 包已装进 site-packages，**必须**
     用相对导入 `from . import _shell`（裸 `import _shell` 会 ModuleNotFoundError）；
-  · exec_module 形态（tests/test_preflight.py 直接按路径 exec 壳文件）→ 没有包上下文，
+  · exec_module 形态（tests/engine/test_preflight.py 直接按路径 exec 壳文件）→ 没有包上下文，
     相对导入抛 ImportError，回落到裸导入。
 故各壳里用 `try: from . import _shell / except ImportError: import _shell` 双形态导入，
 并在裸导入前保证本目录已在 sys.path（safe-path 解释器 -P 不会自动加）。
@@ -85,7 +85,7 @@ def init_marker_names():
 
 # 随 wheel 出厂的引擎内容（相对工程根）。**单一来源**：`setup.py` 里有逐字相同的一份
 # （构建脚本不能 import 包，构建阶段包还没进 sys.path），由
-# tests/test_init_bundle.py 用 AST 对拍 —— 两处漂移会当场红。
+# tests/packaging/test_init_bundle.py 用 AST 对拍 —— 两处漂移会当场红。
 #
 # 为什么不把 `config/harness.local.toml`（及旧版 `.yaml`）打进去：那是**本机事实**（各仓磁盘路径），
 # 打进去等于把打包机的目录结构发给所有人；`init` 复制时也会跳过它。
@@ -141,7 +141,7 @@ def _read_yaml_simple(path):
     """旧版 YAML 兼容：只取顶层 `harness:` 键的值。
 
     为什么不用 PyYAML：本仓零第三方依赖（pyproject.toml 无 dependencies 键，
-    tests/test_stdlib_only.py 用 AST 扫描锁定）。`harness.local.yaml` 的 `harness:`
+    tests/engine/test_stdlib_only.py 用 AST 扫描锁定）。`harness.local.yaml` 的 `harness:`
     值是简单字符串，不需要完整 YAML 解析。新配置请用 TOML（见 `_read_config_harness`）。
     """
     try:

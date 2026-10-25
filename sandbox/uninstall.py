@@ -67,7 +67,7 @@ def archive_name(target, suffix=ARCHIVE_SUFFIX):
 
     **跨文件同口径**：agentguard/cli.py:archive_name 是主实现，sandbox/install_shim.py
     是第二份镜像（三份都随包/随仓分发，谁也不能 import 谁）。改动任一侧都要同步，
-    tests/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一输入喂三份实现做对拍。
+    tests/packaging/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一输入喂三份实现做对拍。
 
     秒级戳不够用：脚本化的「卸载 → 重装 → 再卸载」会落在同一秒里，Windows 上 os.rename
     撞到已存在的目录直接抛 OSError —— 归档失败、而且报出来是"可能被占用"（剖析报告 G8）。
@@ -147,7 +147,7 @@ def run_cmd(args, timeout=300):
     —— 直接调 kernel32 的 `CreateProcessW`（绕开 subprocess）也能跑 `.cmd` ⇒ 是**操作系统本人**认它
     （Python 文档同此）。而它会在**路径与参数都含空格**时按 cmd 自己的规则再剥一遍引号 ⇒ 引号错位、
     rc=1 且输出为空。与 `upgrade.py` 同实现、判据同源；锁见
-    `tests/test_review_2026_09_23.py::TestL14BatchFileIsNotHandedToAShell`。
+    `tests/review/test_review_2026_09_23.py::TestL14BatchFileIsNotHandedToAShell`。
     """
     exe = shutil.which(args[0]) or args[0]
     cmd = [exe] + list(args[1:])
@@ -258,7 +258,7 @@ def step_hooks(a):
             # 评审 v13 中 17：兜底分支同样要读安装存档（这条路径恰恰是"pip 包已被卸掉、
             # CLI 转发不了"时走的），否则同一次卸载会因为「CLI 在不在」而给出两种结果：
             # 有 CLI → 还原原值；没 CLI → 一律清空。判定与 agentguard/cli.py:read_prev_hookspath
-            # 同源（tests/test_review_v13_batch6.py 有对拍锁）。
+            # 同源（tests/review/test_review_v13_batch6.py 有对拍锁）。
             state, prev = prev_hookspath(repo)
             if state == "ok":
                 rc, out = run_cmd(["git", "-C", repo, "config", "--local", "core.hooksPath", prev])

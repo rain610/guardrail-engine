@@ -183,7 +183,7 @@ claude plugin marketplace remove agentguard-tools
   `pip install guardrail-engine` 仍会 404，此时用源码树 `pip install .` 或离线安装包。
 - Claude 插件原型按机器打戳（配置含绝对路径），宿主市场分发形态未验证（见 `COMPAT.md`）。
 - `bypass` 只记录"声明"，无法强制拦截 `--no-verify`（需钩子侧配合，属后续增量）。
-- MCP/CLI 的**持久化回归测试已入库**（`tests/test_agentguard.py`，10 例：协议 fixtures / 工具行为 / 三入口一致性）。
+- MCP/CLI 的**持久化回归测试已入库**（`tests/engine/test_agentguard.py`，10 例：协议 fixtures / 工具行为 / 三入口一致性）。
 - 台账写入失败**不阻断**门禁（设计如此，日志绝不挡提交）；2026-09-16 起会在 stderr 打一行
   `[run_gate] ⚠ 判定台账写入失败…`，不再完全静默（此前只有一个 `except: pass`，写失败了没人知道）。
 
@@ -226,7 +226,7 @@ PyPI `publish` job 用的是 OIDC 短时凭证，仓库里**不需要** `PYPI_AP
 
 ## 8. 后续演进建议
 
-1. ~~补 `tests/test_agentguard.py`~~ —— **已完成（2026-09-16 入库，10 例）**。
+1. ~~补 `tests/engine/test_agentguard.py`~~ —— **已完成（2026-09-16 入库，10 例）**。
 2. ~~M1：`pyproject` + `agentguard` 全局命令~~ —— **已完成**（`pyproject.toml` + `[project.scripts]`，保留零依赖）；
    余下：M3 技能版本对齐与更多宿主安装器；M4 插件市场形态。
 3. OBS-1 行尾策略（`.gitattributes` 脚本类 `eol=lf`）与 CI `workflow_dispatch` 首跑（见评审 v7 §4）。

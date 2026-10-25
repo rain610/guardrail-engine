@@ -30,6 +30,11 @@
   `_config.py` 的内置 YAML 兼容解析拆到 `_yaml_compat.py`、`ConfigError` 拆到
   `_errors.py`。对外行为与既有导入名不变（`run_gate._validate` 等仍可调用），
   变异锚点与受保护文件清单同步指向新模块。
+- **测试按领域重组**：`tests/` 分为 `engine/`（引擎行为）、`packaging/`（打包安装升级）、
+  `tooling/`（仓库工具）、`docs/`（文档一致性）、`review/`（历次评审回归）五个包，
+  共享夹具 `_tmpclean.py` / `_engine_copy.py` 保留在根目录。`run_tests.py` 改为递归发现
+  （只下钻含 `__init__.py` 的包），`tests/lock-inventory.json` 的模块键带组前缀；
+  运行命令不变。
 
 ### Added
 

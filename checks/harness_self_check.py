@@ -43,7 +43,7 @@ problems, warns = [], []
 
 # ② 零第三方依赖的扫描范围：引擎层 + 打包壳（2026-09-16 补打包壳；
 # 2026-10-25 改名后主包是 guardrail_engine、agentguard 是迁移期兼容壳，
-# 与 tests/test_stdlib_only.py 的 SCAN_DIRS 保持一致——两处都用手写清单，别单边改）。
+# 与 tests/engine/test_stdlib_only.py 的 SCAN_DIRS 保持一致——两处都用手写清单，别单边改）。
 _SCAN_SUBS = ("harness", "checks", "sandbox", "guardrail_engine", "agentguard")
 
 
@@ -51,7 +51,7 @@ def _load_by_path(rel, name):
     """按**文件路径**加载工程内模块（不写 import 语句）。
 
     为什么不用 `import list_entries`：引擎层（checks/ + harness/）有一条守卫
-    ——tests/test_stdlib_only.py「不得引入任何第三方依赖」——它会把 `import list_entries`
+    ——tests/engine/test_stdlib_only.py「不得引入任何第三方依赖」——它会把 `import list_entries`
     当成越界依赖（list_entries 在 sandbox/，不属于引擎层目录）。那条守卫是对的：
     引擎不应依赖 sandbox。所以这里显式按路径加载，两步都不越界。
     """
@@ -90,7 +90,7 @@ def check_stdlib_only():
 
     2026-09-16（剖析报告 N2）：原先只扫 harness/ checks/ sandbox/ —— `agentguard/`
     （wheel 与 CLI/MCP 的实际分发物）**不在扫描范围**，而 ADR 与 README 都把「零依赖」
-    当承诺写。承诺与守卫之间的缺口，补齐即可（与 tests/test_stdlib_only.py 同一范围）。
+    当承诺写。承诺与守卫之间的缺口，补齐即可（与 tests/engine/test_stdlib_only.py 同一范围）。
     """
     import sys as _sys
     local = set()

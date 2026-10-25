@@ -74,7 +74,7 @@ def _version_of(client):
     # 而那层 cmd 会在参数含空格时**再解析一遍**引号（`cmd /c "<含空格路径>" "<含空格参数>"`
     # 会按 cmd 自己的规则剥掉首尾引号 ⇒ 引号错位、rc=1 且输出为空）。
     # ⚠ 本函数当前只带 `--version`（无空格）⇒ **踩不到那个格子**，属消隐患 + 订正错注释，
-    #   不是修已复现的缺陷；锁见 tests/test_review_2026_09_23.py::TestL14BatchFileIsNotHandedToAShell。
+    #   不是修已复现的缺陷；锁见 tests/review/test_review_2026_09_23.py::TestL14BatchFileIsNotHandedToAShell。
     # ⚠ 同形的另两处（sandbox/upgrade.py / uninstall.py 的 run_cmd）**随包分发**，当初改它们会让
     #   已发布的 v0.1.6-dev 包与仓库脱钩（verify_release ⑧ 逐字节对拍）⇒ 等到了下一次版本号变更：
     #   **2026-09-23 已随 v0.1.7-dev 同批改成直跑**，三份实现现在口径一致（mcp.py 本来就没有那一支）。

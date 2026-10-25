@@ -188,7 +188,7 @@ def check_gate(gate_name, cfg_all, log_path):
             #
             # 2026-09-18（跨平台批次 7）：键名表**搬回共享配置**了（批次 2 把它一起删掉了，
             # 于是「键没声明」与「本机没配」塌成一件事 —— 只填了 1 条 local 覆盖层的同事机上
-            # 32 个 gate 判 ❌、提交链 fail-closed，详见 tests/test_repo_key_registry.py）。
+            # 32 个 gate 判 ❌、提交链 fail-closed，详见 tests/engine/test_repo_key_registry.py）。
             # 本探针**逐字未动**，但要记下它在新语义下的两支各靠什么红/绿：
             #   · 违规支：`zzz_accept_probe` 引用表里没有的键 → ⑤ ❌ → rc=1（与批次 2 同源）
             #   · 合规支：`harness_self` 这个键**不在** base 的 repos 段里（它是引擎无条件注入的，

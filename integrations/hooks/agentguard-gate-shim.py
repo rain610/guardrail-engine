@@ -11,7 +11,7 @@
   stderr 打一次提示 + 落一个 `~/.agentguard/shim-missing.log` 去重标记（恢复后自动清除）。
   原先完全静默 → 换机器/挪目录后 7 家客户端的编辑期门禁会**整体无声失效**，
   与这个项目自身的反静默哲学相悖。回归锁：
-  tests/test_client_config_check.py::TestShimSilentFailure
+  tests/engine/test_client_config_check.py::TestShimSilentFailure
 """
 import os
 import runpy

@@ -315,7 +315,7 @@ export GUARDRAIL_ADAPTER_TIMEOUT=120          # 秒，默认 300
 severity 映射而来（ESLint 1/2；Semgrep 按 CRITICAL/ERROR/HIGH → 阻断，MEDIUM/WARNING →
 警告，LOW/INFO → 观察，未知级别按阻断处理）。
 
-**fail-closed 语义**（这三条是本仓付过学费的地方，锁在 `tests/test_external_adapters.py`）：
+**fail-closed 语义**（这三条是本仓付过学费的地方，锁在 `tests/engine/test_external_adapters.py`）：
 
 | 情况 | 退出码 | 为什么不能算通过 |
 |---|---|---|
@@ -420,7 +420,7 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 真正的强制层是仓库侧配置：
 
 - `.github/CODEOWNERS` 把 `checks/`、`harness/`、`config/`、`sandbox/mutation_smoke.py`、
-  `tests/test_lock_inventory.py`、`tests/lock-inventory.json` 与 `.github/` 指给维护者；
+  `tests/tooling/test_lock_inventory.py`、`tests/lock-inventory.json` 与 `.github/` 指给维护者；
 - 在 GitHub 的 **Settings → Branches → Branch protection rules** 里给 `main` 开启
   **Require a pull request before merging** 与 **Require review from Code Owners**。
   只提交 CODEOWNERS 而不开分支保护，规则只会「请求 review」，不会阻断合并；
@@ -563,7 +563,7 @@ python -m unittest discover -s tests
 还会跑三类慢闸门：变异冒烟（114 条变异，验证锁真的会红）、真打包后的真产物锁、
 干净 venv 安装并执行 `guardrail-engine --version`（轮子自带引擎，不依赖引擎检出）。
 本机复现：先 `python sandbox/pack_release.py`，再跑
-`python tests/test_release_artifact.py TestRealArtifactPasses -v`；venv 安装命令见
+`python tests/packaging/test_release_artifact.py TestRealArtifactPasses -v`；venv 安装命令见
 `.github/workflows/release.yml` 的「干净 venv 安装冒烟」步骤。
 
 ## 文档

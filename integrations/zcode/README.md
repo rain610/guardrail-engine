@@ -64,7 +64,7 @@ PostToolUse
 > **把新建文件全拒掉**、理由还写成"门禁调用出错 rc=2（多半是配置问题）"（2026-09-23 实测
 > qoder / trae / codebuddy 三种客户端都是 deny）。现在正本对"PreToolUse + 文件不存在"显式放行
 > （`integrations/hooks/agentguard-gate.py`，锁在
-> `tests/test_review_2026_09_23.py::TestPreToolUseNewFile`），**结论仍不变：内容门禁放 PostToolUse**。
+> `tests/review/test_review_2026_09_23.py::TestPreToolUseNewFile`），**结论仍不变：内容门禁放 PostToolUse**。
 
 ## 4. 落盘位置与确切 schema（2026-09-13 实证，已填好并自检通过）
 

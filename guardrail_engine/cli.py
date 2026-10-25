@@ -44,7 +44,7 @@ except Exception:
 # 双形态导入（三种运行形态都要成立，详见 _shell.py 文件头）：
 #   ① 安装形态 `guardrail_engine.cli:main`（entry_points）→ 包上下文，必须走相对导入；
 #   ② 脚本直跑 `python guardrail_engine/cli.py` → 脚本目录已在 sys.path[0]，裸导入即可；
-#   ③ exec_module（tests/test_preflight.py 按路径 exec 本文件）→ **没有**包上下文，
+#   ③ exec_module（tests/engine/test_preflight.py 按路径 exec 本文件）→ **没有**包上下文，
 #      相对导入抛 ImportError → 补 sys.path 后裸导入（-P/PYTHONSAFEPATH 不自动加脚本目录）。
 try:
     from . import _shell
@@ -70,7 +70,7 @@ SERVER_NAME = "guardrail-engine"
 LEGACY_SERVER_NAME = "agentguard"
 # 卸载归档的后缀。**跨文件契约**：sandbox/install_shim.py 与 sandbox/uninstall.py 各有一份
 # 同口径的 archive_name()（那两个脚本随包分发，不能 import 本模块），改动任一侧都要同步，
-# tests/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一个输入喂三份实现做对拍。
+# tests/packaging/test_uninstall.py::TestArchiveNameDoesNotDrift 拿同一个输入喂三份实现做对拍。
 ARCHIVE_SUFFIX = ".disabled-"
 
 
@@ -150,7 +150,7 @@ def _env():
     return e
 
 
-# HARNESS-KILLTREE-BEGIN（跨文件契约：本块与另一端**逐字节相同**；对拍锁 tests/test_agentguard.py）
+# HARNESS-KILLTREE-BEGIN（跨文件契约：本块与另一端**逐字节相同**；对拍锁 tests/engine/test_agentguard.py）
 # 2026-10-15 批次 7（实测病灶）：`subprocess.run(timeout=...)` 超时只 kill **直接子进程** ——
 # 孙进程（例：cli→run_gate→检查脚本里的最后那个）变孤儿继续跑：一次「300s 超时」的全量扫描
 # 实测孤儿又跑了约 100 分钟，父进程阻塞在管道 EOF 上，最终输出全丢。
@@ -239,7 +239,7 @@ def _ledger_paths():
     """台账片全集（时间序）—— 月度分片读侧（2026-09-29）。
 
     判据与 harness/run_gate.py 的 _ledger_files() **逐字同源**（跨文件契约：壳不 import
-    引擎，两份实现靠 tests/test_gate_log_anchor.py 的对拍锁咬住，漂移即红）：
+    引擎，两份实现靠 tests/engine/test_gate_log_anchor.py 的对拍锁咬住，漂移即红）：
     env 密闭 → 只有 HARNESS_LOG_FILE 那本；否则旧 gate_log.jsonl（若有，排最前）
     + 月度片 gate_log-YYYY-MM.jsonl（字典序=月序）。HARNESS_LOG_DIR 与引擎侧同源。
     """
@@ -471,7 +471,7 @@ def _write_engine_pointer(dest):
 # install_shim / setup_machine 写成**仓库**路径，光看指针分不清「init 复制出来的副本」
 # 与「用户自己的仓库」。upgrade.py 只刷新带这个标记的目录 —— 对仓库跑 `init --force`
 # 会把源改名归档，那不是升级。常量在 sandbox/upgrade.py 里也有一份（那个脚本随包分发，
-# 不能 import 本模块），两处漂移由 tests/test_upgrade.py 用 AST 对拍。
+# 不能 import 本模块），两处漂移由 tests/packaging/test_upgrade.py 用 AST 对拍。
 INIT_MARKER = _shell.INIT_MARKER
 INIT_MARKER_KIND = "guardrail-engine-init"
 
@@ -1032,7 +1032,7 @@ def _canon_rec(rec):
     """台账记录的规范化形（链哈希与整本摘要共用）：去 h + sort_keys + 紧凑分隔符。
 
     与 harness/run_gate.py 的 _chain_h 规范化是**同一公式**（壳不 import 引擎，
-    tests/test_gate_log_anchor.py 用同一批记录喂两份实现对拍 —— 漂移即红）。
+    tests/engine/test_gate_log_anchor.py 用同一批记录喂两份实现对拍 —— 漂移即红）。
     """
     payload = dict(rec)
     payload.pop("h", None)

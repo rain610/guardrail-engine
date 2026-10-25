@@ -118,7 +118,7 @@ def run_cmd(args, timeout=600):
     launched by the operating system in a system shell"）。而那层 cmd 会在**路径与参数都含空格**时
     按 cmd 自己的规则再剥一遍引号（`cmd /c "<含空格路径>" "<含空格参数>"`）⇒ 引号错位、rc=1 且输出为空。
     判据与 `sandbox/check_contracts.py::_client_version`，`guardrail_engine/mcp.py::run_cmd` 同源；
-    锁见 `tests/test_review_2026_09_23.py::TestL14BatchFileIsNotHandedToAShell`。
+    锁见 `tests/review/test_review_2026_09_23.py::TestL14BatchFileIsNotHandedToAShell`。
     """
     exe = shutil.which(args[0]) or args[0]
     cmd = [exe] + list(args[1:])
@@ -580,7 +580,7 @@ def step_pip(a):
     # 代跑 --force-reinstall（用户 2026-09-17 拍板）：实测它能在同版本号下换内容，而"给句提示
     # 让人自己去跑"在多台机器上等于没人跑。**只补这一条命令**、不递归重试：装/卸之外一律由人
     # 确认这条边界仍然成立 —— 这里多出来的动作，全部内容就是"把本包的轮子完整铺一遍"。
-    # 它同时会强制重装依赖，但本包按合同**零依赖**（tests/test_stdlib_only.py 守着），
+    # 它同时会强制重装依赖，但本包按合同**零依赖**（tests/engine/test_stdlib_only.py 守着），
     # 所以这条命令碰不到本包之外的任何东西。
     print("        → 接着**代跑**：%s -m pip install --force-reinstall <本包轮子>" % a.python)
     rc2, _o2, tail2 = pip_install(a, wheel, "--force-reinstall")
@@ -1096,7 +1096,7 @@ def main(argv=None):
         # 2026-09-23（评审 L15）：演练支原先**直接 return 0**，把上面刚收集的 fails 丢了 ⇒
         # 预演明明有步骤没做成，退出码却是 0，"回放绿灯"与"真跑绿灯"长得一模一样，
         # 自动化（或人看 $?）会据此放行。判据与 --yes 支同源：有未完成项就 rc=1 且逐条打出来。
-        # 锁见 tests/test_review_2026_09_23.py::TestL15RehearsalExitCodeAndItsDocsNote。
+        # 锁见 tests/review/test_review_2026_09_23.py::TestL15RehearsalExitCodeAndItsDocsNote。
         if fails:
             print("")
             print("⚠️ 预演里有 %d 项未完成（清单与 --yes 支同判据）：" % len(fails))

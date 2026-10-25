@@ -120,7 +120,7 @@ python <ENGINE>/guardrail_engine/cli.py done --repo <端仓库根>
 ## 引擎自检（改 harness 自身后必跑）
 - 套件：`python -m unittest discover -s tests`（改动 checks/harness 后必跑）
 - 配置体检：`python harness/run_gate.py --validate`（改完 harness.toml 跑；CI 用 `--structure-only`）
-- 零依赖守卫：`tests/test_stdlib_only.py`——引擎层只许标准库
+- 零依赖守卫：`tests/engine/test_stdlib_only.py`——引擎层只许标准库
 
 ## 规则与范式从哪看
 - gate 策略：`<ENGINE>/config/harness.toml`

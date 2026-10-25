@@ -48,18 +48,33 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 套件照样报 `OK`、子进程照样退出码 0 —— 于是这个 runner 也照样打「✅ 全部通过」。
 # 2026-09-15 CI 为这个原因补了 grep（注释就写在 workflow 里）；**本文件当时没跟着补**，
 # 于是本地这一档长期是「看着同 CI 口径、实际不判红」。2026-09-21 因此又栽一次：
-# `tests/test_agents_scaffold.py` 漏了 28 个句柄，这里报「✅ 全部通过」、CI 红。
+# `tests/engine/test_agents_scaffold.py` 漏了 28 个句柄，这里报「✅ 全部通过」、CI 红。
 # 判据必须与 CI 逐字一样 —— 两地判据一旦分叉，「本机绿 CI 红」就会再回来。
 LEAK_RE = re.compile(r"ResourceWarning|Exception ignored in")
 
 
 def discover_files(tests_dir, pattern):
+    """递归收集测试文件（按领域子目录组织），返回相对 tests_dir 的 posix 路径。
+
+    只下探**包目录**（有 `__init__.py`）：`tests/contracts/` 这类纯数据目录不该被
+    当成测试包；顶层文件保持相对名（`test_x.py`），子目录记作 `<dir>/test_x.py`。
+    """
     try:
-        names = os.listdir(tests_dir)
+        os.listdir(tests_dir)
     except OSError as ex:
         print("[run_tests] ✗ 测试目录不可用：%s（%s）" % (tests_dir, ex))
         sys.exit(2)
-    return sorted(n for n in fnmatch.filter(names, pattern) if n.endswith(".py"))
+    found = []
+    for dirpath, dirnames, filenames in os.walk(tests_dir):
+        dirnames[:] = sorted(
+            d for d in dirnames
+            if os.path.isfile(os.path.join(dirpath, d, "__init__.py")))
+        for n in fnmatch.filter(sorted(filenames), pattern):
+            if not n.endswith(".py"):
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, n), tests_dir)
+            found.append(rel.replace("\\", "/"))
+    return sorted(found)
 
 
 def parse_output(text):
@@ -97,8 +112,12 @@ def verdict(r):
 
 def run_one(tests_dir, fname, env):
     t0 = time.time()
+    # 子目录分组后按文件所在目录 discover：`-t tests_dir` 顶层入 sys.path，
+    # 测试模块仍能 `import _tmpclean`（同目录辅助模块只此一份）。
+    start = os.path.dirname(os.path.join(tests_dir, fname)) or tests_dir
+    patt = os.path.basename(fname)
     r = subprocess.run([sys.executable, "-W", "error::ResourceWarning", "-m", "unittest",
-                        "discover", "-s", tests_dir, "-p", fname, "-v"],
+                        "discover", "-s", start, "-t", tests_dir, "-p", patt, "-v"],
                        cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
                        errors="replace", env=env)
     dt = time.time() - t0

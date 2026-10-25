@@ -47,7 +47,7 @@ python integrations/plugins/build_marketplace.py --harness <HARNESS 仓库根> -
 - agent 会话内实测两个探针：`harness_doctor` 返回 rc=0；`harness_list_gates` 返回全部 4 个 gate
   （其中默认启用 2 个：示例门禁与工程自检；ESLint / Semgrep 适配 gate 默认关闭）。
   （本行是**随包出货**的文档，写的是"你应当看到什么"，所以必须是当下的真值；数字由
-  `tests/test_docs_consistency.py` 的数字锁看住 —— 写成别的数当场红。）
+  `tests/docs/test_docs_consistency.py` 的数字锁看住 —— 写成别的数当场红。）
 
 ## 3. 常见坑
 

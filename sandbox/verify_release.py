@@ -11,7 +11,7 @@
 打开过产物看一眼**：`release.yml` 只校验了 zip 的 SHA1/大小/文件数，`pack_release.py`
 打印 ✅ 时也没看过 wheel 里面。于是"修好了但没出货"这件事没有任何地方会红。
 
-同类问题在同一次评审里还有一条（§07 ③）：`tests/test_agentguard.py::_wheel_form()`
+同类问题在同一次评审里还有一条（§07 ③）：`tests/engine/test_agentguard.py::_wheel_form()`
 是把**当前工作树**的 .py 拷进临时目录再扮成轮子 —— 它证明的是"源码是对的"，
 不是"出货的那个轮子是对的"。自我印证看起来很像验收，但它不问那个真问题。
 

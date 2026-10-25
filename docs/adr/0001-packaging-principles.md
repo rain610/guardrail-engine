@@ -25,6 +25,6 @@ harness 准备以多种「壳」分发：CLI（`agentguard`）、MCP 薄服务�
 
 ## 后果
 
-- 新增壳必须进入 `tests/test_packaging_contract.py` 的 `SHELL_FILES` 注册表并通过契约锁；
+- 新增壳必须进入 `tests/packaging/test_packaging_contract.py` 的 `SHELL_FILES` 注册表并通过契约锁；
 - 违反铁律 1/5 的改动在评审中直接打回；
 - 违反铁律 2/3 的发布视为未完成（M5 验收项）。

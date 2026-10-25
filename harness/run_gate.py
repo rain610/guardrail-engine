@@ -201,7 +201,7 @@ def _ledger_files():
     env 密闭 → 只有 HARNESS_LOG_FILE 那一本（与旧版逐字一致）。
     三个读者共用本函数：--summary（本文件）/ coverage.py（跨文件契约）/ 壳侧
     agentguard/cli.py 的 _ledger_paths（壳不 import 引擎，两份实现靠
-    tests/test_gate_log_anchor.py 的对拍锁咬住 —— 漂移即红，与 archive_name 三份同款纪律）。
+    tests/engine/test_gate_log_anchor.py 的对拍锁咬住 —— 漂移即红，与 archive_name 三份同款纪律）。
     """
     env = os.environ.get("HARNESS_LOG_FILE")
     if env:

@@ -29,10 +29,10 @@ fi
 # Windows 的 Microsoft Store python3.exe 别名（command -v 能命中、一跑就失败）/ 系统里是 Python 2。
 # HARNESS-PY-CANDIDATES: python3 python py -3
 #   ↑ 机器可读的单一事实来源（正本在 harness/hooks-dir/pre-commit）：
-#     tests/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
+#     tests/packaging/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
 #     候选顺序只允许在标记行改，改完各处必须同步。
 # 为什么内联、不 source 一个同级 _python.sh：本仓多条锁会搭**只拷单个脚本**的最小布局真跑
-# （如 tests/test_hooks_chain.py:238/261），同级新文件不会被拷过去 → 那些锁当场失效。
+# （如 tests/engine/test_hooks_chain.py:238/261），同级新文件不会被拷过去 → 那些锁当场失效。
 # 为什么放在两条 `git rev-parse` **之前**：没有本段时 WSL 上的形状是自检那步用裸 python
 # 直接 command not found（stderr 又被 2>/dev/null 丢掉）→ 打印「✗ 自检失败：python 无法打开
 # 共享分发器」，把「没装解释器」误诊成「路径不对」；而真正执行钩子的是 sh、不是 python。

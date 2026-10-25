@@ -24,7 +24,7 @@ import sys
 
 # UTF-8 兜底（2026-09-13 评审 v3 H1 系统性修法）：宿主管道可能是 GBK/ASCII，
 # 打印中文/✗ 会抛 UnicodeEncodeError；errors=replace 最坏只是个别字符变问号。
-# 清单由 sandbox/list_entries.py 机器推导（tests/test_entry_level.py 有对应锁）。
+# 清单由 sandbox/list_entries.py 机器推导（tests/engine/test_entry_level.py 有对应锁）。
 for _stream in (sys.stdout, sys.stderr):
     try:
         _stream.reconfigure(encoding="utf-8", errors="replace")
@@ -887,7 +887,7 @@ def waiver_summary():
     出来**」是**两件事**：前者保留（有锁钉着，且第三条字段照旧入账），后者取消。
     理由的家在 **diff**（AGENTS.md 原话：「理由写在标记后面：标记会留在 diff 里，
     人工复核看得见」）—— 复核的人读的是 diff，不是这行注入。
-    锁：`tests/test_entry_level.py::…test_waivers_used_are_reported_on_pc`（N7，断言
+    锁：`tests/engine/test_entry_level.py::…test_waivers_used_are_reported_on_pc`（N7，断言
     **不再**回显）与 `…test_injected_context_carries_no_waiver_reason_text`（判到
     **注入正文**那一层）；护盾 `M116`（把 `— %s` 加回去就红）。
     """

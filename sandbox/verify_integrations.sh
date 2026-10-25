@@ -48,10 +48,10 @@ LOG="$HARNESS/reports/gate_log.jsonl"
 # Windows 的 Microsoft Store python3.exe 别名（command -v 能命中、一跑就失败）/ 系统里是 Python 2。
 # HARNESS-PY-CANDIDATES: python3 python py -3
 #   ↑ 机器可读的单一事实来源（正本在 harness/hooks-dir/pre-commit）：
-#     tests/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
+#     tests/packaging/test_interpreter_convention.py 拿本行与其余 sh 入口的同名标记对拍 ——
 #     候选顺序只允许在标记行改，改完各处必须同步。
 # 为什么内联、不 source 一个同级 _python.sh：本仓多条锁会搭**只拷单个脚本**的最小布局真跑
-# （如 tests/test_hooks_chain.py:238/261），同级新文件不会被拷过去 → 那些锁当场失效。
+# （如 tests/engine/test_hooks_chain.py:238/261），同级新文件不会被拷过去 → 那些锁当场失效。
 HARNESS_PY=""
 for _c in "${HARNESS_PYTHON:-}" python3 python; do
     [ -n "$_c" ] || continue
@@ -160,7 +160,7 @@ check_one() {  # $1=客户端名 $2=是否强制型(yes/no)
   hit_log=no; [ "$after" -gt "$before" ] && hit_log=yes
 
   # ── 判定交给纯函数判定器（Q4，2026-09-13 外部评审 v3）：这里只做采集与展示。
-  #    判据本身在 sandbox/verify_judge.py（封闭枚举 + 证伪套件 tests/test_verify_judge.py）。
+  #    判据本身在 sandbox/verify_judge.py（封闭枚举 + 证伪套件 tests/tooling/test_verify_judge.py）。
   #    历史：关键字口径过窄→放宽、Qoder 只输出最后一句→加行为证据、上游报错→加识别，
   #    每次改都是人肉回归；抽出来后改成受控修改。
   wrote=no;    [ -f "$probe" ] && wrote=yes

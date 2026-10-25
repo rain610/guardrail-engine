@@ -34,7 +34,7 @@ import sys
 
 # UTF-8 兜底（2026-09-13 评审 v3 H1 的系统性修法）：宿主管道可能是 GBK/ASCII 控制台，
 # 打印中文/✗ 会抛 UnicodeEncodeError；errors=replace 保证最坏也只是个别字符变问号。
-# 锁：tests/test_entry_level.py::TestAllEntriesHaveUtf8Fallback（机器推导清单，别手删）。
+# 锁：tests/engine/test_entry_level.py::TestAllEntriesHaveUtf8Fallback（机器推导清单，别手删）。
 for _stream in (sys.stdout, sys.stderr):
     try:
         _stream.reconfigure(encoding="utf-8", errors="replace")

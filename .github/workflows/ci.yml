@@ -26,7 +26,7 @@ jobs:
           python - <<'PY'
           import ast, os, sys
 
-          # 与 tests/test_stdlib_only.py 同判据：标准库 ∪ 本工程同目录 .py
+          # 与 tests/engine/test_stdlib_only.py 同判据：标准库 ∪ 本工程同目录 .py
           # （只比 stdlib 会把 example_ruleset / _config 这类本地模块误判成第三方）
           SCAN_DIRS = ["checks", "harness", "harness/hooks", "harness/agents", "guardrail_engine", "agentguard"]
           local = set()

@@ -39,7 +39,7 @@ def _engine_files():
                                           ("components_allowlist.yaml", "components_allowlist_h5.yaml")):
                     files.append(os.path.relpath(os.path.join(dirpath, fn), ROOT))
     for rel in ("config/harness.toml", "config/harness.yaml", "sandbox/mutation_smoke.py",
-                "tests/test_lock_inventory.py", "tests/lock-inventory.json"):
+                "tests/tooling/test_lock_inventory.py", "tests/lock-inventory.json"):
         if os.path.isfile(os.path.join(ROOT, rel)):
             files.append(rel)
     return sorted(set(f.replace("\\", "/") for f in files))
