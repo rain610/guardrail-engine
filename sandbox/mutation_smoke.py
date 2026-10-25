@@ -1390,6 +1390,56 @@ MUTATIONS = [
      "blind_why": "Windows 走 `if os.name == \"nt\"` 的 taskkill 分支，killpg 那行永不执行 ⇒ "
                   "变异体与原体在 Windows 上语义相同，锁**没有理由**红。",
      "covered_by": "M143-taskkill-loses-slash-T"},
+
+    # ── 批次 8（2026-10-25）：外部适配层（架构 A）的 fail-closed 护盾 ──────────
+    {"id": "M146-adapter-error-read-as-pass", "file": "checks/external_adapter.py",
+     "kind": "exact",
+     "old": '        print("门禁未执行/未跑完：环境或工具问题一律 rc=2，不能读成「通过」", file=sys.stderr)\n'
+            '        return 2\n',
+     "new": '        print("门禁未执行/未跑完：环境或工具问题一律 rc=2，不能读成「通过」", file=sys.stderr)\n'
+            '        return 0  # mutation-smoke\n',
+     "lock": "test_external_adapters.py",
+     "expect": "test_missing_tool_is_not_a_pass",
+     "why": "把 AdapterError 的退出码从 2 改成 0：工具没装、超时、输出不可信、分析不完整"
+            "——整类「没跑成」瞬间都变成「通过」，正是本仓付过两次学费的形状。"},
+
+    {"id": "M147-bad-json-becomes-empty-result", "file": "checks/external_adapter.py",
+     "kind": "exact",
+     "old": '    except ValueError as e:\n'
+            '        raise AdapterError("%s 输出不是可解析的 JSON（%s）—— 本次门禁未跑完" % (tool, e))\n',
+     "new": '    except ValueError as e:\n'
+            '        return []  # mutation-smoke\n',
+     "lock": "test_external_adapters.py",
+     "expect": "test_bad_json_is_not_a_pass",
+     "why": "外部工具吐坏 JSON 时按「零条发现」返回：门禁绿，代码没被检查过，"
+            "而输出里看不出任何异常（比报错更危险）。"},
+
+    {"id": "M148-semgrep-incomplete-results-ignored", "file": "checks/external_adapter.py",
+     "kind": "exact",
+     "old": '            if engine_errors:\n',
+     "new": '            if False:  # mutation-smoke\n',
+     "lock": "test_external_adapters.py",
+     "expect": "test_semgrep_engine_errors_are_not_a_pass",
+     "why": "把 Semgrep 的 `errors` 列表当没看见：解析失败的文件不会出现在 results 里，"
+            "于是「没扫完」被读成「没问题」。"},
+
+    {"id": "M149-adapter-timeout-read-as-pass", "file": "checks/external_adapter.py",
+     "kind": "exact",
+     "old": '        raise AdapterError("外部工具超时（>%ss，已连同子进程树一并终止）" % timeout)\n',
+     "new": '        return (0, "[]", "")  # mutation-smoke\n',
+     "lock": "test_external_adapters.py",
+     "expect": "test_timeout_kills_tree_and_is_not_a_pass",
+     "why": "超时不再报错，而是返回一份空的成功结果：大仓上工具跑不完时门禁自动变绿，"
+            "恰好是「扫得越久越容易过」的反向激励。"},
+
+    {"id": "M150-eslint-config-error-read-as-clean", "file": "checks/external_adapter.py",
+     "kind": "exact",
+     "old": '            if rc not in (0, 1):\n',
+     "new": '            if False:  # mutation-smoke\n',
+     "lock": "test_external_adapters.py",
+     "expect": "test_eslint_config_error_exit_is_not_a_pass",
+     "why": "ESLint 以 rc>=2（配置/内部错误）退出时不当回事：配置文件写坏、插件加载失败都会"
+            "让门禁照样绿，且默认没有任何告警。"},
 ]
 
 

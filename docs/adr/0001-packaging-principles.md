@@ -21,7 +21,7 @@ harness 准备以多种「壳」分发：CLI（`agentguard`）、MCP 薄服务�
    「壳没装好 / 装歪」必须可见（否则又一次「报了平安没人知道」）。
 3. **版本单源：** `VERSION` → CLI `--version` → MCP serverInfo → 技能 metadata，四处一致（测试锁定）。
 4. **人的动作永不进自动化壳：** accept / 改基线只允许真实终端（F3/Q③ 结论）。
-5. **分发不得改变强制层行为：** hooks-dir / install 流程 / 2 个 gate 语义不变。
+5. **分发不得改变强制层行为：** hooks-dir / install 流程 / 各 gate 语义不变。
 
 ## 后果
 

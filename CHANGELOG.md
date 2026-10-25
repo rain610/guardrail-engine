@@ -10,6 +10,14 @@
 
 ### Added
 
+- **外部分析器适配 gate（架构 A）**：新增 `checks/external_adapter.py` 与 `eslint_check.py` /
+  `semgrep_check.py`，把 ESLint / Semgrep 的 JSON 结果归一成统一 `Finding`，复用同一条输出、
+  `harness-ok:` 行内豁免、退出码与台账通道。两个 gate 默认 `enabled = false`；命令可用
+  `AGENTGUARD_ESLINT` / `AGENTGUARD_SEMGREP`（普通命令或 JSON 数组）与
+  `AGENTGUARD_ADAPTER_TIMEOUT` 覆盖。工具没装、超时、输出不是 JSON、ESLint 以配置错退出、
+  Semgrep 报告分析错误 —— 一律 `rc=2`（fail-closed，「没跑成」不等于「通过」）。
+  `mode` / `legacy_baseline` / `disabled_rules` 对适配 gate 不适用，规则取舍归工具自身配置。
+  新增 15 条锁与 5 条变异（M146–M150）守住这些路径。
 - **一键升级刷新引擎副本**：`upgrade.py` 新增 [5/7] —— 解包本包轮子自带的引擎，对 `agentguard init`
   复制出来的副本跑 `init --force`（源不依赖本机 pip 安装状态，`--skip pip` 也成立）；装完**逐字节
   对账**，旧副本改名归档可回退。只认 init 写下的所有权标记，仓库与来历不明的目录一律不碰。

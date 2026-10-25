@@ -268,6 +268,60 @@ RegexRule(id, pattern, message, fix_hint="",
 | 整文件规则 | 文件级约束 | 行尾混用 |
 | `rule_base.Rule` 子类 | 需要文件类型 / 上下文 / 多态 severity | 自定义 `applicable()` + `severity()` |
 
+## 接外部分析器（ESLint / Semgrep）
+
+内置规则是**示例与兜底**，不是主力分析器。引擎层受「零第三方依赖」约束，标准库里只有
+Python 的 `ast`；Vue / JS / TS / C# 的语法与类型判断交给成熟工具，AgentGuard 只负责
+**策略强制**那一层：什么时候跑、跑不过怎么退出、结果怎么进台账、怎么豁免。
+
+两个适配 gate 已注册，默认 `enabled = false`（装了工具、确认配置后再开）：
+
+```toml
+[gates.eslint]
+enabled = true                 # 默认 false；工具没装时开启 = 每次提交 rc=2
+repo = "example_repo"          # 指向 [repos] 里的键（本机路径在 harness.local.toml 填）
+script = "checks/eslint_check.py"
+run_on = ["pre_commit", "post_edit"]
+
+[gates.semgrep]
+enabled = false
+repo = "example_repo"
+script = "checks/semgrep_check.py"
+run_on = ["pre_commit", "post_edit"]
+```
+
+```bash
+python harness/run_gate.py eslint --all          # 全量：把「.」交给工具按自身配置遍历
+python harness/run_gate.py eslint src/app.js     # 定向：只查点名文件
+python harness/run_gate.py semgrep --all
+```
+
+工具命令默认取 PATH 里的 `eslint` / `semgrep`，可用环境变量覆盖（普通命令或 JSON 数组）：
+
+```bash
+export AGENTGUARD_ESLINT='["npx","eslint"]'
+export AGENTGUARD_SEMGREP='["semgrep","scan"]'
+export AGENTGUARD_ADAPTER_TIMEOUT=120          # 秒，默认 300
+```
+
+外部工具的规则 ID（如 `no-console`、`python.lang.security.audit.eval`）直接可用于
+`harness-ok:` 行内豁免，输出格式、警告/阻断分级、退出码与内置规则完全一致。
+
+**fail-closed 语义**（这三条是本仓付过学费的地方，锁在 `tests/test_external_adapters.py`）：
+
+| 情况 | 退出码 | 为什么不能算通过 |
+|---|---|---|
+| 工具没装 / 起不来 / 超时 | `2` | 一条检查都没执行 |
+| 输出不是 JSON / ESLint 以配置错退出 | `2` | 结论不可信或参数错了 |
+| Semgrep 的 `errors` 非空 | `2` | 有文件没扫完，结果不完整 |
+
+`mode` / `legacy_baseline` / `disabled_rules` 对适配 gate **不生效**，写上会被
+`--validate` 拒绝：严重级和规则取舍归工具自己的配置文件管（`.eslintrc` / `semgrep.yml`），
+两边各留一个开关只会互相打架。
+
+已知边界：外部工具读的是**工作区**文件，提交期门禁不会把暂存区内容喂给它们；
+要严格对齐暂存区，应在 pre-commit 里先让工具读暂存副本。
+
 ## 配置
 
 主配置：`config/harness.toml`（Python 3.11+ 标准库 `tomllib` 读取，零第三方依赖）
@@ -400,6 +454,7 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
    `RULESETS`（脚本 basename → ruleset 模块名）。只登第一处、漏了 `RULESETS`，
    门禁仍能跑，但 `--coverage` 和 `harness_self` 的能力边界清单看不到这套规则 ——
    又回到「静默盲区」。未登记时会走 `config.script` 兜底，`--validate` 只提示、不算失败
+   （外部适配 gate 不经过本仓规则集，`RULESETS` 里没有它们是**正常状态**）
 4. **本机** `config/harness.local.toml` 的 `[repos]` 里填该键的路径（只有这一步是本机的）
 
 最后跑：
@@ -487,7 +542,7 @@ python -m unittest discover -s tests
 ```
 
 发布链（`.github/workflows/release.yml`）与每日定时（`.github/workflows/nightly.yml`）
-还会跑三类慢闸门：变异冒烟（106 条变异，验证锁真的会红）、真打包后的真产物锁、
+还会跑三类慢闸门：变异冒烟（111 条变异，验证锁真的会红）、真打包后的真产物锁、
 干净 venv 安装并执行 `agentguard --version`（轮子自带引擎，不依赖引擎检出）。
 本机复现：先 `python sandbox/pack_release.py`，再跑
 `python tests/test_release_artifact.py TestRealArtifactPasses -v`；venv 安装命令见

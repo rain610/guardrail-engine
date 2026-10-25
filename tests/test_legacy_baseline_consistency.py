@@ -19,13 +19,13 @@
 
 本文件钉三件事
 ================================================================================
-  ① **每个非 harness_self 的 gate 必须有显式 `legacy_baseline` 字段**
+  ① **每个非 harness_self、非外部适配的 gate 必须有显式 `legacy_baseline` 字段**
      —— 防「老仓一键清掉 12 行」/「新 gate 漏写」。机械护栏。
   ② **`legacy_baseline` 值只能是 TOML 布尔（true / false）**
      —— `rule_base.legacy_baseline()` 拿它走 `bool(...)`，字符串 `"false"`
      在 bool() 里为 True（非空即真），与声明方向相反 → 事故级。
-  ③ **harness_self 不强制此字段**——它是工程仓自检，没有「受管仓存量」概念；
-     仓内 `CONFIG_KEYS = frozenset()`（空集）也印证它不消费任何策略键。
+  ③ **harness_self 与外部适配 gate 不强制此字段**——前者是工程仓自检，没有「受管仓存量」
+     概念；后者由外部工具管严重级，且 `--validate` 会拒绝它读不懂的策略键。
 """
 from __future__ import unicode_literals
 
@@ -37,6 +37,11 @@ import unittest
 TESTS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TESTS)
 CONFIG_TOML = os.path.join(ROOT, "config", "harness.toml")
+
+# 外部适配 gate（架构 A）不消费任何 gate 级策略键：它们的 CONFIG_KEYS 是空集，
+# `--validate` 会把 legacy_baseline 当成「声明了没人读」而拒绝。存量降级归工具自己的
+# severity 配置（ESLint / Semgrep），本仓不再留第二套开关。
+ADAPTER_GATES = {"eslint", "semgrep"}
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -53,7 +58,7 @@ def _load_gates():
 
 
 class TestLegacyBaselineConsistency(unittest.TestCase):
-    """机械护栏：所有非 harness_self 的 gate 必须显式声明 legacy_baseline。"""
+    """机械护栏：所有非 harness_self、非外部适配的 gate 必须显式声明 legacy_baseline。"""
 
     def setUp(self):
         self.gates = _load_gates()
@@ -61,7 +66,7 @@ class TestLegacyBaselineConsistency(unittest.TestCase):
     def test_every_non_harness_gate_declares_legacy_baseline(self):
         missing = []
         for name, cfg in self.gates.items():
-            if name == "harness_self":
+            if name == "harness_self" or name in ADAPTER_GATES:
                 continue
             if "legacy_baseline" not in cfg:
                 missing.append(name)

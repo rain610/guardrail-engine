@@ -477,7 +477,9 @@ class TestConfigGateKeysAreIntact(unittest.TestCase):
         import tomllib
         with open(CONFIG_TOML, "rb") as f:
             gates = tomllib.load(f).get("gates") or {}
-        want = {"example": "example_code_check.py"}
+        want = {"example": "example_code_check.py",
+                "eslint": "eslint_check.py",
+                "semgrep": "semgrep_check.py"}
         seen = 0
         for name, g in gates.items():
             if name == "harness_self":

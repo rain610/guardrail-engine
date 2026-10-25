@@ -8,8 +8,13 @@
 import os
 
 # 端脚本（值 = 相对工程根的脚本路径）。新增规则集时在此登记。
+# eslint / semgrep 是「外部工具适配」端：规则集在工具自己那边，本仓只做统一门禁通道
+# （见 checks/external_adapter.py 模块头）。它们没有 RULESETS 条目 —— 覆盖度自评
+# 只对内置规则有定义，外部规则不参与静态清单。
 ENDPOINT_SCRIPTS = {
     "example": "checks/example_code_check.py",
+    "eslint": "checks/eslint_check.py",
+    "semgrep": "checks/semgrep_check.py",
 }
 
 # 端脚本 basename → ruleset 模块名（规则实例由该模块的 *_RULES 列表承载）。
@@ -26,6 +31,8 @@ CUSTOMER_PREFIXES = []
 OVERRIDES = {
     "harness_self": "checks/harness_self_check.py",
     "example": "checks/example_code_check.py",
+    "eslint": "checks/eslint_check.py",
+    "semgrep": "checks/semgrep_check.py",
 }
 
 # gate 配置只写脚本路径；端标签由 ENDPOINT_SCRIPTS 反查（OVERRIDES 里的非端脚本不参与，

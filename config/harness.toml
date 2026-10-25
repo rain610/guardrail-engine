@@ -60,6 +60,25 @@ mode = "strict"
 run_on = ["pre_commit", "post_edit"]
 legacy_baseline = false
 
+# 外部工具适配（选装）：规则集由 ESLint / Semgrep 自己的配置决定，本仓只负责
+# 把结果接进统一门禁通道（输出 / 行内豁免 / 退出码 / 台账）。
+# ★ 默认关闭：开启后若本机没装对应工具，门禁会 rc=2（fail-closed，明说「未执行」），
+#   而不是静默放行 —— 这是有意的：装了却不生效比没装更危险。
+# ★ 本 gate 不读 mode / legacy_baseline / disabled_rules（规则开关请写在工具自己的配置里），
+#   写了会被 --validate 当场拦下。
+# 命令可用 AGENTGUARD_ESLINT / AGENTGUARD_SEMGREP 覆盖（实际接仓库时改本机覆盖层或此处）。
+[gates.eslint]
+enabled = false
+repo = "example_repo"
+script = "checks/eslint_check.py"
+run_on = ["pre_commit", "post_edit"]
+
+[gates.semgrep]
+enabled = false
+repo = "example_repo"
+script = "checks/semgrep_check.py"
+run_on = ["pre_commit", "post_edit"]
+
 # 通用规则
 [rules]
 forbid_new_parallel = true
