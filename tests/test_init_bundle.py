@@ -96,9 +96,42 @@ class _InitBase(unittest.TestCase):
         self.env["USERPROFILE"] = self.home
         self.env["PYTHONDONTWRITEBYTECODE"] = "1"   # 否则 self-check 会在副本里留 __pycache__
 
-    def init(self, *extra, dest=None):
-        return _run([PY, CLI, "init", "--dir", dest or self.dest] + list(extra),
+    def init(self, *extra, dest=None, cli=None):
+        return _run([PY, cli or CLI, "init", "--dir", dest or self.dest] + list(extra),
                     self.env, cwd=self.tmp)
+
+    def frozen_source(self):
+        """把引擎树冻到临时目录当「源」→ 该副本里 cli.py 的路径。
+
+        幂等判据是「源与副本逐字节相同」，而并行套件里
+        `test_hooks_chain.TestSentinelBlocksDirtyEngine` 会**故意**往工程仓的
+        `checks/example_code_check.py` 追加一行探针（验证哨兵能发现脏引擎）。
+        拿活树当源时，两次 init 之间源被它改过 → 误报「内容不同」（2026-10-25 实测：
+        WSL 全量并行跑复现）。冻结一份源，前提「源不动」才真的成立。
+        """
+        shell = _consts(SHELL, {"ENGINE_DIRS", "ENGINE_FILES", "ENGINE_EXCLUDE"})
+        src = os.path.join(self.tmp, "src")
+        for name in shell["ENGINE_DIRS"]:
+            d = os.path.join(ROOT, name)
+            if os.path.isdir(d):
+                shutil.copytree(d, os.path.join(src, name),
+                                ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+        for name in shell["ENGINE_FILES"]:
+            p = os.path.join(ROOT, name)
+            if os.path.isfile(p):
+                os.makedirs(src, exist_ok=True)
+                shutil.copy2(p, os.path.join(src, name))
+        for rel in shell["ENGINE_EXCLUDE"]:
+            p = os.path.join(src, rel)
+            if os.path.exists(p):
+                os.remove(p)
+        # 壳文件与 _copy_engine 同布局：<根>/agentguard/*.py
+        os.makedirs(os.path.join(src, "agentguard"), exist_ok=True)
+        for fn in ("__init__.py", "cli.py", "_shell.py", "mcp.py"):
+            p = os.path.join(ROOT, "agentguard", fn)
+            if os.path.isfile(p):
+                shutil.copy2(p, os.path.join(src, "agentguard", fn))
+        return os.path.join(src, "agentguard", "cli.py")
 
     def pointer(self):
         return os.path.join(self.home, ".agentguard", "harness.path")
@@ -144,19 +177,36 @@ class TestInitCopiesEngine(_InitBase):
             return json.load(f)
 
     def test_second_run_is_idempotent(self):
-        rc, out = self.init()
+        cli = self.frozen_source()
+        rc, out = self.init(cli=cli)
         self.assertEqual(rc, 0, out)
-        rc2, out2 = self.init()
+        rc2, out2 = self.init(cli=cli)
         self.assertEqual(rc2, 0, out2)
         self.assertIn("引擎已是最新", out2, out2)
         self.assertFalse(glob.glob(self.dest + ".disabled-*"),
                          "幂等重跑不该产生归档目录")
         # 旧版 init 装出来的副本没有标记：幂等重跑必须顺手补上（否则 upgrade.py 认不出它）
         os.remove(os.path.join(self.dest, ".agentguard-init.json"))
-        rc3, out3 = self.init()
+        rc3, out3 = self.init(cli=cli)
         self.assertEqual(rc3, 0, out3)
         with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
             self.assertEqual(self._marker().get("version"), f.read().strip())
+
+    def test_second_run_is_idempotent_when_root_resolves_to_the_copy(self):
+        """干净环境（CI）专属：init 写完指针后，find_root() 会解析到副本本身。
+
+        此时「源」必须取自本文件的安装位置（`<repo>/agentguard/..`），不能取 ROOT ——
+        否则第二次 init 变成「源=目标」，按重叠拒绝并 rc=2。本地因为有
+        `config/harness.local.toml`，解析链先命中配置，所以这条只在干净环境暴露。
+        """
+        cli = self.frozen_source()
+        rc, out = self.init(cli=cli)
+        self.assertEqual(rc, 0, out)
+        env = dict(self.env, AGENTGUARD_DIR=self.dest)
+        rc2, out2 = _run([PY, cli, "init", "--dir", self.dest], env, cwd=self.tmp)
+        self.assertEqual(rc2, 0, out2)
+        self.assertIn("引擎已是最新", out2, out2)
+        self.assertNotIn("重叠", out2, out2)
 
     def test_existing_foreign_dir_requires_force_and_archives(self):
         os.makedirs(self.dest)

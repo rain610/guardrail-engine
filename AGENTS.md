@@ -78,6 +78,9 @@ if (DEBUG) console.log("debug info")
 ## 保护循环（防 AI 改门禁敷衍了事）
 
 - 改 `checks/*.py` 或 `config/harness.toml` 属于 harness 维护，需 commit 消息带 `[harness]`。
+- 带 `[harness]` 的提交还要在消息末尾加一行 `Engine-Sha: <16 位哈希>`，值取自
+  `python harness/run_gate.py --engine-sha`；CI 会按该提交内容重算并比对（不一致即失败）。
+  台账里的 `engine_sha` 靠这组尾注归因（`agentguard/cli.py log --verify --engine`）。
 - 规则对齐真实架构，别照搬教条。
 
 ## 快速命令

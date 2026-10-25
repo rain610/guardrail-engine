@@ -3,7 +3,8 @@
 > 读者：要在一台机器 / 一个端仓接入 agentguard 门禁的人（**不需要读过任何其他文档**）。
 > 一页速查 → 三入口 → 台账 → 旁路 → 回滚 → 排障 → 已知限制 → 演进建议。
 > 路径约定：`<HARNESS>` = agentguard 引擎根。两种来源都成立：
-> ① `pip install agentguard && agentguard init` 之后是 `~/.agentguard/engine`；
+> ① 安装本包（源码树 `pip install .` 或本地 wheel；PyPI 尚未发布）并 `agentguard init`
+>    之后是 `~/.agentguard/engine`；
 > ② clone 源码时是工程根（如 `D:/Rain/project/agentguard`）。
 > ① 的形态下，下文 `python <HARNESS>/agentguard/cli.py …` 都可换成 `agentguard …`。
 
@@ -13,7 +14,8 @@
 
 ```bash
 # ⓪ 只有 pip 包时：先把随包引擎落到本机（clone 源码的跳过）
-pip install agentguard && agentguard init
+#    PyPI 尚未发布：在源码树根目录用 pip install .（或装本地 wheel）
+pip install . && agentguard init
 
 # ① 自检（3 秒，任何目录）——同时打印全部接入方式
 python <HARNESS>/agentguard/cli.py quickstart

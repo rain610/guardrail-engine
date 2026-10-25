@@ -96,6 +96,44 @@ jobs:
       - name: Run fast tests
         run: python sandbox/run_tests.py --fast
 
+  provenance:
+    runs-on: ubuntu-latest
+    steps:
+      # 检查的是**被测提交本身**：PR 事件下 checkout@v4 默认落在合并预览提交，
+      # 那条消息由 GitHub 生成、不含作者写的尾注，校验会永远跳过。
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 只校验 HEAD 一条提交：判据是「这条提交里的引擎内容 = 它自己声明的 sha」。
+      # 不校验历史（历史里的提交早已在各自的 CI 里过一遍），也不要求每个提交都带尾注。
+      - name: Verify Engine-Sha trailer on [harness] HEAD
+        run: |
+          MSG="$(git log -1 --format=%B)"
+          case "$MSG" in
+            *"[harness]"*) ;;
+            *) echo "HEAD 无 [harness] 标记，跳过引擎尾注校验"; exit 0 ;;
+          esac
+          WANT="$(printf '%s\n' "$MSG" | sed -n 's/^Engine-Sha:[[:space:]]*\([0-9a-f]\{16\}\)[[:space:]]*$/\1/p' | tail -1)"
+          if [ -z "$WANT" ]; then
+            echo "✗ 该提交带 [harness] 但缺 Engine-Sha 尾注。" >&2
+            echo "  在提交消息末尾加一行：Engine-Sha: $(python harness/run_gate.py --engine-sha)" >&2
+            exit 1
+          fi
+          GOT="$(python harness/run_gate.py --engine-sha)"
+          if [ "$WANT" != "$GOT" ]; then
+            echo "✗ 尾注声明 $WANT，按本提交内容实算 $GOT。" >&2
+            echo "  说明：提交后又改了引擎内容，或尾注抄错了。改正尾注（amend）或补一个提交。" >&2
+            exit 1
+          fi
+          echo "✓ 尾注与实算一致：$GOT"
+
   lint:
     runs-on: ubuntu-latest
     steps:

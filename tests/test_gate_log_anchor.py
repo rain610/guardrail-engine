@@ -482,6 +482,194 @@ class TestEngineSha(_Sealed):
         self.assertEqual(m._engine_sha(), m._engine_sha(),
                          "同一份引擎两次哈希不一致（台账无法对账）")
 
+    def test_dispatch_answers_even_when_config_is_broken(self):
+        """`--engine-sha` 是只读出口：配置读不出来时也要能回答"跑的是哪份引擎"。
+
+        对照组用 `--validate`：同一份坏配置下它 rc=2（证明配置**确实**是坏的），
+        而 `--engine-sha` 仍 rc=0 —— 否则 CI 校验尾注会被无关的本地配置问题卡死。
+        """
+        td = tempfile.mkdtemp()
+        bad = os.path.join(td, "broken.toml")
+        with open(bad, "w", encoding="utf-8") as f:
+            f.write("this is not toml [[[\n")
+
+        def run(*argv):
+            return subprocess.run([PY, RUN_GATE] + list(argv),
+                                  cwd=ROOT, env=dict(os.environ, PYTHONUTF8="1",
+                                                     HARNESS_CONFIG=bad),
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace")
+
+        v = run("--validate")
+        self.assertEqual(v.returncode, 2, "对照组失败：这份配置并没有被引擎判成坏配置")
+        r = run("--engine-sha")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = r.stdout.strip()
+        self.assertRegex(got, r"^[0-9a-f]{16}$")
+        self.assertEqual(got, _load(RUN_GATE, "rg_eng_sha4")._engine_sha())
+
+
+class TestEngineProvenance(_Sealed):
+    """`log --verify --engine`：台账 engine_sha 能否归因到**已提交**的引擎内容。
+
+    语义定死在这里，因为最直觉的那种实现是错的：
+    - ✗ 「记录 sha == 当前引擎」→ 正常升级、甚至改一行测试锁，全本立刻变红（假的失配）；
+    - ✓ 「记录 sha ∈ 提交历史里声明过的 sha」→ 只有"用从未提交的引擎跑出来的判定"会红，
+      而"瞬时改弱 → 跑通过 → 改回 → 提交"留下的正是这种记录。
+
+    测试不依赖真实 git 历史：`HARNESS_ENGINE_SHAS` / `HARNESS_ENGINE_SINCE` 是读侧注入口
+    （只在测试与离线审计里用，不参与任何拦截判定）。
+    """
+
+    def _recs_via_run_gate(self, n=2):
+        log = self._sealed()
+        m = _load(RUN_GATE, "rg_prov_write")
+        for i in range(n):
+            m._log_run("t_pc", "test", 1, 0, 5 + i)
+        return log, m._engine_sha()
+
+    def _inject(self, shas, since=None):
+        # _Sealed.tearDown 只还原那三个台账 env；这两个必须自己收尾，否则会漏进别的用例
+        old = {k: os.environ.get(k) for k in ("HARNESS_ENGINE_SHAS", "HARNESS_ENGINE_SINCE")}
+        os.environ["HARNESS_ENGINE_SHAS"] = shas
+        if since is None:
+            os.environ.pop("HARNESS_ENGINE_SINCE", None)
+        else:
+            os.environ["HARNESS_ENGINE_SINCE"] = since
+        for k, v in old.items():
+            if v is None:
+                self.addCleanup(os.environ.pop, k, None)
+            else:
+                self.addCleanup(os.environ.__setitem__, k, v)
+
+    def test_known_sha_is_green(self):
+        _log, sha = self._recs_via_run_gate()
+        self._inject(sha)
+        r = self._cli("log", "--verify", "--engine")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("引擎内容核对", r.stdout)
+        self.assertIn("都对应已提交的引擎内容", r.stdout)
+        self.assertIn(sha, r.stdout)
+
+    def test_uncommitted_engine_is_red_and_named(self):
+        """记录里的 sha 不属于任何已声明提交 → rc=1，且点名 gate（可据此重跑）。"""
+        _log, sha = self._recs_via_run_gate()
+        other = "0123456789abcdef"
+        self.assertNotEqual(sha, other)
+        self._inject(other)
+        r = self._cli("log", "--verify", "--engine")
+        self.assertEqual(r.returncode, 1, "未提交引擎的判定被放过了\n" + r.stdout)
+        self.assertIn("不属于任何已提交的引擎内容", r.stdout)
+        self.assertIn("gate=t_pc", r.stdout)
+        self.assertIn(sha, r.stdout)                  # 清单里要能看到实际 sha
+
+    def test_baseline_skips_older_records(self):
+        """基线之前的历史不追溯：同一批记录 + 未知 sha，基线设到未来 → 绿且"无可对账"。"""
+        _log, _sha = self._recs_via_run_gate()
+        self._inject("0123456789abcdef", since="2999-01-01T00:00:00")
+        r = self._cli("log", "--verify", "--engine")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("没有可对账的记录", r.stdout)
+
+    def test_records_without_engine_sha_are_reported(self):
+        """旧格式记录：不只字不提地略过，也不当作失配 —— 出声说"无法核对"。"""
+        log = self._sealed()
+        m = _load(RUN_GATE, "rg_prov_legacy")
+        r1 = {"ts": "2026-07-01T00:00:00", "gate": "t_pc", "scope": "test",
+              "files": 1, "rc": 0, "ms": 5}
+        r1["h"] = m._chain_h("", r1)
+        r2 = {"ts": "2026-07-01T00:00:01", "gate": "t_h5", "scope": "test",
+              "files": 1, "rc": 0, "ms": 6}
+        r2["h"] = m._chain_h(r1["h"], r2)
+        self._rewrite(log, [json.dumps(r1, ensure_ascii=False),
+                            json.dumps(r2, ensure_ascii=False)])
+        self._inject("0123456789abcdef")
+        r = self._cli("log", "--verify", "--engine")
+        self.assertEqual(r.returncode, 0, r.stdout)      # 链是好的；缺字段不等于篡改
+        self.assertIn("没有 engine_sha", r.stdout)
+        self.assertIn("2 条", r.stdout)
+
+    def test_no_trailer_yet_is_explained_not_failed(self):
+        """功能启用前（历史里还没有尾注）：说清楚"不追溯"，rc=0。
+
+        空串注入（而不是删 env）是为了让本用例与真实 git 历史无关：仓库一旦开始写尾注，
+        "尚无尾注"就用真实历史测不出来了。
+        """
+        _log, _sha = self._recs_via_run_gate()
+        self._inject("")
+        r = self._cli("log", "--verify", "--engine")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("尚无 Engine-Sha 尾注", r.stdout)
+
+    def test_git_history_counts_only_harness_commits(self):
+        """尾注只从 `[harness]` 提交里取：普通提交写一行不算"已声明"。
+
+        否则任何人都能把一个从未提交的 sha 塞进集合 —— 这条对账线自己先失效。
+        基线 = 最早一条**有效**尾注的时间（中间那条不带标记的不参与）。
+        """
+        old = os.environ.pop("HARNESS_ENGINE_SHAS", None)
+        if old is not None:
+            self.addCleanup(os.environ.__setitem__, "HARNESS_ENGINE_SHAS", old)
+
+        td = tempfile.mkdtemp()
+
+        def git(*args):
+            r = subprocess.run(["git", "-C", td] + list(args), capture_output=True,
+                               text=True, encoding="utf-8", errors="replace")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return r.stdout
+
+        def commit(msg):
+            git("-c", "user.name=t", "-c", "user.email=t@example.com",
+                "commit", "--allow-empty", "--no-gpg-sign", "-q", "-m", msg)
+
+        git("init", "-q")
+        commit("feat: one [harness]\n\nEngine-Sha: 1111111111111111")
+        ts1 = int(git("log", "-1", "--format=%ct").strip())
+        commit("chore: two\n\nEngine-Sha: 2222222222222222")
+        commit("feat: three [harness]\n\nEngine-Sha: 3333333333333333")
+
+        c = _load(CLI, "cli_prov_hist")
+        shas, since = c._engine_known_shas(repo=td)
+        self.assertEqual(shas, {"1111111111111111", "3333333333333333"})
+        self.assertEqual(since, time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts1)))
+
+    def test_not_a_git_repo_returns_empty(self):
+        old = os.environ.pop("HARNESS_ENGINE_SHAS", None)
+        if old is not None:
+            self.addCleanup(os.environ.__setitem__, "HARNESS_ENGINE_SHAS", old)
+        c = _load(CLI, "cli_prov_nogit")
+        self.assertEqual(c._engine_known_shas(repo=os.path.join(tempfile.mkdtemp(), "nope")),
+                         (set(), ""))
+
+    def test_flag_off_prints_no_engine_section(self):
+        _log, _sha = self._recs_via_run_gate()
+        r = self._cli("log", "--verify")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("引擎内容核对", r.stdout)
+
+    def test_engine_without_verify_is_refused(self):
+        """`--engine` 单独用没有意义：静默忽略会让人以为核对过了。"""
+        self._recs_via_run_gate()
+        r = self._cli("log", "--engine")
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("只与 --verify 合用", r.stdout)
+
+    def test_chain_failure_wins_over_engine_check(self):
+        """链先红就报链：记录是否原样都还不确定时，谈归因是噪音。"""
+        log, sha = self._recs_via_run_gate()
+        self._inject(sha)
+        with open(log, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        rec = json.loads(lines[0])
+        rec["rc"] = 9
+        lines[0] = json.dumps(rec, ensure_ascii=False)
+        self._rewrite(log, lines)
+        r = self._cli("log", "--verify", "--engine")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("链断裂", r.stdout)
+        self.assertNotIn("引擎内容核对", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

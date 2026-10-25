@@ -12,6 +12,9 @@ agentguard 编码卫生规则集（2026-09-07，CodeBuddy 实战暴露后补）
   - error：文件既不是约定编码，也不是合法的约定编码（真损坏/错编码，必须修）
   - info ：文件是「仓主流的异类」（存量历史文件，报告观察，不拦改动）
 允许的编码形态：utf-8-bom / utf-8 / gbk（与 _detect_encoding 对应）。
+
+本模块**默认不注册**成 gate：编码约定因仓而异（给全局默认会把另一类仓整片报红）。
+它随包发布，供自建检查脚本接线 —— 用法见 README「自带的可选规则集」。
 """
 import re
 from rule_base import Rule, Finding, Severity, CheckContext, git_sensor_failed

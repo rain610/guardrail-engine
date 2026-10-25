@@ -191,7 +191,7 @@ class TestSummarySeparatesUnregisteredNames(unittest.TestCase):
 # 判据落在「插件这次实际交出去的 file_path 是什么」上 —— 不是 grep 源码形态。
 BAD_VUE = ('<template><div /></template>\r\n'
            '<script setup>\r\n'
-           'const x = ;\r\n'
+           'console.log("debug");\r\n'
            '</script>\r\n')
 OK_VUE = ('<template><div /></template>\r\n'
           '<script setup>\r\n'
@@ -221,7 +221,7 @@ class _HookFixture:
                     "  t_pc:\n"
                     "    enabled: true\n"
                     "    repo: t_pc\n"
-                    "    script: checks/pc_code_check.py\n")
+                    "    script: checks/example_code_check.py\n")
         self.log = os.path.join(self.dir, "gate_log.jsonl")
         self.env = dict(os.environ, HARNESS_CONFIG=self.cfg, HARNESS_LOG_FILE=self.log,
                         PYTHONUTF8="1", HARNESS_ENTRY="test")

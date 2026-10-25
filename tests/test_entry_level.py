@@ -226,6 +226,29 @@ class TestDemoGateScript(unittest.TestCase):
         self.assertIn("放行成功", out, "demo 没有证明修复后放行：\n" + out[-1200:])
 
 
+class TestDemoGatePythonUsage(unittest.TestCase):
+    """Python demo 的用法守卫（不跑门禁，快跑档也留着）：只对应 example gate。"""
+
+    def test_unknown_gate_is_refused(self):
+        r = _run([PY, os.path.join(ROOT, "sandbox", "demo_gate.py"), "pc"])
+        out = (r.stdout or "") + (r.stderr or "")
+        self.assertEqual(2, r.returncode, "非 example gate 必须以 rc=2 拒绝：\n" + out[-600:])
+        self.assertIn("只对应 example", out, "拒绝时必须说清原因：\n" + out[-600:])
+
+
+@_slow("真跑 demo_gate.py（起两次 run_gate）")
+class TestDemoGatePython(unittest.TestCase):
+    """PowerShell / 无 sh 环境的入口锁：Python demo 必须同样先拦后放。"""
+
+    def test_python_demo_intercepts_then_passes(self):
+        r = _run([PY, os.path.join(ROOT, "sandbox", "demo_gate.py")])
+        out = (r.stdout or "") + (r.stderr or "")
+        self.assertEqual(r.returncode, 0, "demo 自身失败了：\n" + out[-1200:])
+        self.assertIn("拦截成功", out, "demo 没有证明违规被拦：\n" + out[-1200:])
+        self.assertIn("放行成功", out, "demo 没有证明修复后放行：\n" + out[-1200:])
+        self.assertIn("[NO-CONSOLE]", out, "拦的不是 NO-CONSOLE：\n" + out[-1200:])
+
+
 @_slow("run_gate 参数链路（起子进程）")
 class TestRunGateModeValue(unittest.TestCase):
     """N3 回归锁：--mode 的值不能被吞掉（旧实现 → 命令变 `--mode <文件>`、文件丢失）。"""

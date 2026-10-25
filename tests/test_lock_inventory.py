@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import unittest
 
@@ -120,6 +121,26 @@ class TestLockInventory(unittest.TestCase):
             self.assertGreaterEqual(len(lines), 2, "%s 行数过少" % rel)
             self.assertIn("agentguard dispatcher", lines[1],
                           "%s 第 2 行必须是分发器指纹标记（head -2 依赖它）" % rel)
+
+
+    def test_hook_dispatchers_are_executable_in_git(self):
+        """hooks-dir 的两个分发器必须以 100755 入库。
+
+        git 在 POSIX 上**直接 exec** hook：mode 100644 时它被静默忽略（不报错、不跑门禁），
+        表现为「装了 hook 但什么都没拦」。Windows 检出看不出差别（core.fileMode=false），
+        所以锁在 git 索引的 mode 上，不在工作区权限上。
+        """
+        if not os.path.exists(os.path.join(ROOT, ".git")):
+            self.skipTest("不是 git 检出（源码压缩包）")
+        for rel in ("harness/hooks-dir/pre-commit", "harness/hooks-dir/commit-msg"):
+            r = subprocess.run(["git", "-C", ROOT, "ls-files", "-s", rel],
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            fields = (r.stdout or "").split()
+            self.assertEqual(fields[0] if fields else "", "100755",
+                             "%s 在 git 索引里的 mode 不是 100755 —— POSIX 上 git 会静默跳过它"
+                             % rel)
 
 
     def test_mutations_list_only_grows(self):
@@ -303,9 +324,19 @@ class TestLockInventory(unittest.TestCase):
             p = os.path.join(tmp, "pyc_probe_mod.py")
 
             def read_v():
+                env = dict(os.environ)
+                # `python -c` 不保证 cwd 在 sys.path（PYTHONSAFEPATH=1 / -P 会摘掉它）：
+                # 显式注入 PYTHONPATH，探针才只测「陈旧 pyc 会不会被复用」，不会把
+                # 「import 不到模块」误读成同样空白的 stdout（2026-10-22 复审报告现场：
+                # 某环境下 read_v() 恒返回 ''，红的却是锁本身）。
+                env["PYTHONPATH"] = tmp + (os.pathsep + env["PYTHONPATH"]
+                                           if env.get("PYTHONPATH") else "")
                 r = subprocess.run([sys.executable, "-c", "import pyc_probe_mod as m;print(m.V)"],
                                    cwd=tmp, capture_output=True, text=True,
-                                   encoding="utf-8", errors="replace")
+                                   encoding="utf-8", errors="replace", env=env)
+                self.assertEqual(r.returncode, 0,
+                                 "探针子进程没跑起来（不是 pyc 判定问题）：%s"
+                                 % (r.stderr or "")[-500:])
                 return (r.stdout or "").strip()
 
             def write(body):

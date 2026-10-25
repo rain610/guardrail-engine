@@ -17,7 +17,7 @@ AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交�
 
 | 痛点 | AgentGuard 怎么解 |
 |---|---|
-| 规范写在文档里，AI / 开发者记不住 | 常驻只注入不到 1K 的指针，细节按需加载 |
+| 规范写在文档里，AI / 开发者记不住 | 常驻只注入约 2.6KB 的全局守则，细节按需加载 |
 | 约定只对"愿意遵守的人"有效 | 编辑期 + 提交期双重拦截，忘了也会被拦 |
 | 一上规则就被存量旧账淹没 | 双态 severity：新代码 `error` 拦截，存量 `info` 观察 |
 | "门禁跑没跑"说不清 | 每次判定写台账，可查看运行摘要与规则覆盖度 |
@@ -31,14 +31,20 @@ AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交�
 |---|---|---|
 | Python | **3.11+** | 引擎运行时 |
 | Git | 2.x | diff / worktree 识别 |
+| Bash（Windows 用 Git Bash） | — | 运行 `sandbox/*.sh`（demo / doctor / setup）；PowerShell 不自带 `sh`（demo 另有 Python 版） |
 | Node.js（可选） | — | 仅当自定义规则调用 `node` 时需要；示例规则不依赖 |
 
 ## 快速开始
 
-### 0. pip 安装（wheel 自带引擎，不需要 clone）
+### 0. pip 安装（wheel 自带引擎，不需要另 clone 引擎）
+
+> **PyPI 尚未发布**：短命令 `pip install agentguard` 现在会 404。先在源码树根目录安装
+> `pip install .`（或装本地构建的 wheel）；PyPI 发布后再改回短命令。
 
 ```bash
-pip install agentguard      # 从源码装：pip install .
+git clone https://github.com/rain610/agentguard.git
+cd agentguard
+pip install .               # 从源码装：wheel 自带引擎
 agentguard init             # 把随包引擎落到 ~/.agentguard/engine，并写 ~/.agentguard/harness.path
 agentguard quickstart       # 自检 + 打印 MCP 接入配置
 ```
@@ -55,8 +61,13 @@ git clone https://github.com/rain610/agentguard.git
 cd agentguard
 
 sh sandbox/demo_gate.sh    # 在临时目录造一个 console.log → 拦住 → 改对 → 放行
+python sandbox/demo_gate.py  # 同上，且不需要 sh（PowerShell / cmd 直接可用）
 sh sandbox/doctor.sh       # 端到端自检：门禁探针 / hook 活性 / skill 软链
 ```
+
+> **Windows 需要 Git Bash**：PowerShell / cmd 不自带 `sh`（会报 `无法将"sh"项识别为...`）。
+> `demo` 可直接跑 `python sandbox\demo_gate.py`；`doctor` / `setup` 等 `*.sh` 入口
+> 请在 Git Bash 里执行。
 
 `demo_gate.sh` 只写系统临时目录，不碰任何业务仓，也不需要先改配置。它自带两向断言：
 该拦的必须 `rc=1` 且点名 `NO-CONSOLE`，改对必须 `rc=0`，否则脚本自己以非零退出 ——
@@ -301,8 +312,10 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 | 定向检查 | `python harness/run_gate.py <gate> <文件...>` |
 | 全量扫描 | `python harness/run_gate.py <gate> --all` |
 | 配置体检 | `python harness/run_gate.py --validate` |
+| 60 秒演示（无需 sh） | `python sandbox/demo_gate.py` |
 | 运行摘要 | `python harness/run_gate.py --summary` |
 | 覆盖度报告 | `python harness/run_gate.py --coverage` |
+| 台账核链 + 引擎归因 | `python agentguard/cli.py log --verify --engine` |
 | 安装提交 hook | `sh sandbox/install_hooks.sh <gate>` |
 | 安装编辑期 hook | `python sandbox/install_shim.py` |
 | 接入自检 | `sh sandbox/doctor.sh` |
@@ -330,6 +343,41 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 - 可用于人工复核与追责线索；
 - **不要写成**"提交可自证"，也不要对外宣称已满足强制审计。
 
+台账里另有一层**引擎内容**指纹（见下一节 `Engine-Sha`）：它能说明"这条判定用的是哪份
+门禁代码"，但那是台账自身的归因，不是"这次提交的内容被检查过"的证明。
+
+## 保护边界（防 AI 改门禁）
+
+`[harness]` 提交标记只是**变更声明**，不是权限边界：任何人在本地都能写这句。
+真正的强制层是仓库侧配置：
+
+- `.github/CODEOWNERS` 把 `checks/`、`harness/`、`config/`、`sandbox/mutation_smoke.py`、
+  `tests/test_lock_inventory.py`、`tests/lock-inventory.json` 与 `.github/` 指给维护者；
+- 在 GitHub 的 **Settings → Branches → Branch protection rules** 里给 `main` 开启
+  **Require a pull request before merging** 与 **Require review from Code Owners**。
+  只提交 CODEOWNERS 而不开分支保护，规则只会「请求 review」，不会阻断合并；
+- 本仓的 commit-msg hook 会拦「改了受保护文件但提交消息没有 `[harness]`」——它挡的是
+  误操作；有意绕过的人不受它约束。边界仍是上面的 CODEOWNERS + 分支保护。
+
+### 引擎内容的可追溯性（Engine-Sha）
+
+`[harness]` 只说明"这次改了门禁"，不说明"改成了什么内容"。台账每条记录都带
+`engine_sha`（引擎内容的 16 位哈希），但**不能**直接拿它跟「当前引擎」比 —— 正常升级、
+甚至改一行测试锁都会让当前值变，那样每次升级全本都会红。
+
+本仓的口径是**提交归因**：
+
+1. 带 `[harness]` 的提交，在提交消息末尾加一行 `Engine-Sha: <16 位哈希>`；值来自
+   `python harness/run_gate.py --engine-sha`（只读出口，配置坏了也能回答）；
+2. CI 的 `provenance` job 会按该提交的内容**重算**并与尾注比对，不一致即失败；
+3. `python agentguard/cli.py log --verify --engine` 把台账里的 `engine_sha` 与
+   **提交历史里声明过的集合**对账，基线是第一条带尾注的提交时间，更早的历史不追溯。
+
+会红的是「记录用的引擎内容从未被提交」—— 这正是"瞬时改弱规则 → 跑通过 → 改回 → 提交"
+留下的形状。开发期用未提交的引擎跑门禁也会落在清单里：把那份引擎提交并补尾注，
+或重跑一次已提交引擎即可。核对不通过只影响这条读命令，不反向拦门禁。
+
+
 ## 扩展
 
 ### 添加新规则
@@ -341,22 +389,54 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 
 ### 添加新 gate（多仓 / 独立规则集）
 
-三处都要动，少一处的症状是「看起来配好了」：
+四处都要动，少一处的症状是「看起来配好了」：
 
 1. **共享** `config/harness.toml` 的 `[repos]` 段加键名（值 `""`）—— 键名是团队策略，
    与机器无关
 2. **共享** `config/harness.toml` 的 `[gates.<名>]` 表加 gate，`repo =` 指向该键，`script =`
    指向检查脚本。新脚本可从 `checks/example_code_check.py` 复制，把
    `from example_ruleset import ...` 换成自己的 ruleset
-3. **本机** `config/harness.local.toml` 的 `[repos]` 里填该键的路径（只有这一步是本机的）
+3. `checks/registry.py` 登记**两处**：`ENDPOINT_SCRIPTS`（端名 → 脚本路径）与
+   `RULESETS`（脚本 basename → ruleset 模块名）。只登第一处、漏了 `RULESETS`，
+   门禁仍能跑，但 `--coverage` 和 `harness_self` 的能力边界清单看不到这套规则 ——
+   又回到「静默盲区」。未登记时会走 `config.script` 兜底，`--validate` 只提示、不算失败
+4. **本机** `config/harness.local.toml` 的 `[repos]` 里填该键的路径（只有这一步是本机的）
 
-建议在 `checks/registry.py` 登记 `gate -> script`；未登记会走 `config.script` 兜底，
-`--validate` 会给出提示，不算失败。最后跑：
+最后跑：
 
 ```bash
 python harness/run_gate.py --validate      # 必须 rc=0
 python sandbox/run_tests.py --fast
 ```
+
+### 自带的可选规则集：编码卫生（`checks/encoding_ruleset.py`）
+
+这个模块是**给你自己的检查脚本用的库**，默认不注册成 gate —— 编码约定是每个仓自己的
+事实（.NET 仓常见 `utf-8-bom`，前端仓 `utf-8`），给一个全局默认会把另一类仓整片报红。
+
+它解决的是"AI 跟随异类文件的编码写入"：往一个 GBK 的老 `Program.cs` 追加代码，
+diff 会变乱码。判定分两档：本次**改动过或新建**的文件编码不符 = 拦截；全量扫描里的
+存量异类 = 只报告。
+
+接线方式（照「添加新 gate」的四步做，脚本里换成这个规则集）：
+
+```python
+import rule_base
+from encoding_ruleset import rules_for
+
+raw = rule_base.read_bytes(filepath)          # 走暂存区读取，别直接 open()
+ctx = rule_base.CheckContext(path=..., rel=rel, raw=raw,
+                             content=raw.decode("utf-8", errors="replace"),
+                             repo=repo, mode=a.mode or "strict",
+                             targeted=(scope == "targeted"))
+for rule in rules_for("utf-8-bom"):           # 取值跟仓约定走，别照抄
+    for f in rule.run(ctx):
+        ...
+```
+
+两个容易漏的点：`raw=` 必须传原始字节（规则判的是字节，不是解码后的文本）；
+定向口径要把 `targeted=True` 传进来 —— 缺了它 `error_in_targeted` 不生效，规则最重
+只到 info（看起来装了这条规则，却从不拦提交）。
 
 ### 行内豁免
 
@@ -396,7 +476,7 @@ if (DEBUG) console.log("debug info")
 ## 测试
 
 ```bash
-# 快速测试（编辑回路；跳过真打包/真安装/真 git 链路，本机约 1 分钟）
+# 快速测试（编辑回路；跳过真打包/真安装/真 git 链路；本机约 1.5-8 分钟，视机器与并行度）
 python sandbox/run_tests.py --fast
 
 # 全量测试（提交前/CI；含真打包/真安装/真 git 链路）
@@ -408,8 +488,8 @@ python -m unittest discover -s tests
 
 发布链（`.github/workflows/release.yml`）与每日定时（`.github/workflows/nightly.yml`）
 还会跑三类慢闸门：变异冒烟（105 条变异，验证锁真的会红）、真打包后的真产物锁、
-干净 venv 安装并执行 `agentguard --version`（轮子只含壳，需用 `AGENTGUARD_DIR`
-指向引擎检出）。本机复现：先 `python sandbox/pack_release.py`，再跑
+干净 venv 安装并执行 `agentguard --version`（轮子自带引擎，不依赖引擎检出）。
+本机复现：先 `python sandbox/pack_release.py`，再跑
 `python tests/test_release_artifact.py TestRealArtifactPasses -v`；venv 安装命令见
 `.github/workflows/release.yml` 的「干净 venv 安装冒烟」步骤。
 

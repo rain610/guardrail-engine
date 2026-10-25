@@ -286,7 +286,11 @@ def load(path=None):
         try:
             override = _load_file(local)
         except Exception as e:
-            # local 坏了不能静默跳过（否则 paths 错了又回到"静默放行"假保护）
+            # local 坏了不能静默跳过（否则 paths 错了又回到"静默放行"假保护）：
+            # stderr 先逐条报，同时记进程序化信号 —— `--validate` 会据此 rc=2，
+            # 不再在最后一行说"全部健康"。单次 gate 运行仍用 base 继续（一份可选的
+            # 本机覆盖层不该阻断所有检查），但"这次降级了"必须能被体检读到。
+            _LOCAL_PARSE_ERROR.append((local, str(e)))
             sys.stderr.write(f"[config-warn] 本地覆盖层解析失败已忽略: {local} ({e})" + "\n")
             return base
         if override:
@@ -396,13 +400,18 @@ _POLICY_OVERRIDDEN = []
 # （local 的 `enabled: false`，设计上**允许**）时，台账里只有 skipped=true —— 看不出这个 gate
 # 是"配置里本来就关着"还是"本机偷偷关的"。这个列表就是那个缺失的事实，供 run_gate 落进台账。
 _LOCAL_DISABLED = []
+# 2026-10-22（复审报告 §3.1）：本地覆盖层解析失败原先只往 stderr 写一句、然后拿 base 继续，
+# 而 `--validate` 最后仍说「全部启用 gate 配置健康」并 rc=0 —— 覆盖层里的路径/策略**一条都
+# 没生效**，体检却给绿色结论。这里把失败记成程序化信号，由 --validate 转成 rc=2。
+_LOCAL_PARSE_ERROR = []   # [(路径, 原因)]，最近一次 load()
 
 
 def _reset_policy_signals():
-    """清空三个「最近一次 load()」信号（load 的开头调用，见 load 里的说明）。"""
+    """清空四个「最近一次 load()」信号（load 的开头调用，见 load 里的说明）。"""
     _POLICY_REJECTED[:] = []
     _POLICY_OVERRIDDEN[:] = []
     _LOCAL_DISABLED[:] = []
+    _LOCAL_PARSE_ERROR[:] = []
 
 
 def last_local_disabled():
@@ -412,6 +421,15 @@ def last_local_disabled():
     但必须留下痕迹"——两者都要能被台账/体检读到，而不是只散落一行 stderr。
     """
     return list(_LOCAL_DISABLED)
+
+
+def last_local_parse_error():
+    """最近一次 load() 中**本地覆盖层解析失败**的 [(路径, 原因)]（未发生时为空）。
+
+    给 `run_gate --validate` 用：覆盖层读不出来时本机路径/策略一条都没生效，
+    那时再说"全部健康"就是假绿（复审报告 2026-10-22 §3.1）。
+    """
+    return list(_LOCAL_PARSE_ERROR)
 
 
 # 去重记账（"这条已经说过了"）就是**进程环境变量本身**，不再另存一份进程内 set。

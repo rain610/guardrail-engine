@@ -705,6 +705,23 @@ def _validate(structure_only=False):
     if cfg_err:
         print(f"=== 配置体检：✗ 配置读不出来（rc=2）===\n  {cfg_err}")
         return 2
+    # 2026-10-22（复审报告 §3.1）：覆盖层坏了不等于"全部健康"。原先 load() 只往 stderr
+    # 写一句就退回 base，体检最后仍报绿并 rc=0 —— 覆盖层里的路径/策略一条都没生效，
+    # 只看 rc 的脚本会把"配置坏了"读成"配置好了"。这里把降级转成阻断项。
+    try:
+        from _config import last_local_parse_error
+        local_bad = last_local_parse_error()
+    except Exception:
+        local_bad = []
+    if local_bad:
+        path, why = local_bad[-1]
+        print("=== 配置体检：✗ 本地覆盖层读不出来（rc=2）===")
+        print("  文件：%s" % path)
+        print("  原因：%s" % why)
+        print("  ⚠ 这份文件里的 [repos] 路径与策略覆盖**一条都没生效**；")
+        print("    不修好就继续，本机 gate 会按共享配置的空路径运行（等于没接入）。")
+        print("    修好它，或删掉该文件 / 去掉 HARNESS_CONFIG 后重跑。")
+        return 2
     problems = []
     missing_repos = []
     zero_conf = []                     # 本机没填路径的 gate（见下，不阻断）
@@ -941,6 +958,12 @@ def _dispatch(argv):
     if argv and argv[0] in ("--summary",):
         limit = int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 500
         return _summary(limit)
+    if argv and argv[0] == "--engine-sha":
+        # 引擎内容哈希的**只读出口**：给 CI 校验提交尾注、给 `gate log --verify --engine`
+        # 反查台账，都从这里取同一个值（不另写一份哈希实现）。
+        # 刻意放在配置加载之前：配置坏了也要能问「这次跑的是哪份引擎内容」。
+        print(_engine_sha())
+        return 0
     if argv and argv[0] in ("--validate", "-V"):
         # --structure-only（CI 用）：端仓不在机器上时不阻断（见 _validate docstring）
         return _validate(structure_only="--structure-only" in argv)

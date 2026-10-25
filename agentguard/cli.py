@@ -345,6 +345,13 @@ def _engine_source():
     p = _shell.packaged_engine()
     if p:
         return p, "随包引擎（wheel）"
+    # 源码形态：本文件在 `<源>/agentguard/` 下，上一级就是引擎根。
+    # 不能只看 ROOT —— init 写完指针后 find_root() 会解析到刚装出来的副本，
+    # 第二次 init 就变成「源=目标」并按重叠拒绝（干净环境必现；本机有
+    # config/harness.local.toml 时会先命中配置，所以本地看不出来）。
+    cand = os.path.dirname(_shell.package_dir())
+    if os.path.isfile(os.path.join(cand, "harness", "run_gate.py")):
+        return cand, "当前工程根"
     if ROOT:
         return ROOT, "当前工程根"
     return None, ""
@@ -492,6 +499,17 @@ def cmd_init(a):
     dest = os.path.abspath(os.path.expanduser(a.dir or default_dest))
 
     # 拒绝「复制进自己」：--dir 指到工程根 / 工程根的子目录时，归档会把源本身搬走。
+    if (os.path.normcase(os.path.abspath(dest)) == os.path.normcase(os.path.abspath(src))
+            and os.path.isfile(os.path.join(src, INIT_MARKER))):
+        # 从**副本内部**跑 init（`<dest>/agentguard/cli.py init`）：没有独立源可复制，
+        # 但这个目录本身就是 init 装出来的引擎 —— 认它、写指针，别报「源=目标」。
+        # 只认带所有权标记的副本：把工程根当目标仍是错误用法（归档会搬走源本身）。
+        ptr = _write_engine_pointer(dest)
+        print("引擎已是最新：%s（version %s）" % (dest, _shell.read_version(dest)))
+        print("pointer      : %s" % ptr)
+        _mark_init_copy(dest)
+        print("下一步: %s quickstart" % _cmd_prefix())
+        return 0
     if _within(dest, src) or _within(src, dest):
         print("✗ 目标目录与引擎源重叠：源=%s 目标=%s（会把源复制进自己或归档掉源）"
               % (src, dest), file=sys.stderr)
@@ -1148,13 +1166,125 @@ def _cmd_anchor():
     return 0
 
 
-def _cmd_verify():
+_ENGINE_SHA_TRAILER = re.compile(r"(?m)^Engine-Sha:[ \t]*([0-9a-f]{16})[ \t]*$")
+
+
+def _engine_sha_now():
+    """当前引擎内容哈希（转发 run_gate --engine-sha）→ (sha, 错误)。"""
+    rc, out, err = _run([_py(), os.path.join(ROOT or "", "harness", "run_gate.py"),
+                         "--engine-sha"])
+    lines = (out or "").strip().splitlines()
+    if rc == 0 and lines:
+        return lines[-1].strip(), ""
+    return None, ((err or out or "").strip() or ("rc=%s" % rc))
+
+
+def _engine_known_shas(repo=None):
+    """已提交的引擎内容哈希 → (set, 核对基线 ts)。
+
+    来源是 git 历史里的 `Engine-Sha:` 尾注。只认**同时带 `[harness]`** 的提交：
+    普通提交里写一行尾注就等于能凭空把一个 sha 加进"已提交"集合，那这条对账线自己
+    就先失效了。带 `[harness]` 的提交由 CI 重算比对（见 .github/workflows/ci.yml）。
+    `HARNESS_ENGINE_SHAS` / `HARNESS_ENGINE_SINCE` 只给测试与离线审计注入用 ——
+    本函数是读侧，不参与任何拦截判定。
+    """
+    injected = os.environ.get("HARNESS_ENGINE_SHAS")
+    if injected is not None:
+        return set(re.findall(r"[0-9a-f]{16}", injected)), os.environ.get("HARNESS_ENGINE_SINCE", "")
+    try:
+        r = subprocess.run(["git", "-C", repo or ROOT or ".", "log", "--format=%ct%x1f%B%x1e"],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return set(), ""
+    if r.returncode != 0:
+        return set(), ""
+    shas, oldest = set(), None
+    for chunk in (r.stdout or "").split("\x1e"):
+        chunk = chunk.strip("\n")
+        if not chunk:
+            continue
+        ts, _, body = chunk.partition("\x1f")
+        if "[harness]" not in body:
+            continue
+        found = _ENGINE_SHA_TRAILER.findall(body)
+        if not found:
+            continue
+        shas.update(found)
+        try:
+            epoch = int(ts)
+        except ValueError:
+            continue
+        oldest = epoch if oldest is None else min(oldest, epoch)
+    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(oldest)) if oldest else ""
+    return shas, since
+
+
+def _engine_report(recs):
+    """核对台账里的 engine_sha 能否归因到**已提交**的引擎内容（读侧，rc=1 只影响本命令）。
+
+    为什么不能直接比「记录 sha == 当前引擎」：正常升级、甚至改一行测试锁都会让当前哈希变，
+    那样每次升级后全本都红，等于逼人忽略它。这里用的是**提交历史**：一条判定要么用
+    某一版已提交的引擎跑出来的，要么就是「跑的时候引擎内容从未被提交」—— 后者正是
+    「瞬时改弱 → 跑通过 → 改回 → 提交」在台账里留下的形状。
+
+    基线 = 最早的 `Engine-Sha` 尾注所在提交时间；更早的历史不追溯（那时还没有这个约定）。
+    开发期用未提交引擎跑出的记录会被点名：这是有意的审计口径，重跑一次已提交引擎即可。
+    """
+    cur, err = _engine_sha_now()
+    if cur is None:
+        print("⚠ 引擎内容核对跳过：算不出当前 engine_sha（%s）" % err[:200])
+        return 0
+    known, since = _engine_known_shas()
+    print("=== 引擎内容核对（--engine）===")
+    print("  当前引擎 sha: %s" % cur)
+    if not known:
+        print("  尚无 Engine-Sha 尾注 —— 本功能启用前的历史不追溯。")
+        print("  今后带 [harness] 的提交需加一行 `Engine-Sha: <sha>`，CI 会重算校验。")
+        return 0
+    print("  已提交的引擎内容: %d 个（核对基线 %s）" % (len(known), since or "—"))
+    checked = missing = 0
+    bad = []
+    for i, rec in enumerate(recs, 1):
+        ts = str(rec.get("ts") or "")
+        if since and ts and ts < since:
+            continue
+        sha = str(rec.get("engine_sha") or "")
+        if not sha:
+            missing += 1
+            continue
+        checked += 1
+        if sha not in known:
+            bad.append((i, ts, rec.get("gate"), sha))
+    if missing:
+        print("  △ %s有 %d 条记录没有 engine_sha（旧格式），无法核对。"
+              % ("基线之后" if since else "全本", missing))
+    if bad:
+        print("  ✗ %d 条记录的 engine_sha 不属于任何已提交的引擎内容：" % len(bad))
+        for i, ts, gate, sha in bad[:10]:
+            print("      第 %d 行 %s gate=%s sha=%s" % (i, ts, gate, sha))
+        if len(bad) > 10:
+            print("      …另有 %d 条" % (len(bad) - 10))
+        print("  说明：开发期用未提交的引擎跑门禁也会落到这里。把那份引擎提交并带")
+        print("  `Engine-Sha` 尾注，或重跑一次当前已提交引擎的门禁；审阅时按此清单追。")
+        return 1
+    if checked == 0:
+        print("  · 核对范围内没有可对账的记录（0 条带 engine_sha）。")
+        return 0
+    print("  ✓ 基线之后的 %d 条记录都对应已提交的引擎内容" % checked)
+    return 0
+
+
+def _cmd_verify(engine=False):
     """重算行内链 + 与最后一条锚点对账（**读侧命令**：进不了门禁路径，绝不反向拦人）。
 
     四态：链完整且锚点吻合 / 链完整但锚点之后有未锚定新增（仅链保护，出声）/
     断裂或失配（行内链断点行号、锚定段 sha、截断、坏行数变化，逐项点名）/
     **锚点尾行无法解析**（rc=1，点名 —— 2026-09-30 修：这一态原先被并进"尚无锚点"，
     于是弄坏锚点尾行 = 防线静默消失且报绿）。
+
+    engine=True（--engine）：在链/锚点**通过之后**再核对 engine_sha 的归因（见
+    `_engine_report`）。链本身红了就先修链 —— 那时连记录是否原样都还不确定。
     """
     recs, bad = _read_ledger(None)
     if not recs:
@@ -1190,7 +1320,7 @@ def _cmd_verify():
     if anchor is None:
         print("✓ 链完整（%d 条，起于第 %d 行）—— 尚无锚点；`gate log --anchor` 后按提示入库。"
               % (len(recs), chain_start))
-        return 0
+        return _engine_report(recs) if engine else 0
     n_a = int(anchor.get("n") or 0)
     if len(recs) < n_a:
         print("✗ 台账被截断：锚点记 n=%d，现在只剩 %d 条" % (n_a, len(recs)))
@@ -1208,16 +1338,20 @@ def _cmd_verify():
         return 1
     if extra == 0:
         print("✓ 链完整且锚点吻合：n=%d，链起于第 %d 行，尾 h=%s" % (len(recs), chain_start, prev_h))
-        return 0
+        return _engine_report(recs) if engine else 0
     print("✓ 链完整；锚点吻合（n=%d）；其后有 %d 条未锚定新增（仅链保护）" % (n_a, extra))
-    return 0
+    return _engine_report(recs) if engine else 0
 
 
 def cmd_log(a):
+    if getattr(a, "engine", False) and not getattr(a, "verify", False):
+        # 静默忽略 = 用户以为核对过了。这个开关没有独立含义，只有和 --verify 一起才成立。
+        print("✗ --engine 只与 --verify 合用（它核对台账归因，本身不产出记录视图）")
+        return 2
     if getattr(a, "anchor", False):
         return _cmd_anchor()
     if getattr(a, "verify", False):
-        return _cmd_verify()
+        return _cmd_verify(engine=getattr(a, "engine", False))
     if a.log:                       # 显式指文件：单文件旧路径（密闭 / 对账某一片）
         src = a.log
         recs, bad = _read_jsonl(a.log, a.last)
@@ -1667,6 +1801,8 @@ def build_parser():
                        help="追加锚点记录并打印入库命令（台账本体保持 git 忽略）")
     p_log.add_argument("--verify", action="store_true",
                        help="重算行内链并与最后一条锚点对账")
+    p_log.add_argument("--engine", action="store_true",
+                       help="与 --verify 合用：再核对台账 engine_sha 能否归因到已提交的引擎内容（Engine-Sha 尾注）")
 
     p_ops = sub.add_parser("ops")
     p_ops.add_argument("--last", type=int, default=50)

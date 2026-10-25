@@ -1,0 +1,11 @@
+# 门禁引擎、策略与发布链的改动必须由维护者 review。
+# 注意：本文件本身只是 GitHub 的「请求 review」规则，真正的强制层是分支保护里的
+# 「Require review from Code Owners」。两者都开，才是边界；只开本文件是减速带。
+
+/checks/                      @rain610
+/harness/                     @rain610
+/config/                      @rain610
+/sandbox/mutation_smoke.py    @rain610
+/tests/test_lock_inventory.py @rain610
+/tests/lock-inventory.json    @rain610
+/.github/                     @rain610

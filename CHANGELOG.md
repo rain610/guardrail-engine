@@ -13,6 +13,39 @@
 - **一键升级刷新引擎副本**：`upgrade.py` 新增 [5/7] —— 解包本包轮子自带的引擎，对 `agentguard init`
   复制出来的副本跑 `init --force`（源不依赖本机 pip 安装状态，`--skip pip` 也成立）；装完**逐字节
   对账**，旧副本改名归档可回退。只认 init 写下的所有权标记，仓库与来历不明的目录一律不碰。
+- **引擎内容的可追溯性**（`Engine-Sha`）：带 `[harness]` 的提交在消息末尾声明本提交的
+  `Engine-Sha: <16 位>`，CI 的 `provenance` job 按提交内容重算比对；`run_gate.py --engine-sha`
+  是只读出口（配置坏也能回答）；`agentguard/cli.py log --verify --engine` 把台账里的
+  `engine_sha` 与提交历史中声明过的集合对账 —— 只有"用从未提交的引擎跑出的判定"会红，
+  正常升级不会被误报。
+- **`sandbox/demo_gate.py`**：60 秒演示的 Python 版，PowerShell / cmd 下无需 `sh` 也能跑；
+  同样先证明违规被拦、再证明修复后放行。
+- **`.github/CODEOWNERS`**：把 `checks/`、`harness/`、`config/`、锁清单与 `.github/` 指给维护者；
+  README 说明还需在 GitHub 分支保护里开启 `Require review from Code Owners` 才真正阻断合并。
+- **可选规则集登记**：`checks/encoding_ruleset.py`（编码卫生）在 README 写明接线方式与两个
+  易漏点（`raw=` 原始字节、`targeted=True`），模块 docstring 说明默认不注册的原因。
+
+### Fixed
+
+- **`--validate` 不再对损坏的本地覆盖层报「全部健康」**：覆盖层解析失败会记成程序化信号，
+  配置体检据此 `rc=2` 并点名文件与原因（单次 gate 运行仍用共享配置继续，不阻断提交）。
+- `test_lock_inventory` 的陈旧字节码探针显式注入 `PYTHONPATH`：在 `PYTHONSAFEPATH=1`
+  等 cwd 不在 `sys.path` 的环境下不再把「import 不到模块」误读成锁失败。
+- **release / nightly 的干净 venv 冒烟改为验证 wheel 真的自带引擎**：先 `agentguard init` 到临时目录、
+  检查所有权标记，再在新引擎上取版本 —— 原先指向 checkout，轮子里没有引擎也能过。
+- **`harness/hooks-dir/` 的两个分发器改为 100755 入库**：POSIX 上 git 直接 exec hook，100644 会被
+  **静默忽略**（提交照常放行），Linux CI 与用户机器上的 hook 实际从未生效；Windows 检出看不出差别。
+  新增索引 mode 看守，防止再次退回去。
+- **干净环境下第二次 `agentguard init` 不再误报「源=目标」**：引擎源改为优先取自本文件的安装位置
+  （`<引擎根>/agentguard/..`），不再依赖 `find_root()` —— 首次 init 写完指针后它会解析到刚装出的副本，
+  于是幂等重跑按重叠拒绝（本机有 `harness.local.toml` 时先命中配置，所以只在 CI 暴露）。
+- 测试夹具改用仍存在的 `checks/example_code_check.py`：原先指向已删除的 `checks/pc_code_check.py`，
+  在带 Node 的 CI 上 M10/M11 拿到 `rc=2`（配置错）而不是「门禁拦住」。
+- `test_init_bundle` 的幂等用例改用**冻结的引擎源**：并行套件里
+  `TestSentinelBlocksDirtyEngine` 会故意往工程仓探针文件追加一行，活树当源时两次 init 之间
+  源被改过 → 误报「内容不同」（全量并行跑实测复现）。
+- 文档与元数据订正：README 的安装首步改为 `pip install .`（PyPI 未发布）、补 Git Bash
+  前置条件与 `RULESETS` 登记说明、快跑耗时改为实测区间；`pyproject` 描述改为 wheel 自带引擎。
 
 ### Changed
 

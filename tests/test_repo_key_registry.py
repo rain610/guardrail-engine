@@ -204,6 +204,38 @@ class TestUndeclaredRepoKeyStillBlocks(_FixtureCase):
         self.assertEqual(2, rc, "--structure-only 也必须对坏配置 rc=2：\n%s" % out[-1500:])
 
 
+class TestBrokenOverrideIsNotGreen(_FixtureCase):
+    """④ 覆盖层读不出来 ≠ 配置健康（复审报告 2026-10-22 §3.1）。
+
+    现场：`HARNESS_CONFIG` 指向一份少写 `]` 的 TOML，load() 退回 base 并只往 stderr
+    打一行，而 `--validate` 最后仍说「全部启用 gate 配置健康」+ rc=0。覆盖层里的
+    路径/策略**一条都没生效**，体检却给绿色结论 —— 只看 rc 的 doctor / CI / 接入脚本
+    会把"配置坏了"读成"配置好了"。这一支要 fail-closed，且不能把所有 HARNESS_CONFIG
+    都判红（阳性对照在同一类里）。
+    """
+
+    def _broken(self):
+        return self._write("broken.toml", "[repos\n")
+
+    def test_validate_fails_closed(self):
+        rc, out = _run_gate(["--validate"], config_path=self._broken())
+        self.assertIn("本地覆盖层读不出来", out, "坏覆盖层不再被点名：\n%s" % out[-1500:])
+        self.assertIn("一条都没生效", out, "没把后果说清（覆盖层里的路径/策略全没生效）：\n%s"
+                      % out[-1500:])
+        self.assertNotIn("体检通过", out, "坏覆盖层下仍打「体检通过」= 假绿复发：\n%s" % out[-1500:])
+        self.assertEqual(2, rc, "坏覆盖层必须让 --validate rc=2：\n%s" % out[-1500:])
+
+    def test_structure_only_fails_too(self):
+        """CI 用 --structure-only；坏文件不是"端仓不在本机"，任何档位都得阻断。"""
+        rc, out = _run_gate(["--validate", "--structure-only"], config_path=self._broken())
+        self.assertEqual(2, rc, "--structure-only 下坏覆盖层必须照样 rc=2：\n%s" % out[-1500:])
+
+    def test_a_readable_override_still_passes(self):
+        """阳性对照：判据不是「只要设了 HARNESS_CONFIG 就红」。"""
+        rc, out = _run_gate(["--validate"], config_path=self._local())
+        self.assertEqual(0, rc, "可读的覆盖层被误判成坏文件：\n%s" % out[-1500:])
+
+
 class TestCiRunsValidateHonestly(unittest.TestCase):
     """CI 不许再把体检失败吞掉，也不许退回只测 Linux。"""
 
