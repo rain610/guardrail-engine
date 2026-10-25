@@ -797,6 +797,12 @@ class TestGuard(unittest.TestCase):
             # 2026-10-21 外部评审 5.7-C：审计器 / 锁清单也是「让证据好看」的入口
             "harness/coverage.py": True,
             "harness/_eol_policy.py": True,
+            # 2026-10-26 第四轮评审 §4.2：改名后的主包 / 兼容壳不是纯转发层
+            "guardrail_engine/cli.py": True,
+            "guardrail_engine/_shell.py": True,
+            "guardrail_engine/new_module.py": True,   # 新增壳模块也算
+            "agentguard/cli.py": True,
+            "guardrail_engine/README.md": False,      # 非 .py 不纳入
             "sandbox/mutation_smoke.py": True,
             "tests/tooling/test_lock_inventory.py": True,
             "tests/lock-inventory.json": True,

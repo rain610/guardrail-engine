@@ -29,6 +29,12 @@ claude plugin marketplace add <MP_DIR> && claude plugin install agentguard@agent
 openclaw plugins marketplace list <MP_DIR>
 ```
 
+## 命名迁移期
+
+插件 ID `agentguard@agentguard-tools`、市场名 `agentguard-tools` 与模板目录
+`agentguard-plugin/` 都是**稳定标识**，迁移期不改：已安装用户不用卸载重装。产品名与描述
+已经是 Guardrail Engine；插件 ID 在 v0.3 与兼容壳 `agentguard/` 一起迁移。
+
 ## 原则
 
 - 插件只是**安装载体**：不含任何门禁逻辑；逻辑永远只有一份（`harness/` + `checks/` 引擎）。

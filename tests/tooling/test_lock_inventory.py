@@ -363,10 +363,21 @@ class TestLockInventory(unittest.TestCase):
             self.assertEqual(read_v(), "A", "第一次读不到 A：夹具本身没跑起来")
             # ① 直接改写（= 没有清理）：必须读到**旧**的 A —— 这一向证明坑真实存在
             write(body_b)
-            self.assertEqual(read_v(), "A",
-                             "同 mtime+同字节数时读到的是新内容 —— 说明这个 Python/文件系统组合下"
-                             "不存在陈旧 pyc 复用。★ 此时**不要**把这条断言改成 expect B 就完事："
-                             "先去核实判据（读的是字节码还是磁盘源码？），再决定这条锁该怎么写。")
+            got = read_v()
+            if got == "B":
+                # 2026-10-26 第四轮评审 §4.4：有的解释器/环境不按 (mtime 整秒, 字节数)
+                # 复用陈旧 pyc（例如不写 pyc、或失效判据不同）。此时「陈旧字节码顶替」的
+                # 前提根本不成立，断言成红只是在惩罚平台差异 —— 明确 skip，不改成 expect B。
+                cache = os.path.join(tmp, "__pycache__")
+                pycs = ([n for n in os.listdir(cache) if n.startswith("pyc_probe_mod.")]
+                        if os.path.isdir(cache) else [])
+                self.skipTest(
+                    "本平台不复用 (mtime, 字节数) 匹配的陈旧 pyc（%s），"
+                    "「陈旧字节码顶替」的前提不成立 —— 这条锁在本平台不适用（不是通过）。"
+                    % ("没有生成 .pyc" if not pycs else "生成了 .pyc 但解释器未复用"))
+            self.assertEqual(got, "A",
+                             "同 mtime+同字节数时读到的是新内容，但也没走 skip 分支 —— "
+                             "先核实判据（读的是字节码还是磁盘源码？），再决定这条锁该怎么写。")
             # ② 走 apply_mutation（真入口）：pyc 必须**顶替不了**变异后的内容
             write(body_a)                                     # 源回到 A，pyc 头 (t, 同长) 与它匹配
             err = mod.apply_mutation(p, {"kind": "exact", "old": body_a, "new": body_b})

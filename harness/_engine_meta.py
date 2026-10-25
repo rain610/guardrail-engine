@@ -28,9 +28,14 @@ _ENGINE_SHA_CACHE = []
 
 
 def _engine_files():
-    """判定所用引擎的内容面：规则、调度、审计器与锁清单。"""
+    """判定所用引擎的内容面：规则、调度、审计器、壳包与锁清单。
+
+    2026-10-26 第四轮评审 §4.2：`guardrail_engine/`（CLI/MCP/run/done/log --verify）
+    与 `agentguard/` 兼容壳不是纯转发层 —— 改弱它们同样能骗过编辑期自检与 MCP 返回值，
+    所以一并算进 engine_sha，让「判定代码从未提交」的形状也覆盖壳包。
+    """
     files = []
-    for sub in ("checks", "harness"):
+    for sub in ("checks", "harness", "guardrail_engine", "agentguard"):
         base = os.path.join(ROOT, sub)
         for dirpath, dirnames, filenames in os.walk(base):
             dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")

@@ -10,7 +10,9 @@
 [English](README.en.md) | 简体中文
 
 > 本项目原名 **AgentGuard**，v0.2 起更名为 **Guardrail Engine**。旧命令 `agentguard`、
-> 旧导入包与旧配置目录在迁移期内继续可用（见 [CHANGELOG](CHANGELOG.md)）。
+> 旧导入包与旧配置目录在迁移期内继续可用（见 [CHANGELOG](CHANGELOG.md)）。Claude 插件 ID
+> `agentguard@agentguard-tools` 与 hook 文件名 `agentguard-gate.py` 暂不改：已安装用户无需重装，
+> v0.3 与兼容壳一起迁移。
 
 Guardrail Engine 是一个**通用代码门禁框架**，用于在编辑期和提交期自动检查代码是否符合团队约定。
 
@@ -419,8 +421,9 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 `[harness]` 提交标记只是**变更声明**，不是权限边界：任何人在本地都能写这句。
 真正的强制层是仓库侧配置：
 
-- `.github/CODEOWNERS` 把 `checks/`、`harness/`、`config/`、`sandbox/mutation_smoke.py`、
-  `tests/tooling/test_lock_inventory.py`、`tests/lock-inventory.json` 与 `.github/` 指给维护者；
+- `.github/CODEOWNERS` 把 `checks/`、`harness/`、`guardrail_engine/`、`agentguard/`、`config/`、
+  `sandbox/mutation_smoke.py`、`tests/tooling/test_lock_inventory.py`、`tests/lock-inventory.json`
+  与 `.github/` 指给维护者；
 - 在 GitHub 的 **Settings → Branches → Branch protection rules** 里给 `main` 开启
   **Require a pull request before merging** 与 **Require review from Code Owners**。
   只提交 CODEOWNERS 而不开分支保护，规则只会「请求 review」，不会阻断合并；
@@ -432,6 +435,10 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 `[harness]` 只说明"这次改了门禁"，不说明"改成了什么内容"。台账每条记录都带
 `engine_sha`（引擎内容的 16 位哈希），但**不能**直接拿它跟「当前引擎」比 —— 正常升级、
 甚至改一行测试锁都会让当前值变，那样每次升级全本都会红。
+
+内容面 = `checks/` + `harness/` + `guardrail_engine/` + `agentguard/` + 配置 / 变异冒烟 /
+锁清单。壳包的 `run` / `done` / `log --verify` / `hooks` / `mcp` 会产出判定与凭证，
+所以和规则本身一样计入哈希。
 
 本仓的口径是**提交归因**：
 

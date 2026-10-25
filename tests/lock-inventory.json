@@ -177,6 +177,6 @@
   "_notes": [
     "锁数量与变异护盾清单：模块数、每模块 test 方法数、总数只增不减；有意减少必须同一次提交里更新本文件。",
     "mutations = 变异冒烟的护盾名单：删/换一条变异会静默减护，本清单同样只增不减。",
-    "本字段只供人读，不参与 tests/test_lock_inventory.py 的判定。"
+    "本字段只供人读，不参与 tests/tooling/test_lock_inventory.py 的判定。"
   ]
 }

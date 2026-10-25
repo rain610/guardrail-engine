@@ -1,4 +1,4 @@
-"""tests/test_notify_throttle_concurrent.py
+"""tests/engine/test_notify_throttle_concurrent.py
 并发抢锁回归锁（2026-09-21）：notify_throttled 在多 worktree / 多 agent 并发抢同一 gate 拦截通知时，read-modify-write 阶段必须有文件锁。
 八条锁：
 · 锁基本语义：同 gate 60 秒内节流，跨 gate 互不干扰
@@ -44,7 +44,11 @@ from _tmpclean import rmtree_force as _rmtree_force  # noqa: E402
 _LOG_TMPDIR = _mkdtemp("harness-testlog-")
 os.environ["HARNESS_LOG_FILE"] = os.path.join(_LOG_TMPDIR, "gate_log.jsonl")
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# 工程根 = tests/engine/ 往上三层。分组重组后这里曾是 `".."`（只到 tests/），
+# 标准 CPython 靠 cwd 侥幸 import 成功，嵌入式 Python 的 `-m` 不含 cwd 就 ModuleNotFoundError
+# （2026-10-26 第四轮评审 §4.1）。显式插工程根，不依赖解释器的 cwd 语义。
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, ROOT)
 import harness.run_gate as rg
 
 # UTF-8 兜底（本仓硬规则：输出型入口必须自保，否则 Windows GBK 控制台会整体崩）

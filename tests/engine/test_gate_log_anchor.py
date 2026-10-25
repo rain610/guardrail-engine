@@ -482,6 +482,16 @@ class TestEngineSha(_Sealed):
         self.assertEqual(m._engine_sha(), m._engine_sha(),
                          "同一份引擎两次哈希不一致（台账无法对账）")
 
+    def test_engine_files_cover_shell_packages(self):
+        """2026-10-26 第四轮评审 §4.2：壳包也产出判定与凭证，必须进 Engine-Sha 内容面。"""
+        meta = _load(os.path.join(ROOT, "harness", "_engine_meta.py"), "eng_meta_files")
+        files = set(meta._engine_files())
+        for rel in ("guardrail_engine/cli.py", "guardrail_engine/mcp.py",
+                    "guardrail_engine/_shell.py", "agentguard/cli.py",
+                    "agentguard/_shell.py"):
+            self.assertIn(rel, files,
+                          "壳包没进 Engine-Sha 内容面：改弱 %s 追不到" % rel)
+
     def test_dispatch_answers_even_when_config_is_broken(self):
         """`--engine-sha` 是只读出口：配置读不出来时也要能回答"跑的是哪份引擎"。
 

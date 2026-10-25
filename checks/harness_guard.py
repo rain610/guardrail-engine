@@ -82,6 +82,10 @@ def _in_protected(rel):
         return True
     if r.startswith("harness/agents/") and r.endswith(".py"):
         return True
+    # 2026-10-26 第四轮评审 §4.2：改名后的壳包不是纯转发层 —— run / done / log --verify /
+    # hooks / mcp 都会产出判定与凭证，改弱它同样能骗过编辑期自检与 MCP 返回值。
+    if (r.startswith("guardrail_engine/") or r.startswith("agentguard/")) and r.endswith(".py"):
+        return True
     return r in ("checks/components_allowlist.yaml",
                  "checks/components_allowlist_h5.yaml",
                  "config/harness.toml",

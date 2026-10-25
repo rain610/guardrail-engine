@@ -61,13 +61,24 @@
   正常升级不会被误报。
 - **`sandbox/demo_gate.py`**：60 秒演示的 Python 版，PowerShell / cmd 下无需 `sh` 也能跑；
   同样先证明违规被拦、再证明修复后放行。
-- **`.github/CODEOWNERS`**：把 `checks/`、`harness/`、`config/`、锁清单与 `.github/` 指给维护者；
-  README 说明还需在 GitHub 分支保护里开启 `Require review from Code Owners` 才真正阻断合并。
+- **`.github/CODEOWNERS`**：把 `checks/`、`harness/`、`guardrail_engine/`、`agentguard/`、`config/`、
+  锁清单与 `.github/` 指给维护者；README 说明还需在 GitHub 分支保护里开启
+  `Require review from Code Owners` 才真正阻断合并。
 - **可选规则集登记**：`checks/encoding_ruleset.py`（编码卫生）在 README 写明接线方式与两个
   易漏点（`raw=` 原始字节、`targeted=True`），模块 docstring 说明默认不注册的原因。
 
 ### Fixed
 
+- **第四轮评审收尾（2026-10-26）**：
+  - 测试重组留下的 `sys.path` 浅一层：`tests/engine/test_notify_throttle_concurrent.py` 现在
+    显式指向工程根；新增 `-P`（不注入 cwd）导入锁，复现嵌入式 Python 的 `-m` 行为。
+  - 陈旧 pyc 用例在「本平台不复用 (mtime, 字节数) 匹配的 pyc」时 `skipTest` 并写明原因，
+    不再把平台差异记成失败（不是改成 expect B）。
+  - `guardrail_engine/` 与兼容壳 `agentguard/` 纳入 `harness_guard` 受保护清单、CODEOWNERS
+    与 `engine_sha` 内容面：改弱 CLI/MCP/`run`/`done`/`log --verify` 现在可被发现并追不到归属。
+  - CODEOWNERS 的锁测试路径跟上重组（`tests/tooling/test_lock_inventory.py`）。
+  - PyPI 长描述改用 `README.en.md`（仓库 README 仍是中文主文档）；`external_adapter` 的
+    命令行描述、`_tmpclean` / 锁清单注释里的旧品牌与旧路径同步清理。
 - **改名后的升级链路补齐**（全量套件实测）：pip 通道的产物对账同时扫
   `guardrail_engine/` 与兼容壳 `agentguard/`（旧机器上只有后者时不再读成「读不到产物」）；
   升级测试夹具补上新包、`integrations/guardrail-engine-skill` 源路径与新 init 标记

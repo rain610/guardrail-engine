@@ -10,6 +10,9 @@
 English | [简体中文](README.md)
 
 > This project was formerly known as **AgentGuard** and was renamed to **Guardrail Engine** in v0.2.
+> The Claude plugin ID `agentguard@agentguard-tools` and the hook filename `agentguard-gate.py`
+> intentionally stay unchanged: installed users need no reinstall, and both move in v0.3 together
+> with the compatibility shim.
 > The legacy `agentguard` command, import package, and config directory keep working during the
 > migration window (see [CHANGELOG](CHANGELOG.md)).
 
@@ -447,8 +450,9 @@ checked.
 The `[harness]` commit marker is a **change declaration**, not a permission boundary: anyone can
 write it locally. The real enforcement lives in repository settings:
 
-- `.github/CODEOWNERS` assigns `checks/`, `harness/`, `config/`, `sandbox/mutation_smoke.py`,
-  `tests/tooling/test_lock_inventory.py`, `tests/lock-inventory.json`, and `.github/` to maintainers;
+- `.github/CODEOWNERS` assigns `checks/`, `harness/`, `guardrail_engine/`, `agentguard/`,
+  `config/`, `sandbox/mutation_smoke.py`, `tests/tooling/test_lock_inventory.py`,
+  `tests/lock-inventory.json`, and `.github/` to maintainers;
 - In GitHub **Settings → Branches → Branch protection rules**, enable **Require a pull request
   before merging** and **Require review from Code Owners** for `main`. Committing CODEOWNERS alone
   only *requests* review; it does not block merges;
@@ -461,6 +465,10 @@ write it locally. The real enforcement lives in repository settings:
 `[harness]` says "the gate changed", not "what it changed to". Every ledger record carries
 `engine_sha` (a 16-hex hash of the engine content), but you **must not** compare it directly with the
 current engine: a normal upgrade, or even a one-line test change, moves the current value.
+
+The content face covers `checks/` + `harness/` + `guardrail_engine/` + `agentguard/` plus config,
+mutation smoke, and the lock inventory. The shell's `run` / `done` / `log --verify` / `hooks` / `mcp`
+produce decisions and evidence, so it is hashed alongside the rules themselves.
 
 This repo uses **commit attribution**:
 

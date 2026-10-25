@@ -124,7 +124,9 @@ class TestPackageMetadata(unittest.TestCase):
         self.assertEqual(sorted(data["tool"]["setuptools"]["packages"]),
                          ["agentguard", "guardrail_engine"],
                          "wheel 必须同时带主包与迁移期兼容壳")
-        self.assertEqual(project["readme"], "README.md")
+        self.assertEqual(project["readme"]["file"], "README.en.md",
+                         "PyPI 长描述应指向英文版（仓库 README 仍是中文主文档）")
+        self.assertEqual(project["readme"]["content-type"], "text/markdown")
         self.assertEqual(project["requires-python"], ">=3.11")
 
 

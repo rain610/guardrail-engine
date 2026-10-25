@@ -8,7 +8,7 @@
 
     2026-09-21 实测存量：engine-copy-* 1515 份、bootstrap-* 599 份、
                         engine-copy-logs-* 12 份、lockinv_copytree_* 157 份
-    （lockinv 那份已先单独修过，见 tests/test_lock_inventory.py 的 finally）
+    （lockinv 那份已先单独修过，见 tests/tooling/test_lock_inventory.py 的 finally）
 
 先把只读位摘掉再删。不依赖 `rmtree` 的 `onerror` 回调参数——3.11 / 3.12 行为一致。
 """

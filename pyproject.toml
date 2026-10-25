@@ -7,7 +7,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "guardrail-engine"
 description = "A stdlib-only code-gate engine for AI-assisted repos: one shared rule engine, with CLI and MCP shells. Wheels bundle the engine (guardrail-engine init)."
-readme = "README.md"
+# PyPI 长描述用英文版：仓库 README 仍是中文主文档（README.md ↔ README.en.md 互链）。
+readme = { file = "README.en.md", content-type = "text/markdown" }
 # 与《安装说明》和入口守卫一致：实测 3.11/3.12/3.13；引擎用到 3.9+ 的 API（is_relative_to），
 # 3.11 以下从未测试 —— 别再写 >=3.8（那会让用户装完撞 AttributeError）。
 requires-python = ">=3.11"

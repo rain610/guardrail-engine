@@ -105,8 +105,8 @@ def _tool_missing(argv):
 def _kill_tree(proc):
     """超时杀整棵进程树。
 
-    与 `agentguard/cli.py` 的 HARNESS-KILLTREE 块同形，但**不共享代码**：引擎层脚本不能
-    import 壳包（init 出来的 `~/.agentguard/engine` 里没有可执行包上下文）。两处行为漂移的
+    与 `guardrail_engine/cli.py` 的 HARNESS-KILLTREE 块同形，但**不共享代码**：引擎层脚本不能
+    import 壳包（init 出来的 `~/.guardrail-engine/engine` 里没有可执行包上下文）。两处行为漂移的
     风险由本文件的超时用例兜住（断言 rc=2、快速返回、孙进程已死）。
     """
     try:
@@ -254,7 +254,7 @@ def _lines_of(path, cache):
 
 def run(kind, tool, env_name, default_cmd, extra_args):
     """适配器主流程。kind 只决定 JSON 形状；其余（输出/豁免/退出码）完全共用。"""
-    ap = argparse.ArgumentParser(description="AgentGuard %s 适配门禁" % tool)
+    ap = argparse.ArgumentParser(description="Guardrail Engine %s 适配门禁" % tool)
     ap.add_argument("--repo", required=True, help="目标仓库路径")
     ap.add_argument("--all", action="store_true", help="全量扫描（由工具按自身配置遍历）")
     ap.add_argument("--gate", default="", help="gate 名（用于台账统计归属）")
