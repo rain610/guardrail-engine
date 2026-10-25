@@ -428,32 +428,36 @@ def wheel_pkg_files(wheel):
 
 
 def installed_pkg_files(location):
-    """site-packages 里 `guardrail_engine/**.py` → {路径: sha1}；目录不在/读不了返回 None。
+    """site-packages 里两个壳包（`guardrail_engine/` + 兼容壳 `agentguard/`）→ {路径: sha1}。
 
-    None 与 {} 必须分开：前者是"读不到，无法对账"，后者是"读到了、包是空的"。
-    混成一个值，这条对账就会在一次 OSError 之后静默变成"一致"。
+    为什么要扫两个：v0.2 起新包与兼容壳**一起**进 wheel；只扫新名时，旧机器上尚未刷新的
+    「只有 `agentguard/`」会被读成 None（"读不到产物"），而同版本号重建包的判据需要先看见
+    旧产物才能比出差异。目录都不在/读不了仍返回 None —— None 与 {} 分开的纪律不变。
     """
     if not location:
         return None
-    root = os.path.join(location, PKG)
-    if not os.path.isdir(root):
-        return None
     out = {}
-    for dp, dns, fns in os.walk(root):
-        dns[:] = [d for d in dns if d != "__pycache__"]
-        for fn in sorted(fns):
-            if not fn.endswith(".py"):
-                continue
-            fp = os.path.join(dp, fn)
-            h = hashlib.sha1()
-            try:
-                with open(fp, "rb") as f:
-                    for chunk in iter(lambda: f.read(65536), b""):
-                        h.update(chunk)
-            except OSError:
-                return None
-            out[PKG + "/" + os.path.relpath(fp, root).replace("\\", "/")] = h.hexdigest()
-    return out
+    found = False
+    for pkg in PKG_NAMES:
+        root = os.path.join(location, pkg)
+        if not os.path.isdir(root):
+            continue
+        found = True
+        for dp, dns, fns in os.walk(root):
+            dns[:] = [d for d in dns if d != "__pycache__"]
+            for fn in sorted(fns):
+                if not fn.endswith(".py"):
+                    continue
+                fp = os.path.join(dp, fn)
+                h = hashlib.sha1()
+                try:
+                    with open(fp, "rb") as f:
+                        for chunk in iter(lambda: f.read(65536), b""):
+                            h.update(chunk)
+                except OSError:
+                    return None
+                out[pkg + "/" + os.path.relpath(fp, root).replace("\\", "/")] = h.hexdigest()
+    return out if found else None
 
 
 def files_fingerprint(files):

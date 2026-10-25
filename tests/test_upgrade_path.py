@@ -64,11 +64,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UPGRADE = os.path.join(ROOT, "sandbox", "upgrade.py")
 CLI = os.path.join(ROOT, "agentguard", "cli.py")
 FIXER = os.path.join(ROOT, "sandbox", "fix_paths.py")
-SKILL_SRC = os.path.join(ROOT, "integrations", "agentguard-skill")
+SKILL_SRC = os.path.join(ROOT, "integrations", "guardrail-engine-skill")
 PLUGIN = "agentguard@agentguard-tools"
 PLACEHOLDER_MCP = json.dumps({
     "mcpServers": {"agentguard": {
-        "command": "__PY__", "args": ["__MCP__"], "env": {"AGENTGUARD_DIR": "__HARNESS__"},
+        "command": "__PY__", "args": ["__MCP__"], "env": {"GUARDRAIL_ENGINE_DIR": "__HARNESS__"},
     }},
 }, indent=2) + "\n"
 
@@ -100,11 +100,12 @@ def main():
     if argv[:2] != ["-m", "pip"]:
         return subprocess.call([REAL] + argv)
     rest = argv[2:]
+    PKGS = ("guardrail_engine", "agentguard")
     if rest[:1] == ["show"]:
-        if not os.path.isdir(os.path.join(SITE, "agentguard")):
+        if not any(os.path.isdir(os.path.join(SITE, p)) for p in PKGS):
             sys.stdout.write("WARNING: Package(s) not found: agentguard\\n")
             return 1
-        sys.stdout.write("Name: agentguard\\nVersion: %s\\nLocation: %s\\n" % (VER, SITE))
+        sys.stdout.write("Name: guardrail-engine\\nVersion: %s\\nLocation: %s\\n" % (VER, SITE))
         return 0
     if rest[:1] == ["install"]:
         wheel = rest[-1]
@@ -117,7 +118,7 @@ def main():
             return 0
         with zipfile.ZipFile(wheel) as z:
             for n in z.namelist():
-                if n.startswith("agentguard/") and n.endswith(".py"):
+                if n.split("/", 1)[0] in PKGS and n.endswith(".py"):
                     dst = os.path.join(SITE, n.replace("/", os.sep))
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     with open(dst, "wb") as f:
@@ -189,12 +190,14 @@ def _fake_python(root, site, mode, ver):
 
 
 def _wheel(path, marker):
-    """造一个最小但真的 wheel（zip）：`agentguard/__init__.py` 里写着这一版的标记。
+    """造一个最小但真的 wheel（zip）：两个壳包的 `__init__.py` 里写着这一版的标记。
 
-    只求两件事成立：`upgrade.py` 能按包内路径读出内容对账；替身能把它铺开成"装上了"。
+    两个包都要写：v0.2 起 wheel 同时带 `guardrail_engine/` 与兼容壳 `agentguard/`，
+    升级的 pip 通道按"两个包逐字节比轮子"对账 —— 只写旧名会让对账把新包读成缺失。
     """
     with zipfile.ZipFile(path, "w") as z:
-        z.writestr("agentguard/__init__.py", "MARKER = %r\n" % marker)
+        for pkg in ("guardrail_engine", "agentguard"):
+            z.writestr(pkg + "/__init__.py", "MARKER = %r\n" % marker)
 
 
 def _engine_wheel(path, version, marker):
@@ -204,13 +207,14 @@ def _engine_wheel(path, version, marker):
     `harness/engine_marker.py` 是这一版的正文指纹 —— 断言"换掉的确实是内容"靠它，不靠版本号。
     """
     with zipfile.ZipFile(path, "w") as z:
-        for fn in ("__init__.py", "cli.py", "_shell.py", "mcp.py"):
-            z.write(os.path.join(ROOT, "agentguard", fn), "agentguard/" + fn)
-        z.writestr("agentguard/_engine/VERSION", version + "\n")
-        z.writestr("agentguard/_engine/harness/run_gate.py",
-                   "# 迷你引擎：init 自检只要求 --list rc=0\n"
-                   "import sys\nprint('[ON ] probe: probe @ /x')\nsys.exit(0)\n")
-        z.writestr("agentguard/_engine/harness/engine_marker.py", "MARKER = %r\n" % marker)
+        for pkg in ("guardrail_engine", "agentguard"):
+            for fn in ("__init__.py", "cli.py", "_shell.py", "mcp.py"):
+                z.write(os.path.join(ROOT, pkg, fn), pkg + "/" + fn)
+            z.writestr(pkg + "/_engine/VERSION", version + "\n")
+            z.writestr(pkg + "/_engine/harness/run_gate.py",
+                       "# 迷你引擎：init 自检只要求 --list rc=0\n"
+                       "import sys\nprint('[ON ] probe: probe @ /x')\nsys.exit(0)\n")
+            z.writestr(pkg + "/_engine/harness/engine_marker.py", "MARKER = %r\n" % marker)
 
 
 FAKE_NOOP_INIT = '''# -*- coding: utf-8 -*-
@@ -312,7 +316,7 @@ class UpgradePathTest(unittest.TestCase):
         ext = os.path.join(self.base, "extract-" + os.path.basename(pack))
         with zipfile.ZipFile(wheel) as z:
             for n in z.namelist():
-                if n.startswith("agentguard/") and not n.endswith("/"):
+                if n.split("/", 1)[0] in ("guardrail_engine", "agentguard") and not n.endswith("/"):
                     dst = os.path.join(ext, n.replace("/", os.sep))
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     with open(dst, "wb") as f:
@@ -324,7 +328,7 @@ class UpgradePathTest(unittest.TestCase):
         # init 的自检会跑 <dest>/harness/run_gate.py --list：探针记录钉到临时文件，
         # 不许落到仓库的 reports/gate_log.jsonl（test_coverage 的隔离判据要求）。
         env["HARNESS_LOG_FILE"] = os.path.join(self.base, "gate_log.jsonl")
-        for k in ("AGENTGUARD_DIR", "HARNESS_DIR"):
+        for k in ("GUARDRAIL_ENGINE_DIR", "AGENTGUARD_DIR", "HARNESS_DIR"):
             env.pop(k, None)
         r = subprocess.run([sys.executable, os.path.join(ext, "agentguard", "cli.py"),
                             "init", "--dir", eng], capture_output=True, text=True,
@@ -350,7 +354,7 @@ class UpgradePathTest(unittest.TestCase):
         env["AGENTGUARD_OPS_LOG"] = self.ops
         # 同 _install_engine_a：引擎步会调 init→run_gate，探针记录一律落临时目录。
         env["HARNESS_LOG_FILE"] = os.path.join(self.base, "gate_log.jsonl")
-        for k in ("AGENTGUARD_DIR", "HARNESS_DIR"):
+        for k in ("GUARDRAIL_ENGINE_DIR", "AGENTGUARD_DIR", "HARNESS_DIR"):
             env.pop(k, None)
         if env_extra:
             env.update(env_extra)
@@ -538,8 +542,8 @@ class UpgradePathTest(unittest.TestCase):
         eng = self._install_engine_a(pa)
         self.assertEqual(_read(os.path.join(eng, "VERSION")).strip(), "0.1.2.dev0")
         self.assertIn("'AAA'", _read(os.path.join(eng, "harness", "engine_marker.py")))
-        self.assertEqual(json.loads(_read(os.path.join(eng, ".agentguard-init.json"))).get("kind"),
-                         "agentguard-init")
+        self.assertEqual(json.loads(_read(os.path.join(eng, ".guardrail-engine-init.json"))).get("kind"),
+                         "guardrail-engine-init")
 
         r = self._run("--pack", pb, "--harness", eng, "--yes",
                       "--skip", "claude,openclaw,pip,skills,shim")
@@ -555,10 +559,15 @@ class UpgradePathTest(unittest.TestCase):
         self.assertEqual(_read(os.path.join(archives[0], "VERSION")).strip(), "0.1.2.dev0",
                          "归档里不是升级前那份引擎（回滚会回错版本）")
         self.assertIn("'AAA'", _read(os.path.join(archives[0], "harness", "engine_marker.py")))
-        marker = json.loads(_read(os.path.join(eng, ".agentguard-init.json")))
+        marker = json.loads(_read(os.path.join(eng, ".guardrail-engine-init.json")))
         self.assertEqual(marker.get("version"), "0.1.3.dev0")
         self.assertEqual(marker.get("source"), "wheel", "从轮子 init 出来的副本应标 source=wheel")
-        self.assertEqual(_read(os.path.join(self.home, ".agentguard", "harness.path")).strip(), eng,
+        # 配置目录迁移期双读：新目录不存在而旧目录在时继续用旧目录（不迁移、不丢配置）。
+        ptr = next((p for p in (os.path.join(self.home, ".guardrail-engine", "harness.path"),
+                                os.path.join(self.home, ".agentguard", "harness.path"))
+                    if os.path.isfile(p)), None)
+        self.assertIsNotNone(ptr, "init 没写 harness.path 指针（find_root 会解析到别处）")
+        self.assertEqual(_read(ptr).strip(), eng,
                          "指针没指回刷新后的引擎副本（find_root 会解析到别处）")
         log = _read(self.ops)
         self.assertIn('"step": "engine"', log)
@@ -577,7 +586,7 @@ class UpgradePathTest(unittest.TestCase):
                       "--skip", "claude,openclaw,pip,skills,shim")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("引擎源（仓库）", r.stdout, "没认出 --harness 是仓库：\n%s" % r.stdout)
-        self.assertFalse(os.path.exists(os.path.join(repo, ".agentguard-init.json")),
+        self.assertFalse(os.path.exists(os.path.join(repo, ".guardrail-engine-init.json")),
                          "给仓库写了 init 标记 —— 下次升级会把它当成可归档的副本")
         self.assertFalse(glob.glob(repo + ".disabled-*"), "仓库被归档了（源被搬走）")
         self.assertTrue(os.path.isfile(os.path.join(repo, "harness", "run_gate.py")))

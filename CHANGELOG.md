@@ -58,6 +58,10 @@
 
 ### Fixed
 
+- **改名后的升级链路补齐**（全量套件实测）：pip 通道的产物对账同时扫
+  `guardrail_engine/` 与兼容壳 `agentguard/`（旧机器上只有后者时不再读成「读不到产物」）；
+  升级测试夹具补上新包、`integrations/guardrail-engine-skill` 源路径与新 init 标记
+  `.guardrail-engine-init.json`；`harness.path` 指针按迁移期双读校验。
 - **外部适配层封死三个边界**（2026-10-25 第三轮评审 §4.1 / §4.2 / §4.4）：
   Semgrep 分支现在与 ESLint 一样检查进程退出码（`rc >= 2` = 配置/环境错误，不再被一份
   合法空 JSON 洗白）；工具返回相对路径时按 `repo` 拼接后再读豁免行（`harness-ok:` 恢复
