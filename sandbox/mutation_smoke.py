@@ -1434,12 +1434,39 @@ MUTATIONS = [
 
     {"id": "M150-eslint-config-error-read-as-clean", "file": "checks/external_adapter.py",
      "kind": "exact",
-     "old": '            if rc not in (0, 1):\n',
-     "new": '            if False:  # mutation-smoke\n',
+     "old": '        if rc not in (0, 1):\n',
+     "new": '        if False:  # mutation-smoke\n',
      "lock": "test_external_adapters.py",
      "expect": "test_eslint_config_error_exit_is_not_a_pass",
      "why": "ESLint 以 rc>=2（配置/内部错误）退出时不当回事：配置文件写坏、插件加载失败都会"
             "让门禁照样绿，且默认没有任何告警。"},
+
+    {"id": "M151-semgrep-rc-ignored", "file": "checks/external_adapter.py",
+     "kind": "exact",
+     "old": '        if rc not in (0, 1):\n',
+     "new": '        if kind == "eslint" and rc not in (0, 1):  # mutation-smoke\n',
+     "lock": "test_external_adapters.py",
+     "expect": "test_semgrep_config_error_exit_is_not_a_pass",
+     "why": "还原 2026-10-25 评审 §4.1 的形状：只给 ESLint 判 rc。Semgrep 以配置错退出"
+            "（rc=2）但输出合法空 JSON 时，被读成「没有违规」。"},
+
+    {"id": "M152-relative-path-not-joined", "file": "checks/external_adapter.py",
+     "kind": "exact",
+     "old": '    return path if os.path.isabs(path) else os.path.join(repo, path)\n',
+     "new": '    return path  # mutation-smoke\n',
+     "lock": "test_external_adapters.py",
+     "expect": "test_semgrep_relative_path_waiver_works",
+     "why": "Semgrep 返回相对路径时不按 repo 拼接：豁免读取落到适配层进程的 cwd，"
+            "文件找不到 → `harness-ok:` 静默失效（用户看到假阳性，只能关掉 gate）。"},
+
+    {"id": "M153-adapter-mode-ledger", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '        if os.path.basename(script) in _adapter_scripts:\n',
+     "new": '        if False:  # mutation-smoke\n',
+     "lock": "test_external_adapters.py",
+     "expect": "test_run_gate_mode_on_adapter_leaves_no_fake_weakened_record",
+     "why": "适配 gate 没有 strict/loose 语义，却照旧写 mode_override/weakened："
+            "一次普通判定在台账里被读成「口径被放宽」，审计结论与事实相反。"},
 ]
 
 

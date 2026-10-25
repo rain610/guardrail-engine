@@ -17,7 +17,7 @@
   `AGENTGUARD_ADAPTER_TIMEOUT` 覆盖。工具没装、超时、输出不是 JSON、ESLint 以配置错退出、
   Semgrep 报告分析错误 —— 一律 `rc=2`（fail-closed，「没跑成」不等于「通过」）。
   `mode` / `legacy_baseline` / `disabled_rules` 对适配 gate 不适用，规则取舍归工具自身配置。
-  新增 15 条锁与 5 条变异（M146–M150）守住这些路径。
+  新增 19 条锁与 8 条变异（M146–M153）守住这些路径。
 - **一键升级刷新引擎副本**：`upgrade.py` 新增 [5/7] —— 解包本包轮子自带的引擎，对 `agentguard init`
   复制出来的副本跑 `init --force`（源不依赖本机 pip 安装状态，`--skip pip` 也成立）；装完**逐字节
   对账**，旧副本改名归档可回退。只认 init 写下的所有权标记，仓库与来历不明的目录一律不碰。
@@ -35,6 +35,20 @@
 
 ### Fixed
 
+- **外部适配层封死三个边界**（2026-10-25 第三轮评审 §4.1 / §4.2 / §4.4）：
+  Semgrep 分支现在与 ESLint 一样检查进程退出码（`rc >= 2` = 配置/环境错误，不再被一份
+  合法空 JSON 洗白）；工具返回相对路径时按 `repo` 拼接后再读豁免行（`harness-ok:` 恢复
+  生效）；`--mode` 旗标被接收并忽略，不再以 argparse 参数错误 `rc=2` 退出；同时 `run_gate`
+  对适配 gate 不再写 `mode_override` / `weakened` 台账字段（它们没有 strict/loose 可放宽，
+  记了等于伪造「本次判定被削弱」）。新增 4 条锁与 M151 / M152 / M153 三条变异。
+- **外部适配 gate 默认不再挂 `pre_commit`**：外部工具读工作区，提交期存在「暂存坏版本 +
+  工作区改回好版本」的绕过路径（评审 §4.3）。默认只挂 `post_edit`，README 与模块文档写明
+  该边界；要提交期拦截需在调用方实现暂存副本。
+- **对外宣称收敛**：README 改为「退出码语义 / 豁免语法一致，严重级按工具映射」，并补
+  「外部 gate 不参与静态覆盖度」与 2.4KB 全局守则的出处（评审 §4.5 / §5.2）。
+- **`test_lock_inventory` 的 pyc 探针不再依赖 `-c` 的 cwd / `PYTHONPATH` 语义**：用 argv
+  把模块目录显式塞进子进程 `sys.path`，嵌入式 Python 下不再把「模块找不到」误读成锁失败
+  （评审 §5.1）。`checks/registry.py` 头部同步为「四个 gate」。
 - **`--validate` 不再对损坏的本地覆盖层报「全部健康」**：覆盖层解析失败会记成程序化信号，
   配置体检据此 `rc=2` 并点名文件与原因（单次 gate 运行仍用共享配置继续，不阻断提交）。
 - `test_lock_inventory` 的陈旧字节码探针显式注入 `PYTHONPATH`：在 `PYTHONSAFEPATH=1`

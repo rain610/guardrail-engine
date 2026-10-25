@@ -17,7 +17,7 @@ AgentGuard 是一个**通用代码门禁框架**，用于在编辑期和提交�
 
 | 痛点 | AgentGuard 怎么解 |
 |---|---|
-| 规范写在文档里，AI / 开发者记不住 | 常驻只注入约 2.6KB 的全局守则，细节按需加载 |
+| 规范写在文档里，AI / 开发者记不住 | 常驻只注入约 2.4KB 的全局守则（`~/.agentguard/GLOBAL_AGENTS.md`，不是仓库根的 `AGENTS.md`），细节按需加载 |
 | 约定只对"愿意遵守的人"有效 | 编辑期 + 提交期双重拦截，忘了也会被拦 |
 | 一上规则就被存量旧账淹没 | 双态 severity：新代码 `error` 拦截，存量 `info` 观察 |
 | "门禁跑没跑"说不清 | 每次判定写台账，可查看运行摘要与规则覆盖度 |
@@ -278,16 +278,16 @@ Python 的 `ast`；Vue / JS / TS / C# 的语法与类型判断交给成熟工具
 
 ```toml
 [gates.eslint]
-enabled = true                 # 默认 false；工具没装时开启 = 每次提交 rc=2
+enabled = true                 # 默认 false；工具没装时开启 = 每次触发 rc=2
 repo = "example_repo"          # 指向 [repos] 里的键（本机路径在 harness.local.toml 填）
 script = "checks/eslint_check.py"
-run_on = ["pre_commit", "post_edit"]
+run_on = ["post_edit"]         # 默认不挂 pre_commit（原因见下方「已知边界」）
 
 [gates.semgrep]
 enabled = false
 repo = "example_repo"
 script = "checks/semgrep_check.py"
-run_on = ["pre_commit", "post_edit"]
+run_on = ["post_edit"]
 ```
 
 ```bash
@@ -305,22 +305,30 @@ export AGENTGUARD_ADAPTER_TIMEOUT=120          # 秒，默认 300
 ```
 
 外部工具的规则 ID（如 `no-console`、`python.lang.security.audit.eval`）直接可用于
-`harness-ok:` 行内豁免，输出格式、警告/阻断分级、退出码与内置规则完全一致。
+`harness-ok:` 行内豁免。输出格式、豁免语法、退出码语义与内置规则一致；严重级由工具的
+severity 映射而来（ESLint 1/2；Semgrep 按 CRITICAL/ERROR/HIGH → 阻断，MEDIUM/WARNING →
+警告，LOW/INFO → 观察，未知级别按阻断处理）。
 
 **fail-closed 语义**（这三条是本仓付过学费的地方，锁在 `tests/test_external_adapters.py`）：
 
 | 情况 | 退出码 | 为什么不能算通过 |
 |---|---|---|
 | 工具没装 / 起不来 / 超时 | `2` | 一条检查都没执行 |
-| 输出不是 JSON / ESLint 以配置错退出 | `2` | 结论不可信或参数错了 |
+| 输出不是 JSON / 工具以配置错退出（rc≥2） | `2` | 结论不可信或参数错了 |
 | Semgrep 的 `errors` 非空 | `2` | 有文件没扫完，结果不完整 |
 
-`mode` / `legacy_baseline` / `disabled_rules` 对适配 gate **不生效**，写上会被
-`--validate` 拒绝：严重级和规则取舍归工具自己的配置文件管（`.eslintrc` / `semgrep.yml`），
-两边各留一个开关只会互相打架。
+`mode` / `legacy_baseline` / `disabled_rules` 对适配 gate **不生效**（`--mode` 旗标会被
+接收并忽略，台账也不记 `mode_override` —— 适配 gate 没有 strict/loose 可放宽），写上会被
+`--validate` 拒绝：严重级和规则取舍归工具自己的配置文件管
+（`.eslintrc` / `semgrep.yml`），两边各留一个开关只会互相打架。
 
-已知边界：外部工具读的是**工作区**文件，提交期门禁不会把暂存区内容喂给它们；
-要严格对齐暂存区，应在 pre-commit 里先让工具读暂存副本。
+**已知边界**
+
+- 外部工具读的是**工作区**文件，提交期门禁不会把暂存区内容喂给它们。因此适配 gate
+  **默认只挂 `post_edit`**：挂到 `pre_commit` 后，「暂存坏版本 + 工作区改回好版本」可以
+  绕过它。要用提交期拦截，先在调用方实现暂存副本，或接受工作区语义。
+- 外部 gate **不参与静态规则覆盖度**（`--coverage` 只统计本仓内置规则）：规则清单归
+  工具自己的配置管，开启后看到「清单外规则级数据」是正常的。
 
 ## 配置
 
@@ -441,6 +449,10 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 2. `python harness/run_gate.py example --all` 试跑
 3. `python harness/run_gate.py --validate` —— 规则 ID、配置键都会体检
 
+需要现成的编码约定规则集？见下文《自带的可选规则集：编码卫生》
+（[checks/encoding_ruleset.py](checks/encoding_ruleset.py)）—— 它是给你自己的检查脚本用的库，
+默认不注册 gate。
+
 ### 添加新 gate（多仓 / 独立规则集）
 
 四处都要动，少一处的症状是「看起来配好了」：
@@ -542,7 +554,7 @@ python -m unittest discover -s tests
 ```
 
 发布链（`.github/workflows/release.yml`）与每日定时（`.github/workflows/nightly.yml`）
-还会跑三类慢闸门：变异冒烟（111 条变异，验证锁真的会红）、真打包后的真产物锁、
+还会跑三类慢闸门：变异冒烟（114 条变异，验证锁真的会红）、真打包后的真产物锁、
 干净 venv 安装并执行 `agentguard --version`（轮子自带引擎，不依赖引擎检出）。
 本机复现：先 `python sandbox/pack_release.py`，再跑
 `python tests/test_release_artifact.py TestRealArtifactPasses -v`；venv 安装命令见

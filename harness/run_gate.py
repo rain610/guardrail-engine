@@ -1109,10 +1109,13 @@ def main():
     # harness_self_check.py 这类非端脚本不受影响（它不解析 argv，塞 --gate 没有意义）。
     try:
         sys.path.insert(0, CHECKS)
-        from registry import ENDPOINT_SCRIPTS as _EPS
+        from registry import ENDPOINT_SCRIPTS as _EPS, ADAPTER_SCRIPTS as _AS
         _endpoint_scripts = {os.path.basename(p) for p in _EPS.values()}
+        _adapter_scripts = {os.path.basename(p) for p in _AS.values()}
     except Exception:
         _endpoint_scripts = {"pc_code_check.py", "h5_code_check.py", "backend_layer_check.py"}
+        # 注册表读不出来时按脚本名兜底：宁可多认一个适配端，也不要在台账里写假记录。
+        _adapter_scripts = {"eslint_check.py", "semgrep_check.py"}
     if os.path.basename(script) in _endpoint_scripts:
         # 策略归属**只**由 run_gate 的位置参数决定，调用方自带的 --gate 一律不采纳。
         # 为什么不能"以调用方为准"（2026-09-16 实测）：端脚本是从 argv 认 gate 的，而
@@ -1165,7 +1168,14 @@ def main():
         # —— 于是 `run_gate t --mode loose`（裸调用）先说"→ 已记入台账 mode_override"，
         # 紧接着 fail-closed 返回、一行都没记。**写进输出的承诺与实际做的事相反**，
         # 与 L17 要治的是同一种病（台账/输出不可信）。故挪到守卫之后。
-        _mode_note, _mode_weaken = _mode_override(g, _mode_val)
+        # 适配 gate 没有 strict/loose 概念（规则取舍归工具配置）：参数照样传给脚本
+        # （适配层收下并忽略），但**不写 mode_override / weakened** —— 否则台账会多出
+        # 一条「本次判定被放宽」的假记录，审计时与事实相反。
+        if os.path.basename(script) in _adapter_scripts:
+            print(f"[run_gate] 适配 gate 不区分 strict/loose（严重级由工具配置决定），"
+                  f"--mode 已忽略。")
+        else:
+            _mode_note, _mode_weaken = _mode_override(g, _mode_val)
     elif "--all" in rest:
         cmd += ["--all"]
         scope = "all"

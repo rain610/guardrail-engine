@@ -1,5 +1,5 @@
 {
-  "total": 1008,
+  "total": 1012,
   "modules": {
     "test_agentguard.py": 40,
     "test_agents_audit.py": 26,
@@ -13,7 +13,7 @@
     "test_coverage.py": 31,
     "test_docs_consistency.py": 16,
     "test_entry_level.py": 65,
-    "test_external_adapters.py": 15,
+    "test_external_adapters.py": 19,
     "test_fix_paths.py": 4,
     "test_gate_log_anchor.py": 38,
     "test_global_agents.py": 36,
@@ -169,7 +169,10 @@
     "M147-bad-json-becomes-empty-result",
     "M148-semgrep-incomplete-results-ignored",
     "M149-adapter-timeout-read-as-pass",
-    "M150-eslint-config-error-read-as-clean"
+    "M150-eslint-config-error-read-as-clean",
+    "M151-semgrep-rc-ignored",
+    "M152-relative-path-not-joined",
+    "M153-adapter-mode-ledger"
   ],
   "_notes": [
     "锁数量与变异护盾清单：模块数、每模块 test 方法数、总数只增不减；有意减少必须同一次提交里更新本文件。",

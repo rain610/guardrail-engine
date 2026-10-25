@@ -230,6 +230,16 @@ class _Base(unittest.TestCase):
         self.assertIn(os.path.abspath(self.source), argv,
                       "定向扫描没把点名文件交给工具：%r" % argv)
 
+    def test_mode_flag_is_accepted_and_ignored(self):
+        """`run_gate <gate> <file> --mode loose` 是通用 CLI 形态。
+
+        适配 gate 本来就不区分 strict/loose（规则取舍归工具配置），但**参数必须收下**：
+        否则 argparse 以 rc=2 退出，用户看到的是「参数错误」而不是「不适用」。
+        """
+        rc, out = self._eslint([], args=["--mode", "loose", "app.js"])
+        self.assertEqual(rc, 0, "--mode 被适配层当成非法参数：\n" + out)
+        self.assertNotIn("unrecognized arguments", out, "argparse 又把它拒了：\n" + out)
+
     # ── Semgrep：severity 映射 + 分析不完整 ──────────────────────────────
     def _sg(self, severity="ERROR", line=1, results=True):
         return {"results": [{"check_id": "python.lang.security.audit.eval",
@@ -258,6 +268,34 @@ class _Base(unittest.TestCase):
         self.assertEqual(rc, 2, "分析不完整却被当成通过：\n" + out)
         self.assertIn("结果不完整", out, "没有说清「没扫完」：\n" + out)
 
+    def test_semgrep_config_error_exit_is_not_a_pass(self):
+        """Semgrep 以 rc>=2 退出时，合法 JSON 骨架也不能把结论洗白。
+
+        `{"results":[],"errors":[]}` 是最容易骗过「只看 errors」的形状：配置写坏、
+        插件加载失败都可能输出它。工具的退出码是环境层事实，不能由 payload 覆盖。
+        """
+        payload = {"results": [], "errors": []}
+        rc, out = self._semgrep(payload, rc=2)
+        self.assertEqual(rc, 2, "Semgrep 以配置错退出却被读成「没有违规」：\n" + out)
+        self.assertIn("配置/环境错误", out, "没有区分「配置错」与「有违规」：\n" + out)
+
+    def test_semgrep_relative_path_waiver_works(self):
+        """Semgrep 的 `path` 通常是相对仓库根的，豁免读取必须按 repo 拼接。
+
+        原先 `_lines_of("app.js")` 按适配层进程的 cwd（工程根）去找文件 → 找不到 →
+        `inline_waiver` 拿到空行集 → 豁免静默失效。用户看到的是假阳性，只能关掉 gate。
+        """
+        with open(self.source, "w", encoding="utf-8", newline="\n") as f:
+            f.write("// harness-ok: no-console 已确认仅为调试输出\n"
+                    'console.log("debug")\n')
+        payload = {"results": [{"check_id": "no-console", "path": "app.js",
+                                "start": {"line": 2},
+                                "extra": {"severity": "ERROR", "message": "console"}}],
+                   "errors": []}
+        rc, out = self._semgrep(payload)
+        self.assertEqual(rc, 0, "Semgrep 相对路径让行内豁免失效了：\n" + out)
+        self.assertIn("行内豁免", out, "用掉的豁免没汇报：\n" + out)
+
     # ── 端到端：经 run_gate 的真实接线（注册表 / --gate / 覆盖层） ─────────
     def test_run_gate_end_to_end_uses_the_adapter(self):
         cfg = os.path.join(self.tmp, "local.toml")
@@ -280,6 +318,42 @@ class _Base(unittest.TestCase):
         self.assertEqual(r.returncode, 1, "经 run_gate 的适配 gate 没拦住：\n" + out)
         self.assertIn("--gate eslint", out, "run_gate 没把本次归属记成 eslint：\n" + out)
         self.assertIn("[no-console]", out, "端到端输出丢了规则 ID：\n" + out)
+
+    def test_run_gate_mode_on_adapter_leaves_no_fake_weakened_record(self):
+        """`--mode loose` 对适配 gate 没有语义，台账里不能留下「被放宽」的假记录。
+
+        适配层收下旗标只是为了兼容通用 CLI 形态；若 run_gate 照旧按内置 gate 的规则
+        写 `mode_override` / `weakened`，审计时会把一次普通判定读成「口径被放宽」——
+        台账说假话比不记更坏。
+        """
+        cfg = os.path.join(self.tmp, "local.toml")
+        with open(cfg, "w", encoding="utf-8", newline="\n") as f:
+            f.write('[repos]\nexample_repo = %s\n\n'
+                    '[gates.eslint]\nenabled = true\nrepo = "example_repo"\n'
+                    'script = "checks/eslint_check.py"\nrun_on = ["post_edit"]\n'
+                    % json.dumps(self.repo))
+        ledger = os.path.join(self.tmp, "gate_log.jsonl")
+        env = self._env(**self._tool_env("AGENTGUARD_ESLINT", []))
+        env["HARNESS_CONFIG"] = cfg
+        env["HARNESS_ALLOW_POLICY_OVERRIDE"] = "1"
+        env["HARNESS_LOG_FILE"] = ledger
+        env["HARNESS_STATS_FILE"] = os.path.join(self.tmp, "stats.json")
+        r = subprocess.run([sys.executable, os.path.join(HARNESS, "run_gate.py"),
+                            "eslint", "app.js", "--mode", "loose"],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=180, env=env, cwd=ROOT)
+        out = (r.stdout or "") + (r.stderr or "")
+        self.assertEqual(r.returncode, 0, out)
+        self.assertIn("不区分 strict/loose", out,
+                      "--mode 在适配 gate 上被静默忽略，没告诉调用方：\n" + out)
+        with open(ledger, encoding="utf-8") as f:
+            recs = [json.loads(line) for line in f if line.strip()]
+        self.assertEqual(len(recs), 1, "台账条数不对：%r" % recs)
+        self.assertNotIn("mode_override", recs[0],
+                         "适配 gate 没有口径覆盖，台账却记了 mode_override：%r" % recs[0])
+        marks = [m for m in recs[0].get("weakened") or [] if m.startswith("mode_override:")]
+        self.assertEqual(marks, [],
+                         "适配 gate 没有 loose 语义，台账却标了 mode_override 削弱：%r" % recs[0])
 
 
 if __name__ == "__main__":

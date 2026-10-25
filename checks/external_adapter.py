@@ -24,6 +24,9 @@ fail-closed 三条（本仓反复咬过的形状，逐条上锁见 tests/test_ex
 外部工具读的是**工作区**文件；提交期门禁对暂存区做的 overlay 只作用于豁免文本的读取
 （`rule_base.read_bytes`），不会把暂存内容喂给 ESLint / Semgrep。要严格对齐暂存区，
 应在 pre-commit 里先让工具读暂存副本（本适配层不代做，避免悄悄改动被检内容）。
+因此默认 `run_on` **只挂 `post_edit`**：在 pre-commit 下，「暂存坏版本 + 工作区改回
+好版本」可以绕过外部 gate —— 文档写了不等于机制拦住了（2026-10-25 评审 §4.3）。
+要挂 pre_commit，先接受工作区语义，或在调用方实现暂存副本。
 """
 import argparse
 import json
@@ -217,6 +220,15 @@ def _rel(repo, path):
         return path
 
 
+def _abs(repo, path):
+    """工具返回的路径 → 本进程可读的绝对路径。
+
+    2026-10-25 评审 §4.2：Semgrep 的 `path` 通常是相对仓库根的，而适配层进程的 cwd
+    是工程根。直接 `read_bytes("app.js")` 找不到 `<repo>/app.js`，行内豁免静默失效。
+    """
+    return path if os.path.isabs(path) else os.path.join(repo, path)
+
+
 def _lines_of(path, cache):
     """文件行（走 rule_base.read_bytes：提交期能读到暂存内容）。读不到 → 空。"""
     if path in cache:
@@ -235,6 +247,7 @@ def run(kind, tool, env_name, default_cmd, extra_args):
     ap.add_argument("--repo", required=True, help="目标仓库路径")
     ap.add_argument("--all", action="store_true", help="全量扫描（由工具按自身配置遍历）")
     ap.add_argument("--gate", default="", help="gate 名（用于台账统计归属）")
+    ap.add_argument("--mode", default="", help="兼容 run_gate 的通用旗标；适配 gate 不区分 strict/loose")
     ap.add_argument("files", nargs="*", help="要检查的文件（相对仓库根）")
     a = ap.parse_args()
 
@@ -270,16 +283,17 @@ def run(kind, tool, env_name, default_cmd, extra_args):
         cmd = argv + list(extra_args) + (targets if targets is not None else ["."])
         rc, out, err = _run_tool(cmd, repo, timeout)
 
+        # 两个工具的 0/1 都可以承载业务结论；>=2 一律是配置/环境错误（Semgrep 同样适用）。
+        # 2026-10-25 评审 §4.1：原先只给 ESLint 判 rc，Semgrep 用 rc=2 + 合法空 JSON
+        # 就能被读成「没有违规」。
+        if rc not in (0, 1):
+            tail = (err or out or "").strip().splitlines()[-3:]
+            raise AdapterError("%s 以 rc=%d 结束（配置/环境错误，不是「有违规」）%s"
+                               % (tool, rc, ("：" + " / ".join(tail)) if tail else ""))
+        payload = _parse_json(out, tool)
         if kind == "eslint":
-            # ESLint 的 0/1 分别表示「无违规/有违规」；>=2 是配置或内部错误，不能当业务结论。
-            if rc not in (0, 1):
-                tail = (err or out or "").strip().splitlines()[-3:]
-                raise AdapterError("%s 以 rc=%d 结束（配置/环境错误，不是「有违规」）%s"
-                                   % (tool, rc, ("：" + " / ".join(tail)) if tail else ""))
-            payload = _parse_json(out, tool)
             mapped = _map_eslint(payload)
         else:
-            payload = _parse_json(out, tool)
             mapped, engine_errors = _map_semgrep(payload)
             if engine_errors:
                 first = []
@@ -301,8 +315,9 @@ def run(kind, tool, env_name, default_cmd, extra_args):
     blocking = warns = waived = 0
     for path, f in mapped:
         rel = _rel(repo, path)
+        abs_path = _abs(repo, path)
         if f.line is not None:
-            reason = rule_base.inline_waiver(f.rule_id, f.line, _lines_of(path, lines_cache))
+            reason = rule_base.inline_waiver(f.rule_id, f.line, _lines_of(abs_path, lines_cache))
             if reason:
                 rule_base.WAIVED_DETAILS.append((f.rule_id, f.line, reason))
                 waived += 1

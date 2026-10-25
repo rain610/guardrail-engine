@@ -331,7 +331,12 @@ class TestLockInventory(unittest.TestCase):
                 # 某环境下 read_v() 恒返回 ''，红的却是锁本身）。
                 env["PYTHONPATH"] = tmp + (os.pathsep + env["PYTHONPATH"]
                                            if env.get("PYTHONPATH") else "")
-                r = subprocess.run([sys.executable, "-c", "import pyc_probe_mod as m;print(m.V)"],
+                # 2026-10-25 评审 §5.1：某些嵌入式 Python 里 PYTHONPATH 也不足以让
+                # `-c` 找到 cwd 的模块（现场仍是 ModuleNotFoundError）。把路径用 argv
+                # 显式塞进 sys.path —— 不依赖 cwd、-P、PYTHONPATH 任一环境语义。
+                r = subprocess.run([sys.executable, "-c",
+                                    "import sys;sys.path.insert(0, sys.argv[1]);"
+                                    "import pyc_probe_mod as m;print(m.V)", tmp],
                                    cwd=tmp, capture_output=True, text=True,
                                    encoding="utf-8", errors="replace", env=env)
                 self.assertEqual(r.returncode, 0,
