@@ -14,6 +14,16 @@
   `pack_release.py --wheel` 复用同一轮 wheel；`release` 与 `publish` 都下载
   `release-dist` artifact，禁止重新构建。GitHub Release 现在同时附上 PyPI 的同一份
   wheel/sdist，不再出现两条构建链产出不同字节的情况。
+- **artifact 不再携带 `_wheel` 构建缓存**：那是同一份 wheel 的第三份副本（下游一个
+  字节都不用），之前白占 1.2 MB 与上传时间。
+
+### Fixed
+
+- **artifact 漏传隐藏文件**：`upload-artifact` 默认 `include-hidden-files: false`，
+  而出货件里的 `marketplace/.claude-plugin/`、`plugins/agentguard/.claude-plugin/`、
+  `plugins/agentguard/.mcp.json` 全部以点开头。实测删掉这三处后 `verify_release.py`
+  报 7 项不符（含整包指纹），即 release job 会以“产物不完整”失败。已显式打开
+  该开关，并在 `test_pypi_publish` 里锁住。
 
 ## [0.2.0] — 2026-10-25
 

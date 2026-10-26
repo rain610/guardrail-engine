@@ -77,7 +77,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-dist
-          path: dist/
+          # 只传下游真要用的东西：公开发布物、出货件目录、出货 zip。
+          # `dist/install-package/_wheel*/` 是打包器的一次性构建缓存 —— 内容就是 dist/pypi
+          # 里那份 wheel 的又一份副本（`--wheel` 复用它）。v4 会把整个 dist/ 压成一个 zip，
+          # 多带一份白占体积与上传时间，而下游一个字节都用不到。
+          path: |
+            dist/
+            !dist/install-package/_wheel*/
+          # 默认 `false` 会默默跳过以 `.` 开头的路径 —— 而出货件里恰好有三处：
+          # `marketplace/.claude-plugin/marketplace.json`、`plugins/agentguard/.claude-plugin/`、
+          # `plugins/agentguard/.mcp.json`。漏掉它们，release job 的 verify_release 会以
+          # “产物不完整”告终（更糟的是万一校验没盖到，就发了个缺件的包）。
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
@@ -99,6 +110,17 @@ jobs:
         with:
           name: release-dist
           path: dist
+
+      - name: 确认 artifact 结构（fail-closed）
+        run: |
+          # 下载层级写错时，后面的 verify/twine 会以“找不到文件”告终 —— 那句话不指向根因。
+          for p in dist/pypi dist/install-package; do
+            if [ ! -d "$p" ]; then
+              echo "artifact 解出来的结构不对：缺少 $p（下载层级多了一层？）" >&2
+              find dist -maxdepth 3 -type d | head -30 >&2
+              exit 1
+            fi
+          done
 
       - name: 校验下载产物
         run: |
@@ -173,6 +195,16 @@ jobs:
         with:
           name: release-dist
           path: dist
+
+      - name: 确认 artifact 结构（fail-closed）
+        run: |
+          for p in dist/pypi dist/install-package; do
+            if [ ! -d "$p" ]; then
+              echo "artifact 解出来的结构不对：缺少 $p（下载层级多了一层？）" >&2
+              find dist -maxdepth 3 -type d | head -30 >&2
+              exit 1
+            fi
+          done
 
       - name: 校验并安装冒烟（同一份 wheel）
         run: |

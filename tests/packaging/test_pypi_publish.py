@@ -117,6 +117,12 @@ class TestPublishUsesTrustedPublishing(unittest.TestCase):
                       "build job 必须用 `--wheel` 复用同一份 wheel 组装内部包，不能重新构建")
         self.assertIn("actions/upload-artifact", build,
                       "build job 没有上传 artifact：release/publish 只能各自重建")
+        self.assertIn("!dist/install-package/_wheel*/", build,
+                      "artifact 又把打包器的 _wheel 构建缓存收进去了：同一份 wheel 会在"
+                      "artifact 里出现第三份副本，白占体积与上传时间")
+        self.assertIn("include-hidden-files: true", build,
+                      "artifact 默认不传隐藏文件：stage 里的 .mcp.json 与 .claude-plugin/ "
+                      "会缺，release job 的 verify_release 会以“产物不完整”告终")
         self.assertIn("dist/pypi", build,
                       "build job 没把公开发布物收进 dist/pypi：publish 容易把内部 stage 里的轮子重复上传")
 
