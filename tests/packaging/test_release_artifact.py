@@ -407,7 +407,7 @@ class TestVerifierWiring(unittest.TestCase):
         """
         src = _read(RELEASE_YML)
         i_tag, _ = _step(src, "校验 tag ↔ VERSION 一致")
-        i_build, _ = _step(src, "构建 wheel + 离线安装包")
+        i_build, _ = _step(src, "构建 sdist + wheel（唯一构建点）")
         self.assertIsNotNone(i_tag, "release.yml 里找不到 tag↔VERSION 校验步骤")
         self.assertIsNotNone(i_build, "release.yml 里找不到构建步骤")
         self.assertLess(i_tag, i_build, "tag↔VERSION 校验排在构建之后 —— 白跑一次构建才拒绝")
@@ -419,14 +419,12 @@ class TestVerifierWiring(unittest.TestCase):
     def test_wheel_pick_is_exact_not_lucky(self):
         """低 25：`ls … | head -1` 在多个 wheel 时**任取一个**。
 
-        只扫构建步骤的**代码行** —— 注释里会引用这条被禁的旧写法（说明为什么改），
-        整文件 assertNotIn 会把说明文字判成违规（首版即如此），那是锁写错了，不是代码错了。
+        扫**整份 release.yml 的代码行**（不是只扫某一个步骤）：构建、组装、安装冒烟
+        都可能“挑一个轮子”，任何一处留 `head -1` 都是同一个口子。注释不参与判定。
         """
-        _, body = _step(_read(RELEASE_YML), "构建 wheel + 离线安装包")
-        self.assertIsNotNone(body, "release.yml 里找不到构建步骤")
-        code = "\n".join(_code_lines(body))
+        code = "\n".join(_code_lines(_read(RELEASE_YML).splitlines()))
         self.assertNotIn("head -1", code,
-                         "构建步骤又在用 head -1 挑 wheel：多一个轮子就任取一个")
+                         "发布链又在用 head -1 挑 wheel：多一个轮子就任取一个")
         self.assertIn("-ne 1", code, "缺「恰好一个 wheel」的断言")
 
     def test_module_list_is_derived_not_hardcoded(self):

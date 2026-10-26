@@ -198,8 +198,16 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-`release.yml` 依次做：单元测试 → 变异冒烟 → 构建离线安装包与 wheel → 真产物锁 →
-`gh release create` → **PyPI 可信发布**（`publish` job）。
+`release.yml` 分三段：
+
+- `build`：单元测试 → 变异冒烟 → `python -m build`（sdist + wheel）→
+  `pack_release.py --wheel` 用**同一轮** wheel 组装离线安装包 → 真产物锁 →
+  上传 `release-dist` artifact；
+- `release`：下载 `release-dist`，复验后创建 GitHub Release（附同一份 wheel/sdist +
+  内部安装包 zip）；
+- `publish`：下载**同一份** `release-dist`，干净 venv 冒烟后上传 PyPI。
+
+`release` / `publish` **都不重新构建**；GitHub Release 与 PyPI 是同一份 wheel/sdist。
 
 PyPI `publish` job 用的是 OIDC 短时凭证，仓库里**不需要** `PYPI_API_TOKEN`。首次发布前
 要在 PyPI 网页端登记一次 trusted publisher：
@@ -213,8 +221,9 @@ PyPI `publish` job 用的是 OIDC 短时凭证，仓库里**不需要** `PYPI_AP
 | Environment | `pypi` |
 
 仓库侧对应设置：GitHub → Settings → Environments 新建 `pypi`（可按需加 required reviewers，
-发布前人工确认）。`publish` job 通过 `python -m build` 先打 sdist、**再从 sdist** 打 wheel，
-这一步会暴露 `MANIFEST.in` 漏带引擎的问题；随后在干净 venv 里 `init` 并取版本，失败则不上传。
+发布前人工确认）。`build` job 通过 `python -m build` 先打 sdist、**再从 sdist** 打 wheel，
+这一步会暴露 `MANIFEST.in` 漏带引擎的问题；`publish` 只下载同一份 artifact，做
+`twine check` 与干净 venv `init` 冒烟，不重新构建。
 
 失败处置：
 

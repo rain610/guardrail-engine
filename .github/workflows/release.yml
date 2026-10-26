@@ -8,8 +8,13 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # 单一构建点：发布链只在这里跑一次 `python -m build`。
+  # release 与 publish 都下载同一个 artifact，禁止任何一侧重新构建 —— 否则
+  # GitHub Release 的 wheel/sdist 与 PyPI 上的不再是同一份字节。
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -39,33 +44,79 @@ jobs:
       - name: 变异冒烟（锁真的有牙齿）
         run: python sandbox/mutation_smoke.py
 
-      - name: 构建 wheel + 离线安装包
+      - name: 构建 sdist + wheel（唯一构建点）
         run: |
-          python -m pip install --upgrade build
-          python sandbox/pack_release.py
-          # 只数**出货目录**里那一个 wheel：dist/install-package/_wheel/ 是构建缓存，
-          # 递归 find 会把它一起数进来（本机实测 2 个）。
-          STAGE="dist/install-package/guardrail-engine-package-v$(tr -d '[:space:]' < VERSION)"
-          N=$(find "$STAGE" -maxdepth 1 -name "*.whl" | wc -l)
-          if [ "$N" -ne 1 ]; then
-            echo "期望出货目录恰好一个 wheel，实际 $N 个（$STAGE）" >&2
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check --strict dist/*
+          # 只把公开发布物放进 dist/pypi；内部安装包留在 dist/install-package。
+          # publish 只上传 dist/pypi，避免把 stage 里的轮子重复上传。
+          mkdir -p dist/pypi
+          mv dist/*.whl dist/*.tar.gz dist/pypi/
+          N_WHEEL=$(find dist/pypi -maxdepth 1 -name '*.whl' | wc -l)
+          N_SDIST=$(find dist/pypi -maxdepth 1 -name '*.tar.gz' | wc -l)
+          if [ "$N_WHEEL" -ne 1 ] || [ "$N_SDIST" -ne 1 ]; then
+            echo "期望恰好一个 wheel + 一个 sdist，实际 wheel=$N_WHEEL sdist=$N_SDIST" >&2
             exit 1
           fi
+
+      - name: 用同一 wheel 组装离线安装包
+        run: |
+          set -- dist/pypi/*.whl
+          if [ "$#" -ne 1 ]; then
+            echo "期望恰好一个 wheel，实际 $# 个" >&2
+            exit 1
+          fi
+          python sandbox/pack_release.py --wheel "$1"
+          python sandbox/verify_release.py
 
       - name: 真产物锁（必须在 pack 之后跑，否则 TestRealArtifactPasses 会 skip）
         run: python tests/packaging/test_release_artifact.py TestRealArtifactPasses -v
 
-      - name: 校验出货件
+      - name: 上传构建产物（release / publish 共用）
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # release 只消费 artifact：下载、复验、创建 GitHub Release。
+  # 注意：它既不重跑 build，也不重新打包；GitHub 附件与 PyPI 是同一份 wheel/sdist。
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: 校验下载产物
         run: |
+          N_WHEEL=$(find dist/pypi -maxdepth 1 -name '*.whl' | wc -l)
+          N_SDIST=$(find dist/pypi -maxdepth 1 -name '*.tar.gz' | wc -l)
+          if [ "$N_WHEEL" -ne 1 ] || [ "$N_SDIST" -ne 1 ]; then
+            echo "下载产物不是恰好一个 wheel + 一个 sdist（wheel=$N_WHEEL sdist=$N_SDIST）" >&2
+            exit 1
+          fi
           python sandbox/verify_release.py
+          python tests/packaging/test_release_artifact.py TestRealArtifactPasses -v
 
       - name: 干净 venv 安装冒烟（验证 wheel 自带引擎）
         run: |
           python -m venv /tmp/ag-venv
-          STAGE="dist/install-package/guardrail-engine-package-v$(tr -d '[:space:]' < VERSION)"
-          set -- "$STAGE"/*.whl
+          set -- dist/pypi/*.whl
           if [ "$#" -ne 1 ]; then
-            echo "出货目录里的 wheel 不是恰好一个（$# 个）：$STAGE" >&2
+            echo "期望恰好一个 wheel，实际 $# 个" >&2
             exit 1
           fi
           /tmp/ag-venv/bin/python -m pip install --no-index --no-deps --disable-pip-version-check "$1"
@@ -85,11 +136,13 @@ jobs:
           fi
           echo "OK: 干净 venv 安装后 init 落盘自带引擎，guardrail-engine --version = $GOT"
 
-      - name: 创建 GitHub Release
+      - name: 创建 GitHub Release（同一个 wheel/sdist + 内部安装包）
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
+            dist/pypi/*.whl \
+            dist/pypi/*.tar.gz \
             dist/install-package/*.zip \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes
@@ -97,6 +150,7 @@ jobs:
   # PyPI 可信发布（OIDC）：不用任何长期 token。首次发布前要在 PyPI 网页端登记
   # trusted publisher（project: guardrail-engine / owner: rain610 / repo: guardrail-engine /
   # workflow: release.yml / environment: pypi），见 docs/packaging/RUNBOOK.md。
+  # publish 只下载 build 的 artifact，禁止重新构建。
   publish:
     needs: release
     runs-on: ubuntu-latest
@@ -114,19 +168,23 @@ jobs:
         with:
           python-version: "3.12"
 
-      # `python -m build` 默认先从源码打 sdist、**再从 sdist** 打 wheel ——
-      # 后一步正是 sdist 完整性（MANIFEST.in 有没有带上整个引擎）的判据：
-      # 少一棵子树，wheel 里就没有 guardrail_engine/_engine/，装完跑不起来。
-      - name: 构建 sdist + wheel
-        run: |
-          python -m pip install --upgrade build twine
-          python -m build
-          python -m twine check --strict dist/*
+      - name: 下载构建产物（不重新构建）
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist
 
-      - name: 干净 venv 安装冒烟（sdist 产出的 wheel 也必须自带引擎）
+      - name: 校验并安装冒烟（同一份 wheel）
         run: |
+          python -m pip install --upgrade twine
+          python -m twine check --strict dist/pypi/*
           python -m venv /tmp/pypi-venv
-          /tmp/pypi-venv/bin/python -m pip install --no-index --no-deps --disable-pip-version-check dist/*.whl
+          set -- dist/pypi/*.whl
+          if [ "$#" -ne 1 ]; then
+            echo "期望恰好一个 wheel，实际 $# 个" >&2
+            exit 1
+          fi
+          /tmp/pypi-venv/bin/python -m pip install --no-index --no-deps --disable-pip-version-check "$1"
           ENGINE="/tmp/pypi-engine"
           /tmp/pypi-venv/bin/guardrail-engine init --dir "$ENGINE"
           if [ ! -f "$ENGINE/.guardrail-engine-init.json" ]; then
@@ -141,7 +199,7 @@ jobs:
           fi
           echo "OK: sdist → wheel → init 自带引擎，guardrail-engine --version = $GOT"
 
-      - name: 发布到 PyPI
+      - name: 发布到 PyPI（同一份 dist/pypi）
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/
+          packages-dir: dist/pypi

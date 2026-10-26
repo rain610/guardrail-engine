@@ -8,7 +8,12 @@
 
 ## [Unreleased]
 
-（暂无）
+### Changed
+
+- **发布链改为单一构建点**：`release.yml` 的 `build` job 只跑一次 `python -m build`，
+  `pack_release.py --wheel` 复用同一轮 wheel；`release` 与 `publish` 都下载
+  `release-dist` artifact，禁止重新构建。GitHub Release 现在同时附上 PyPI 的同一份
+  wheel/sdist，不再出现两条构建链产出不同字节的情况。
 
 ## [0.2.0] — 2026-10-25
 

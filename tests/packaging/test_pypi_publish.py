@@ -102,13 +102,37 @@ class TestPublishUsesTrustedPublishing(unittest.TestCase):
         self.assertNotRegex(body, r"(?m)^\s*password:\s*\S",
                             "publish job 里出现了 `password:`：可信发布不需要任何 token")
 
-    def test_sdist_is_built_before_upload(self):
-        body = _job(self.txt, "publish")
-        self.assertIn("python -m build", body,
-                      "publish job 必须用 `python -m build`（先打 sdist 再从 sdist 打 wheel）；"
+    def test_one_build_feeds_github_and_pypi(self):
+        """单一构建点：build 产出 dist/pypi；release / publish 只下载，不重建。"""
+        build = _job(self.txt, "build")
+        release = _job(self.txt, "release")
+        publish = _job(self.txt, "publish")
+
+        self.assertIn("python -m build", build,
+                      "build job 必须用 `python -m build`（先打 sdist 再从 sdist 打 wheel）；"
                       "只打 `--wheel` 就测不出 MANIFEST 漏带引擎")
-        self.assertIn("twine check", body,
-                      "publish job 缺 `twine check`：元数据坏了会到上传那一步才失败")
+        self.assertIn("twine check --strict", build,
+                      "build job 缺 `twine check`：元数据坏了会到上传那一步才失败")
+        self.assertIn("pack_release.py --wheel", build,
+                      "build job 必须用 `--wheel` 复用同一份 wheel 组装内部包，不能重新构建")
+        self.assertIn("actions/upload-artifact", build,
+                      "build job 没有上传 artifact：release/publish 只能各自重建")
+        self.assertIn("dist/pypi", build,
+                      "build job 没把公开发布物收进 dist/pypi：publish 容易把内部 stage 里的轮子重复上传")
+
+        for name, body in (("release", release), ("publish", publish)):
+            self.assertIn("actions/download-artifact", body,
+                          "%s job 没有下载 build 的 artifact" % name)
+            self.assertNotIn("python -m build", body,
+                             "%s job 又跑了一次 `python -m build`："
+                             "GitHub Release 与 PyPI 会变成两份不同的字节" % name)
+
+        self.assertIn("dist/pypi/*.whl", release,
+                      "GitHub Release 没附上 PyPI 的同一个 wheel")
+        self.assertIn("dist/pypi/*.tar.gz", release,
+                      "GitHub Release 没附上 PyPI 的同一个 sdist")
+        self.assertIn("packages-dir: dist/pypi", publish,
+                      "publish 必须只上传 dist/pypi，避免把内部安装包里的轮子重复上传")
 
 
 class TestPackageMetadata(unittest.TestCase):

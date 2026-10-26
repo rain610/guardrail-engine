@@ -361,6 +361,20 @@ class TestLockInventory(unittest.TestCase):
                              "本文件系统不支持把 mtime 钉到指定整秒 → 这条锁失去判据，"
                              "不要放它过去（请在此环境下改用别的失效手段）")
             self.assertEqual(read_v(), "A", "第一次读不到 A：夹具本身没跑起来")
+            # ⓪ 平台无关的 M56 判据：不依赖解释器是否写/复用 pyc，只问
+            # `apply_mutation` 有没有清掉文件旁的 __pycache__。手工造一个目录即可，
+            # 否则在「不写 pyc」的环境里这条判据会空转（M56 假绿）。
+            cache_dir = os.path.join(tmp, "__pycache__")
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(os.path.join(cache_dir, "pyc_probe_mod.cpython-313.pyc"), "wb") as f:
+                f.write(b"")
+            err = mod.apply_mutation(p, {"kind": "exact", "old": body_a, "new": body_b})
+            self.assertIsNone(err, "apply_mutation 没施加成功：%s" % err)
+            self.assertFalse(os.path.isdir(cache_dir),
+                             "apply_mutation 没清 __pycache__：M56 会假绿（下一条变异会复用"
+                             "上一条的字节码，而汇总仍是全绿）")
+            write(body_a)                         # 回到「源 A + pyc 头匹配」的前提
+            self.assertEqual(read_v(), "A", "清理后重读 A 失败：夹具没恢复")
             # ① 直接改写（= 没有清理）：必须读到**旧**的 A —— 这一向证明坑真实存在
             write(body_b)
             got = read_v()
