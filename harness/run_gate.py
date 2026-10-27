@@ -32,7 +32,7 @@ reports/gate_log-YYYY-MM.jsonl（git 忽略；旧单文件 gate_log.jsonl 若在
 它是 tamper-evident 而不是 tamper-proof：能写台账的人也能重算链；信任根在远端、
 分支保护与 CI 用干净 checkout 重跑。
 """
-import sys, os, json, time, glob, hashlib, subprocess, tempfile, threading, socket, getpass
+import sys, os, json, time, glob, hashlib, subprocess, tempfile, threading, socket, getpass, signal
 from contextlib import contextmanager
 
 HARNESS = os.path.dirname(os.path.abspath(__file__))  # = guardrail-engine/harness/
@@ -46,6 +46,93 @@ NOTIFY_STATE = os.path.join(LOG_DIR, "notify_last.json")
 # 读侧 _ledger_files() 把旧单文件 + 全部月度片按时间序拼全（旧文件自动成为最早的一片）。
 _LEDGER_GLOB = "gate_log-*.jsonl"
 NOTIFY_MIN_INTERVAL = 60  # 同 gate 拦截通知最小间隔秒（防 AI 循环触发刷屏）
+
+# 2026-10-28 第六轮评审 P1-1：主调度子进程的时限。默认 1800s 覆盖已观测的全量扫描
+# （台账最久单条 1275s），慢机器用环境变量调大；`0` 不表示"不限"（那就退回无界了）。
+GATE_TIMEOUT_ENV = "GUARDRAIL_GATE_TIMEOUT"
+GATE_TIMEOUT_LEGACY_ENV = "AGENTGUARD_GATE_TIMEOUT"   # 旧名，v0.3 移除
+GATE_TIMEOUT_DEFAULT = 1800
+
+# 舰队级 AGENTS.md 体检（--validate 用）的时限：只读本机若干小文件，120s 足够。
+FLEET_AGENTS_TIMEOUT = 120
+
+
+def _gate_timeout():
+    """主调度子进程的时限（秒）。返回 (seconds, error)；error 非空 = 配置错（rc=2）。"""
+    raw = (os.environ.get(GATE_TIMEOUT_ENV)
+           or os.environ.get(GATE_TIMEOUT_LEGACY_ENV) or "").strip()
+    if not raw:
+        return GATE_TIMEOUT_DEFAULT, None
+    try:
+        n = int(raw)
+    except ValueError:
+        return None, "%s 不是整数：%r" % (GATE_TIMEOUT_ENV, raw)
+    if n <= 0:
+        return None, "%s 必须是正整数（当前 %r）" % (GATE_TIMEOUT_ENV, raw)
+    return n, None
+
+
+def _kill_tree(proc):
+    """超时后杀整棵进程树（与 cli.py / external_adapter.py 同形实现各一份）。
+
+    引擎层脚本不能 import 壳包（init 出来的引擎副本里没有可执行包上下文），所以复制
+    而不是共享；三处行为一致性由「孙进程必须死」的锁兜住（test_run_gate_timeout.py）。
+    """
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=30)
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _run_with_timeout(cmd, timeout, env=None):
+    """跑子进程；超时杀整棵进程树并返回 (2, True)。
+
+    POSIX 上必须 `start_new_session=True` 才有独立进程组可 killpg —— 否则
+    `os.getpgid(proc.pid)` 拿到的是**父进程自己的**组，killpg 会把门禁自己一起杀掉。
+    """
+    kwargs = {"cwd": HARNESS}
+    if env is not None:
+        kwargs["env"] = env
+    if os.name != "nt":
+        kwargs["start_new_session"] = True
+    proc = subprocess.Popen(cmd, **kwargs)
+    try:
+        return proc.wait(timeout=timeout), False
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc)
+        try:
+            proc.wait(timeout=30)   # 已被杀：正常立刻返回；避免僵尸/句柄泄漏
+        except subprocess.TimeoutExpired:
+            pass
+        return 2, True
+
+
+def _timeout_notice(what, timeout):
+    print("[run_gate] ✗ %s 超过 %ss 未返回 → 已终止其进程树，按环境错误处理（rc=2）。\n"
+          "  这不是「代码不合规」；慢机器上的合法全量扫描请调大 %s"
+          "（默认 %ss，旧名 %s 也认）。"
+          % (what, timeout, GATE_TIMEOUT_ENV, GATE_TIMEOUT_DEFAULT, GATE_TIMEOUT_LEGACY_ENV),
+          file=sys.stderr)
+
+
+def _fleet_agents_md_check():
+    """舰队级 AGENTS.md 检查（`--validate` 用；提交期只查被提交仓，见 agents_md_check --repo）。"""
+    script = os.path.join(CHECKS, "agents_md_check.py")
+    if not os.path.isfile(script):
+        print("[run_gate] ✗ 缺少 checks/agents_md_check.py → 舰队级 AGENTS.md 检查无法执行（rc=2）",
+              file=sys.stderr)
+        return 2
+    rc, timed_out = _run_with_timeout([sys.executable, script], FLEET_AGENTS_TIMEOUT)
+    if timed_out:
+        _timeout_notice("舰队级 AGENTS.md 检查", FLEET_AGENTS_TIMEOUT)
+    return rc
 
 # 拆分后的同目录模块（2026-10-25）：run_gate 以脚本形态运行时本目录天然在 sys.path；
 # 以模块形态被 import 时（测试 / 直调工具会把 harness/ 放进 sys.path），同样可达。
@@ -267,7 +354,7 @@ def _chain_h(prev_h, rec):
 
 
 def _log_run(gate_name, scope, n_files, rc, ms, rules=None, skipped=False, weakened=None,
-             eol=None, mode_override=None):
+             eol=None, mode_override=None, timed_out=False, timeout_s=None):
     """追加一条运行记录（失败**出声**但不阻断——日志不能反过来挡门禁）。
 
     skipped=True：本次**没有执行任何规则**（gate 未启用），只留一条可区分的痕迹 ——
@@ -287,6 +374,10 @@ def _log_run(gate_name, scope, n_files, rc, ms, rules=None, skipped=False, weake
     mode_override：**调用方用 `--mode` 改了口径**且与 gate 配置不同时的 `值(config=值)`
     （2026-09-23 H1 接线；与 eol 同属"当时按什么判的"，故收紧方向也记）。
     `grep mode_override reports/gate_log.jsonl` 一句话捞出全部被覆盖过的判定。
+
+    timed_out / timeout_s（2026-10-28 第六轮评审 P1-1）：子进程超时被终止时写
+    `timed_out: true` 与当时的阈值秒数。rc 同样是 2，但没有这两个键就分不清
+    「环境/执行问题」与「配置错」——而台账要能回答「这次为什么是 2」。
 
     h / sv（2026-09-29）：行内链哈希 + 分片 schema 版本。h = sha256(上一行h + 本行规范化
     JSON) 截 16 hex，链尾跨月接上一片（分片不断链）；sv=1 只写片首行。改/删中间任何
@@ -314,6 +405,10 @@ def _log_run(gate_name, scope, n_files, rc, ms, rules=None, skipped=False, weake
             rec["weakened"] = list(weakened)
         if mode_override:
             rec["mode_override"] = mode_override
+        if timed_out:
+            rec["timed_out"] = True
+            if timeout_s:
+                rec["timeout_s"] = int(timeout_s)
         if eol:                      # 行尾来源（防护 3）；空 = 这个 gate 不涉及行尾，不落键
             rec["eol_source"] = eol.get("source")
             rec["eol_value"] = eol.get("value")
@@ -547,7 +642,15 @@ def _dispatch(argv):
         return 0
     if argv and argv[0] in ("--validate", "-V"):
         # --structure-only（CI 用）：端仓不在机器上时不阻断（见 _validate docstring）
-        return _validate(structure_only="--structure-only" in argv)
+        # 2026-10-28（第六轮评审 P1-2①）：舰队级 AGENTS.md 机器无关性检查从提交期挪到这里 ——
+        # 提交期只查被提交的那个仓（run_gate 传 --repo），全舰队扫描属于"体检"，不该压在
+        # 每次 commit 的路径上（本机 33 个仓，实测每次 commit 多 1~2s 且与本次改动无关）。
+        # 顺序：先验配置结构，结构不成立就不再往下扫（免得把配置错报成 AGENTS.md 违规）；
+        # --structure-only 明确跳过（CI 的端仓可能根本不在机器上）。
+        rc = _validate(structure_only="--structure-only" in argv)
+        if rc != 0 or "--structure-only" in argv:
+            return rc
+        return _fleet_agents_md_check()
     if not argv or argv[0] in ("--list", "-l"):
         gates, cfg_err = _config_gates()
         if cfg_err:
@@ -828,31 +931,51 @@ def main():
 
     print(f"[run_gate] {gate_name}: {' '.join(cmd)}")
     t0 = time.time()
+    # 2026-10-28（第六轮评审 P1-1）：子进程此前**无时限**跑（阻塞式 subprocess.run）。
+    # 实测最坏 21 分钟/次；编辑器钩子与 CI 都串在这条链上，一个卡死的检查脚本
+    # 就是一次卡死的提交。现在给可配置时限，超时杀整棵进程树、按环境错误 rc=2 fail-closed
+    # （「没跑完」绝不能读成「通过」），并在台账里落 timed_out/timeout_s 分得清是哪一种 2。
+    timeout, timeout_err = _gate_timeout()
+    if timeout_err:
+        print(f"[run_gate] ✗ {timeout_err} → 不执行 gate（配置错，rc=2）", file=sys.stderr)
+        return 2
     # 覆盖度埋点（2026-09-12 第四轮）：子进程把规则级统计写进临时文件，这里读回并入 gate_log。
     # 走环境变量 + 临时文件 → 直接跑检查脚本时统计只留在内存，stdout/stderr 零变化（hook 回灌不受影响）。
     stats_path = os.path.join(tempfile.gettempdir(),
                               f"harness_stats_{os.getpid()}_{int(time.time() * 1000)}.json")
     env = dict(os.environ, HARNESS_STATS_FILE=stats_path)
-    r = subprocess.run(cmd, cwd=HARNESS, env=env)
+    r_rc, timed_out = _run_with_timeout(cmd, timeout, env=env)
     stats = _read_stats(stats_path)
-    _log_run(gate_name, scope, n_files, r.returncode, int((time.time() - t0) * 1000),
-             rules=stats.get("rules"),
-             weakened=list(dict.fromkeys(_weaken_marks(gate_name) + _mode_weaken)),
-             eol=stats.get("eol"),          # 行尾来源（防护 3）：子进程经 stats 文件回传
-             mode_override=_mode_note)      # 口径覆盖（H1）：当时按什么判的，用了才出现
 
     # 2026-10-12（外部评审 CRITICAL #1）：check ⑦ 从 harness_self 挪到通用层。
     # 业务仓提交时，主 gate 通过后追加 AGENTS.md 机器无关性检查 —— 防同事把绝对路径写进 AGENTS.md。
     # harness_self gate 不调（它检查的是引擎仓自己，不是业务仓）。
-    if r.returncode == 0 and gate_name != "harness_self":
+    # 2026-10-28（第六轮评审 P1-2①）：只查**本次目标仓**（--repo）。原先无参调用是舰队级扫描，
+    # 每次提交都要把本机所有受管仓的 AGENTS.md 读一遍，与本次改动无关的仓坏了就拦这次提交。
+    agents_rc, agents_timed_out = 0, False
+    if r_rc == 0 and gate_name != "harness_self":
         agents_md_check = os.path.join(CHECKS, "agents_md_check.py")
         if os.path.isfile(agents_md_check):
-            print(f"[run_gate] 追加检查：业务仓 AGENTS.md 机器无关性")
-            r2 = subprocess.run([sys.executable, agents_md_check], cwd=HARNESS)
-            if r2.returncode != 0:
-                return r2.returncode
+            print(f"[run_gate] 追加检查：业务仓 AGENTS.md 机器无关性（目标仓 {repo}）")
+            agents_rc, agents_timed_out = _run_with_timeout(
+                [sys.executable, agents_md_check, "--repo", repo], timeout)
+            if agents_timed_out:
+                _timeout_notice("AGENTS.md 检查", timeout)
 
-    return r.returncode
+    final_rc = r_rc if r_rc != 0 else agents_rc
+    # 一次调用**一行**台账（2026-10-28）：现在主 gate 与追加的 AGENTS.md 检查都可能因超时
+    # 而 rc=2，台账必须能答「这次 2 是超时还是配置错」—— timed_out 两个来源合并落一行，
+    # 而不是拆成两行（拆行会让「一次提交几条记录」随内部实现变化，聚合口径跟着漂）。
+    _log_run(gate_name, scope, n_files, final_rc, int((time.time() - t0) * 1000),
+             rules=stats.get("rules"),
+             weakened=list(dict.fromkeys(_weaken_marks(gate_name) + _mode_weaken)),
+             eol=stats.get("eol"),          # 行尾来源（防护 3）：子进程经 stats 文件回传
+             mode_override=_mode_note,      # 口径覆盖（H1）：当时按什么判的，用了才出现
+             timed_out=(timed_out or agents_timed_out),
+             timeout_s=(timeout if (timed_out or agents_timed_out) else None))
+    if timed_out:
+        _timeout_notice(f"门禁 {gate_name}", timeout)
+    return final_rc
 
 
 if __name__ == "__main__":

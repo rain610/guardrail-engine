@@ -360,7 +360,22 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 
 `gates.<名>.repo` 引用的键**必须先出现在 `[repos]` 段**（`harness_self` 例外：它由引擎注入）；
 `config.script` 指向的脚本必须存在。`--validate` 会同时检查这两件事，以及
-`run_on` / `mode` / `line_ending` 等字段的值域。
+`run_on` / `mode` / `line_ending` 等字段的值域；结构通过后还会扫一遍**全部受管仓**的
+`AGENTS.md`（进仓文件不得写指向本引擎的绝对路径）。
+
+### 调度器时限
+
+`run_gate` 给门禁子进程设了统一时限（默认 1800 秒）：
+
+```bash
+export GUARDRAIL_GATE_TIMEOUT=3600     # 秒；旧名 AGENTGUARD_GATE_TIMEOUT 也认
+```
+
+超时后**杀掉整棵进程树**并按环境错误返回 `rc=2`，台账记 `timed_out` / `timeout_s` ——
+「没跑完」不会被读成「通过」。写成非整数或 ≤0 视为配置错（同样 `rc=2`，且不执行 gate）。
+
+业务仓 gate 通过后追加的 AGENTS.md 机器无关性检查**只查本次目标仓**（`--repo`）；
+全舰队扫描在 `--validate` 里做（CI 用 `--validate --structure-only` 时跳过）。
 
 ### 本地覆盖层
 
@@ -381,7 +396,7 @@ disabled_rules = []       # 本 gate 关闭的规则 ID
 | 自动检查改动 | `python harness/agents/auto-gate.py` |
 | 定向检查 | `python harness/run_gate.py <gate> <文件...>` |
 | 全量扫描 | `python harness/run_gate.py <gate> --all` |
-| 配置体检 | `python harness/run_gate.py --validate` |
+| 配置体检（含全舰队 AGENTS.md 检查） | `python harness/run_gate.py --validate` |
 | 60 秒演示（无需 sh） | `python sandbox/demo_gate.py` |
 | 运行摘要 | `python harness/run_gate.py --summary` |
 | 覆盖度报告 | `python harness/run_gate.py --coverage` |

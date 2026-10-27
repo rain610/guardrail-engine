@@ -101,8 +101,11 @@ python harness/run_gate.py <gate> <文件...>
 # 指定 gate 全量扫描
 python harness/run_gate.py <gate> --all
 
-# 配置体检
+# 配置体检（全舰队 AGENTS.md 检查也在这里；提交期只查本次目标仓）
 python harness/run_gate.py --validate
+
+# 门禁子进程时限（秒，默认 1800；超时杀整棵进程树、按 rc=2 处理，台账记 timed_out）
+export GUARDRAIL_GATE_TIMEOUT=1800
 
 # 运行摘要
 python harness/run_gate.py --summary

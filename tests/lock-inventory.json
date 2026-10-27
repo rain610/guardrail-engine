@@ -1,9 +1,9 @@
 {
-  "total": 1012,
+  "total": 1044,
   "modules": {
     "engine/test_agentguard.py": 40,
     "engine/test_agents_audit.py": 26,
-    "engine/test_agents_md_check.py": 5,
+    "engine/test_agents_md_check.py": 14,
     "engine/test_agents_scaffold.py": 55,
     "engine/test_audit_reconcile.py": 7,
     "packaging/test_bootstrap.py": 8,
@@ -56,7 +56,8 @@
     "packaging/test_uninstall.py": 15,
     "packaging/test_upgrade.py": 22,
     "packaging/test_upgrade_path.py": 10,
-    "tooling/test_verify_judge.py": 28
+    "tooling/test_verify_judge.py": 28,
+    "engine/test_run_gate_timeout.py": 11
   },
   "mutations": [
     "M5-repo-wide",
@@ -172,7 +173,17 @@
     "M150-eslint-config-error-read-as-clean",
     "M151-semgrep-rc-ignored",
     "M152-relative-path-not-joined",
-    "M153-adapter-mode-ledger"
+    "M153-adapter-mode-ledger",
+    "M154-gate-timeout-not-enforced",
+    "M155-gate-timeout-read-as-pass",
+    "M156-gate-timeout-not-recorded",
+    "M157-taskkill-loses-slash-T",
+    "M158-killpg-becomes-proc-kill",
+    "M159-agents-check-ignores-repo-scope",
+    "M160-run-gate-drops-agents-repo-flag",
+    "M161-validate-skips-fleet-agents-check",
+    "M162-engine-name-back-to-old-only",
+    "M163-legacy-timeout-env-dropped"
   ],
   "_notes": [
     "锁数量与变异护盾清单：模块数、每模块 test 方法数、总数只增不减；有意减少必须同一次提交里更新本文件。",

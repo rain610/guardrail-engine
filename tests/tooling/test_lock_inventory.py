@@ -603,6 +603,11 @@ class TestLockInventory(unittest.TestCase):
         # killpg 只对 POSIX 可见。两条合起来才是「两个平台都有人守」。
         "M143-taskkill-loses-slash-T": ("posix", "M145-killpg-becomes-proc-kill"),
         "M145-killpg-becomes-proc-kill": ("nt", "M143-taskkill-loses-slash-T"),
+        # 2026-10-28（第六轮评审 P1-1）：调度器 run_gate 的 `_kill_tree` 是**另一份**同形实现
+        # （引擎层不能 import 壳包），所以杀树的两个平台半边各要一套盲区声明 ——
+        # M143/M145 守的是 cli.py，这两条守的是 run_gate.py，互相不可替代。
+        "M157-taskkill-loses-slash-T": ("posix", "M158-killpg-becomes-proc-kill"),
+        "M158-killpg-becomes-proc-kill": ("nt", "M157-taskkill-loses-slash-T"),
     }
 
     def test_platform_scoped_shields_are_paired_and_inventoried(self):

@@ -1472,6 +1472,107 @@ MUTATIONS = [
      "expect": "test_run_gate_mode_on_adapter_leaves_no_fake_weakened_record",
      "why": "适配 gate 没有 strict/loose 语义，却照旧写 mode_override/weakened："
             "一次普通判定在台账里被读成「口径被放宽」，审计结论与事实相反。"},
+
+    # ── 批次 9（2026-10-28）：调度器子进程时限（第六轮评审 P1-1 / P1-2①）──────────
+    {"id": "M154-gate-timeout-not-enforced", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '        return proc.wait(timeout=timeout), False\n',
+     "new": '        return proc.wait(), False  # mutation-smoke\n',
+     "lock": "test_run_gate_timeout.py",
+     "expect": "test_timeout_blocks_and_returns_fast",
+     "why": "回到「阻塞式等待、无时限」的旧形状：卡死的检查脚本就是卡死的提交（实测最坏 21 分钟/次），"
+            "编辑器钩子与 CI 都串在这条链上。"},
+
+    {"id": "M155-gate-timeout-read-as-pass", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '        return 2, True\n',
+     "new": '        return 0, True  # mutation-smoke\n',
+     "lock": "test_run_gate_timeout.py",
+     "expect": "test_timeout_blocks_and_returns_fast",
+     "why": "超时按「通过」收尾：检查没跑完却放行 —— 本仓付过两次学费的形状"
+            "（「没跑成」被读成「没问题」），而且扫得越久越容易过。"},
+
+    {"id": "M156-gate-timeout-not-recorded", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '        if timed_out:\n            rec["timed_out"] = True\n',
+     "new": '        if False:  # mutation-smoke\n            rec["timed_out"] = True\n',
+     "lock": "test_run_gate_timeout.py",
+     "expect": "test_timeout_is_recorded_in_ledger",
+     "why": "超时不落台账：事后只能看到一行 rc=2，分不清是「超时」还是「配置错」——"
+            "排查方向直接被引错（本仓对台账可信度的一贯要求：缺口径就记下来）。"},
+
+    {"id": "M157-taskkill-loses-slash-T", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],\n',
+     "new": '            subprocess.run(["taskkill", "/F", "/PID", str(proc.pid)],  # mutation-smoke\n',
+     "lock": "test_run_gate_timeout.py",
+     "expect": "test_timeout_kills_the_whole_tree",
+     "why": "去掉 taskkill 的 /T（杀整棵）：只杀直接子进程，孙子进程继续跑 ——"
+            "旧版 cli.py 100 分钟卡死就是这个病灶。互补的另一半见 M158（守 POSIX）。",
+     "blind_on": ["posix"],
+     "blind_why": "`/T` 只出现在 `if os.name == \"nt\"` 分支里；POSIX 走 killpg，"
+                  "变异体与原体在 Linux 上语义相同，锁**没有理由**红。",
+     "covered_by": "M158-killpg-becomes-proc-kill"},
+
+    {"id": "M158-killpg-becomes-proc-kill", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '        else:\n            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)\n',
+     "new": '        else:\n            proc.kill()  # mutation-smoke\n',
+     "lock": "test_run_gate_timeout.py",
+     "expect": "test_timeout_kills_the_whole_tree",
+     "why": "POSIX 上把「杀整个进程组」退化成「只杀直接子进程」：与 M157 在 Windows 上是同一个"
+            "病灶的两半 —— 孙进程继续跑、写端不关，超时路径重新变成卡死。",
+     "blind_on": ["nt"],
+     "blind_why": "Windows 走 `if os.name == \"nt\"` 的 taskkill 分支，killpg 那行永不执行 ⇒ "
+                  "变异体与原体在 Windows 上语义相同，锁**没有理由**红。",
+     "covered_by": "M157-taskkill-loses-slash-T"},
+
+    {"id": "M159-agents-check-ignores-repo-scope", "file": "checks/agents_md_check.py",
+     "kind": "exact",
+     "old": '    passed, msg = (check_repo(repo) if repo is not None\n'
+            '                   else check_agents_md_no_absolute_paths())\n',
+     "new": '    passed, msg = check_agents_md_no_absolute_paths()  # mutation-smoke\n',
+     "lock": "test_agents_md_check.py",
+     "expect": "test_repo_mode_does_not_read_config",
+     "why": "`--repo` 被忽略、一律走舰队级扫描：提交链又变回「读本机 config + 扫全部受管仓」，"
+            "别的仓 AGENTS.md 坏了就拦本次提交，且多一种「配置坏 = 提交不过」的失效面。"},
+
+    {"id": "M160-run-gate-drops-agents-repo-flag", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '                [sys.executable, agents_md_check, "--repo", repo], timeout)\n',
+     "new": '                [sys.executable, agents_md_check], timeout)  # mutation-smoke\n',
+     "lock": "test_run_gate_timeout.py",
+     "expect": "test_other_repo_violation_does_not_block_this_commit",
+     "why": "调度器不把目标仓传下去：检查脚本退化成舰队级扫描，"
+            "「只查本次提交的仓」变成了口头承诺（P1-2① 本体）。"},
+
+    {"id": "M161-validate-skips-fleet-agents-check", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '        return _fleet_agents_md_check()\n',
+     "new": '        return 0  # mutation-smoke\n',
+     "lock": "test_run_gate_timeout.py",
+     "expect": "test_validate_still_scans_the_fleet",
+     "why": "舰队级 AGENTS.md 检查从提交期挪到 `--validate` 后又被摘掉："
+            "检查**在哪都不跑**了，而所有门禁照样绿（「机制在、判据不在」的经典形状）。"},
+
+    {"id": "M162-engine-name-back-to-old-only", "file": "checks/agents_md_check.py",
+     "kind": "exact",
+     "old": '_ENGINE_NAME = r"(?:agentguard|guardrail[-_]engine)"\n',
+     "new": '_ENGINE_NAME = r"(?:agentguard)"  # mutation-smoke\n',
+     "lock": "test_agents_md_check.py",
+     "expect": "test_posix_new_name_blocks",
+     "why": "只认旧名：改名后 `/opt/guardrail-engine`、`C:/tools/guardrail-engine` 这类绝对路径"
+            "一个字符都匹配不上 —— 检查在新机器上形同虚设（P1-2② 本体）。"},
+
+    {"id": "M163-legacy-timeout-env-dropped", "file": "harness/run_gate.py",
+     "kind": "exact",
+     "old": '           or os.environ.get(GATE_TIMEOUT_LEGACY_ENV) or "").strip()\n',
+     "new": '           or "").strip()  # mutation-smoke\n',
+     "lock": "test_run_gate_timeout.py",
+     "expect": "test_legacy_env_name_still_works",
+     "why": "旧名 AGENTGUARD_GATE_TIMEOUT 失效：迁移期按旧名调大时限的机器，"
+            "新时限悄悄回到默认值 —— 表现为「明明调过，还是超时」。其它环境变量的双认"
+            "（GUARDRAIL_ENGINE_DIR / HARNESS_DIR 一族）也会这么坏。"},
 ]
 
 

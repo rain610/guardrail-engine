@@ -385,7 +385,25 @@ disabled_rules = []       # rule IDs disabled for this gate
 
 The key referenced by `gates.<name>.repo` **must already exist** in `[repos]` (`harness_self` is
 injected by the engine). The script named by `config.script` must exist. `--validate` checks both,
-plus the value domains of `run_on` / `mode` / `line_ending`.
+plus the value domains of `run_on` / `mode` / `line_ending`. Once the structure passes it also scans
+the `AGENTS.md` of **every managed repository** (committed files must not contain absolute paths
+pointing at this engine).
+
+### Dispatcher timeout
+
+`run_gate` puts a single deadline on gate subprocesses (1800 s by default):
+
+```bash
+export GUARDRAIL_GATE_TIMEOUT=3600     # seconds; the legacy name AGENTGUARD_GATE_TIMEOUT is honoured too
+```
+
+On timeout the **whole process tree is killed** and the run exits `2` as an environment error, with
+`timed_out` / `timeout_s` in the ledger — "did not finish" is never read as "passed". A non-integer
+or non-positive value is a config error (also `rc=2`, and the gate is not started).
+
+The AGENTS.md machine-independence check appended after a business-repo gate **only inspects the
+target repository of this run** (`--repo`); the fleet-wide scan happens in `--validate`
+(`--validate --structure-only`, used by CI, skips it).
 
 ### Machine-local overlay
 
@@ -407,7 +425,7 @@ TOML.
 | Check current changes | `python harness/agents/auto-gate.py` |
 | Targeted check | `python harness/run_gate.py <gate> <file...>` |
 | Full scan | `python harness/run_gate.py <gate> --all` |
-| Config health check | `python harness/run_gate.py --validate` |
+| Config health check (incl. fleet-wide AGENTS.md scan) | `python harness/run_gate.py --validate` |
 | 60-second demo (no sh) | `python sandbox/demo_gate.py` |
 | Run summary | `python harness/run_gate.py --summary` |
 | Coverage report | `python harness/run_gate.py --coverage` |

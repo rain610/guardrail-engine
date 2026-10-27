@@ -10,6 +10,17 @@
 
 ### Changed
 
+- **调度器给门禁子进程加了时限**：`run_gate` 以前用阻塞式 `subprocess.run` 跑检查脚本，
+  一个卡死的脚本就是一次卡死的提交（台账实测单条全量扫描 1275s，≈21 分钟；编辑器钩子与
+  CI 都串在这条链上）。
+  现在统一时限 `GUARDRAIL_GATE_TIMEOUT`（秒，默认 1800；旧名 `AGENTGUARD_GATE_TIMEOUT`
+  仍认），超时**杀整棵进程树**并按环境错误 `rc=2` fail-closed，台账新增
+  `timed_out` / `timeout_s` ——「没跑完」不会被读成「通过」，事后也分得清这次 `rc=2`
+  是超时还是配置错。时限写成非整数或 ≤0 按配置错处理（`rc=2`，且不执行 gate）。
+- **AGENTS.md 机器无关性检查收窄到本次目标仓**：原先每次业务仓提交都追加一次**全舰队**
+  扫描（本机配了几个仓就读几个），与本次改动无关的仓坏了就拦这次提交，还多一次配置读取。
+  现在提交期只查 `--repo` 指定的目标仓；舰队级扫描移到 `run_gate --validate`
+  （CI 用 `--validate --structure-only` 时跳过）。
 - **发布链改为单一构建点**：`release.yml` 的 `build` job 只跑一次 `python -m build`，
   `pack_release.py --wheel` 复用同一轮 wheel；`release` 与 `publish` 都下载
   `release-dist` artifact，禁止重新构建。GitHub Release 现在同时附上 PyPI 的同一份
@@ -19,6 +30,10 @@
 
 ### Fixed
 
+- **`agents_md_check` 只认旧名**：匹配模式写死 `agentguard`，改名后 `/opt/guardrail-engine`、
+  `C:/tools/guardrail-engine` 这类绝对路径一个字符都匹配不上 —— 检查在新机器上形同虚设。
+  现在新旧名都认；同时排除 `~/`、`$HOME/`、`%USERPROFILE%/` 开头的家园相对指针（那是
+  文档推荐写法，不该被判成绝对路径）。
 - **artifact 漏传隐藏文件**：`upload-artifact` 默认 `include-hidden-files: false`，
   而出货件里的 `marketplace/.claude-plugin/`、`plugins/agentguard/.claude-plugin/`、
   `plugins/agentguard/.mcp.json` 全部以点开头。实测删掉这三处后 `verify_release.py`
