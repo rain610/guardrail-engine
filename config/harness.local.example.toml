@@ -14,7 +14,7 @@
 # 渲染时都从这取路径（不再写死绝对路径，换机器只改这一处）。
 # 缺省注释掉 = 走解析链下一环（~/.guardrail-engine/harness.path → cwd 上溯）。
 #
-# harness = "D:/Rain/project/agentguard"
+# harness = "D:/Rain/project/guardrail-engine"
 
 # ---- 值留空 = 本机不受管（**知道这个，比知道怎么填更重要**）----
 # **键名不用你写**：共享 config/harness.toml 的 [repos] 段已经声明了全部键（值一律留空）——
