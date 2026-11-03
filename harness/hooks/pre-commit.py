@@ -197,8 +197,12 @@ def main():
                 return 2
             rels.append(rl)
         prefix = overlay.replace("\\", "/").rstrip("/") + "/"
-        ci = subprocess.run(["git", "-C", target_repo, "checkout-index", "-f",
-                             "--prefix=%s" % prefix, "--"] + rels,
+        # 路径走 --stdin（2026-11-03 实测）：`-- ` + 数百个路径和下面调 run_gate 是同一个
+        # 命令行上限问题（Windows 32767 字符），而 git 的路径通道本身不受此限制。
+        # `-z` = NUL 分隔，与上面 `git diff -z` 的产出口径一致（中文/空格路径无需再转义）。
+        ci = subprocess.run(["git", "-C", target_repo, "checkout-index", "-f", "-z",
+                             "--stdin", "--prefix=%s" % prefix],
+                            input="\x00".join(rels) + "\x00",
                             capture_output=True, text=True, encoding="utf-8",
                             errors="replace", timeout=60)
         if ci.returncode != 0:
@@ -215,13 +219,42 @@ def main():
         # 评审 v9（Codex P1-1，实测复现）：必须把**实际提交仓**交给调度器。
         # 旧行为只传文件路径 → run_gate 用 config 的 _repo_path（策略归属，worktree 场景是主仓）
         # 当检查基准 → rel/changed_lines 全按主仓算 → worktree 里新增的违规被判"存量" → rc=0 放过。
-        cmd = [sys.executable, os.path.join(HARNESS, "run_gate.py"), gate_name,
-               "--repo", os.path.abspath(target_repo)] + files
+        # 分批调用（2026-11-03 实测）：数百个 staged 文件拼进 argv 会超过 Windows
+        # CreateProcess 的 32767 字符上限，抛 WinError 206 —— 而那个异常发生在门禁跑起来
+        # 之前，外层却报成"门禁未通过（rc=1）"，把环境问题栽给业务代码。批次尺寸由
+        # _batch 统一决定；下面每次调用的命令行都留有余量，run_gate 再往下传也不会超限。
+        cmd_prefix = [sys.executable, os.path.join(HARNESS, "run_gate.py"), gate_name,
+                      "--repo", os.path.abspath(target_repo)]
         print(f"[pre-commit] 跑门禁 {gate_name}（检查**暂存内容** {len(files)} 个文件）")
-        r = subprocess.run(cmd, cwd=HARNESS, stdin=subprocess.DEVNULL)
-        if r.returncode != 0:
+        from _batch import split as _split_batches
+        batches = list(_split_batches(files, cmd_prefix))
+        rc = 0
+        for i, batch in enumerate(batches, 1):
+            if len(batches) > 1:
+                print(f"[pre-commit] 分批 {i}/{len(batches)}：{len(batch)} 个文件"
+                      f"（命令行长度上限保护）")
+            try:
+                r = subprocess.run(cmd_prefix + batch, cwd=HARNESS,
+                                   stdin=subprocess.DEVNULL)
+            except OSError as e:
+                # 到这一层还没跑起来 = 环境/参数问题，按 rc=2 让分发器报 CONFIG_ERROR，
+                # 不再伪装成业务拦截。
+                print(f"[pre-commit] ✗ 无法执行门禁子进程：{e!r}")
+                print("[pre-commit] 这是环境/参数问题，不是业务代码问题 → 不放行"
+                      "（fail-closed，rc=2）。")
+                return 2
+            # rc=2（配置/环境）后续批次同样会失败，不再跑；rc=1（业务拦截）继续跑完，
+            # 让一次提交里的问题尽量一次报全。
+            if r.returncode != 0 and rc == 0:
+                rc = r.returncode
+            if r.returncode == 2:
+                break
+        if rc == 2:
+            print("[pre-commit] 门禁未能完成（配置/环境问题，不是业务代码问题），"
+                  "commit 已阻断。")
+        elif rc != 0:
             print("[pre-commit] 门禁未通过，commit 已阻断。修复后重试。")
-        return r.returncode
+        return rc
     finally:
         shutil.rmtree(overlay, ignore_errors=True)
 

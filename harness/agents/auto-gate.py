@@ -163,6 +163,7 @@ def main():
 
     sys.path.insert(0, HARNESS)
     from _config import gate
+    from _batch import split as _split_batches
     g = gate(gate_name)
     if not g.get("enabled", False):
         print(f"[auto-gate] gate {gate_name} 未启用，跳过。")
@@ -186,8 +187,10 @@ def main():
     # 两者相同时不转发：run_gate 本来就用 config 值，等价且不改既有输出。
     _repo_flag = ["--repo", os.path.abspath(repo)] if (repo and repo != g.get("_repo_path")) else []
 
+    prefix = [sys.executable, os.path.join(HARNESS, "run_gate.py"), gate_name] + _repo_flag
     if full:
-        cmd = [sys.executable, os.path.join(HARNESS, "run_gate.py"), gate_name] + _repo_flag + ["--all"]
+        files = []
+        batches = [["--all"]]
     elif only:
         # 编辑期精确口径（2026-09-13 用户拍板）：只检查**被编辑的那个文件**。
         # 原因：默认走 _changed_files(repo) 会把**整个仓的未提交改动**都算进来——脏工作区里
@@ -202,7 +205,7 @@ def main():
             print(f"[auto-gate] ✗ {gate_name}: --only 指定的文件都不存在 → 不放行（fail-closed）："
                   f"{', '.join(only[:3])}", file=sys.stderr)
             return 2
-        cmd = [sys.executable, os.path.join(HARNESS, "run_gate.py"), gate_name] + _repo_flag + files
+        batches = list(_split_batches(files, prefix))
     else:
         files, err = _changed_files(repo, gate_name)
         if err:
@@ -213,15 +216,36 @@ def main():
         if not files:
             print(f"[auto-gate] {gate_name}: 无改动文件，门禁通过。")
             return 0
-        cmd = [sys.executable, os.path.join(HARNESS, "run_gate.py"), gate_name] + _repo_flag + files
+        batches = list(_split_batches(files, prefix))
 
-    print(f"[auto-gate] {gate_name} @ {repo}：{' '.join(cmd)}")
-    rc = subprocess.run(cmd, cwd=HARNESS).returncode
-    # 退出码归一：143（SIGTERM/128+15）和 120（超时）不在契约(0/1/2/3)内 → 归一为 2（基础设施错误）。
-    if rc not in (0, 1, 2, 3):
-        print(f"[auto-gate] 子进程返回非契约退出码 rc={rc}（可能是超时），归一为 rc=2",
-              file=sys.stderr)
-        rc = 2
+    # 分批（2026-11-03 实测）：数百个改动文件拼进 argv 会超过 Windows CreateProcess 的
+    # 32767 字符上限（WinError 206），在门禁跑起来之前就崩。批次尺寸由 _batch 统一决定。
+    if len(batches) == 1:
+        print(f"[auto-gate] {gate_name} @ {repo}：{' '.join(prefix[1:] + batches[0])}")
+    else:
+        print(f"[auto-gate] {gate_name} @ {repo}：{len(files)} 个文件，分 {len(batches)} 批"
+              f"（命令行长度上限保护）")
+    rc = 0
+    for i, batch in enumerate(batches, 1):
+        if len(batches) > 1:
+            print(f"[auto-gate] 分批 {i}/{len(batches)}：{len(batch)} 个文件")
+        try:
+            batch_rc = subprocess.run(prefix + batch, cwd=HARNESS).returncode
+        except OSError as e:
+            print(f"[auto-gate] ✗ 无法执行门禁子进程：{e!r} → 不放行（rc=2）",
+                  file=sys.stderr)
+            return 2
+        # 退出码归一：143（SIGTERM/128+15）和 120（超时）不在契约(0/1/2/3)内 → 归一为 2（基础设施错误）。
+        if batch_rc not in (0, 1, 2, 3):
+            print(f"[auto-gate] 子进程返回非契约退出码 rc={batch_rc}（可能是超时），归一为 rc=2",
+                  file=sys.stderr)
+            batch_rc = 2
+        if batch_rc != 0 and rc == 0:
+            rc = batch_rc
+        # rc=2（环境/配置）后续批次同样会失败，不再跑；业务拦截则跑完所有批次，
+        # 让一次编辑后的检查尽量一次报全。
+        if batch_rc == 2:
+            break
     return rc
 
 

@@ -9,6 +9,7 @@
     "packaging/test_bootstrap.py": 8,
     "engine/test_checks.py": 61,
     "engine/test_client_config_check.py": 33,
+    "engine/test_cmdline_batching.py": 11,
     "engine/test_contracts.py": 13,
     "engine/test_coverage.py": 31,
     "docs/test_docs_consistency.py": 16,

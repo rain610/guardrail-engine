@@ -30,6 +30,12 @@
 
 ### Fixed
 
+- **大提交不再被命令行长度拖垮**：`pre-commit` / `auto-gate` / `post-edit` 把全部文件拼进
+  `run_gate` 的 argv，在 Windows 上超过 CreateProcess 的 32767 字符上限（约 200 个端仓
+  路径）就抛 `WinError 206`；异常发生在门禁执行之前，却被外层报成「门禁未通过（rc=1）」，
+  把环境问题误报成业务代码问题。现在按 `harness/_batch.py` 的预算分批调用，
+  `pre-commit` 展开暂存内容改走 `git checkout-index --stdin -z`；子进程起不来时统一
+  按 rc=2（配置/环境）fail-closed。
 - **`agents_md_check` 只认旧名**：匹配模式写死 `agentguard`，改名后 `/opt/guardrail-engine`、
   `C:/tools/guardrail-engine` 这类绝对路径一个字符都匹配不上 —— 检查在新机器上形同虚设。
   现在新旧名都认；同时排除 `~/`、`$HOME/`、`%USERPROFILE%/` 开头的家园相对指针（那是

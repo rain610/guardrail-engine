@@ -45,6 +45,7 @@ def main():
     files = args[1:]
     sys.path.insert(0, HARNESS)
     from _config import gate, changed_files_ex
+    from _batch import split as _split_batches
     g = gate(gate_name)
     repo = repo_override or g.get("_repo_path")
     if not files and not repo:
@@ -76,9 +77,28 @@ def main():
     # 只在两者不同时才转发：相同时 run_gate 本来就用 config 值，等价且不改输出。
     if repo and repo != g.get("_repo_path"):
         cmd += ["--repo", os.path.abspath(repo)]
-    cmd += files
-    print(f"[post-edit] 跑门禁 {gate_name}")
-    return subprocess.run(cmd, cwd=HARNESS, stdin=subprocess.DEVNULL).returncode
+    # 分批（2026-11-03 实测）：批量格式化/大 merge 后改动文件可达数百，整串拼进 argv 会超过
+    # Windows CreateProcess 的 32767 字符上限（WinError 206），门禁还没跑就崩。
+    print("[post-edit] 跑门禁 %s（%d 个文件）" % (gate_name, len(files)))
+    batches = list(_split_batches(files, cmd))
+    rc = 0
+    for i, batch in enumerate(batches, 1):
+        if len(batches) > 1:
+            print("[post-edit] 分批 %d/%d：%d 个文件（命令行长度上限保护）"
+                  % (i, len(batches), len(batch)))
+        try:
+            batch_rc = subprocess.run(cmd + batch, cwd=HARNESS,
+                                      stdin=subprocess.DEVNULL).returncode
+        except OSError as e:
+            print("[post-edit] ✗ 无法执行门禁子进程：%r → 不放行（rc=2）" % (e,),
+                  file=sys.stderr)
+            return 2
+        if batch_rc != 0 and rc == 0:
+            rc = batch_rc
+        # rc=2（环境/配置）后续批次同样会失败，不再跑；业务拦截则跑完所有批次。
+        if batch_rc == 2:
+            break
+    return rc
 
 
 if __name__ == "__main__":
