@@ -99,7 +99,7 @@ qoder: {
 }
 ```
 
-`<HARNESS_SHIM>` = 我们那份通用钩子（本机 `C:\Users\HP\.guardrail-engine\hooks\agentguard-gate.py`，
+`<HARNESS_SHIM>` = 我们那份通用钩子（本机 `C:\Users\<用户名>\.guardrail-engine\hooks\agentguard-gate.py`，
 转发到仓内正本）。
 
 ### 5.4 已做的验证（本机实测）

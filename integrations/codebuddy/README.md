@@ -37,7 +37,7 @@
 }
 ```
 
-本机实际值（可照抄）：`<PYTHON>` = uv 的 python 全路径，`<HARNESS_SHIM>` = `C:\\Users\\HP\\.agentguard\\hooks\\agentguard-gate.py`
+本机实际值（`install_shim.py` 跑完会打印，照它填）：`<PYTHON>` = uv 的 python 全路径，`<HARNESS_SHIM>` = `C:\\Users\\<用户名>\\.agentguard\\hooks\\agentguard-gate.py`
 （shim 会转发到仓里正本，换机器只改这一处）。
 
 **为什么不写 matcher**：CodeBuddy 的工具名与 Claude 未必一致，钩子自身带"取不到被编辑文件就跳过"的判据——

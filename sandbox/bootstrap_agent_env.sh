@@ -100,7 +100,7 @@ echo "harness: $HARNESS_ROOT"
 # 本脚本只留**人类文案**（下面 case 那段）；机读的动作词由模块打在 stdout，警告走 stderr。
 GLOBAL_SRC="$GLOBAL_DIR/GLOBAL_AGENTS.md"
 # ---- 2026-09-19 修：薄壳里写出去的是 git-bash 形态，可读它的却是 Windows 工具 ----
-# 本机实测：三个薄壳正文写的是 `/c/Users/HP/.agentguard/GLOBAL_AGENTS.md` —— git-bash 的
+# 本机实测：三个薄壳正文写的是 `/c/Users/<用户名>/.agentguard/GLOBAL_AGENTS.md` —— git-bash 的
 # 形态。可这三个文件正是 **Windows 上的 AI 工具**去读的入口路由，它们打不开 `/c/...`。
 # 同一件事本文件末尾指针那段已经治过一遍（连注释都写着「git-bash 的 `/d/...` 那边的程序
 # 打不开」），并为此专门算了 $HARNESS_WIN；这里漏了，属同一个病没治干净。

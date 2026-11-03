@@ -21,14 +21,14 @@
 | **运行方式** | `进程` | 保持默认 |
 | **作用域** | `用户` | 全机器生效（覆盖所有端仓）；也可选项目级只对当前仓生效 |
 | **匹配器** | `Write, Edit` | 占位提示原文"例如 Write, Edit, Bash"；**留空 = 匹配该事件的所有输入** |
-| **命令** | `C:\Users\HP\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\python.exe` | 只填解释器 |
+| **命令** | `C:\Users\<用户名>\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\python.exe` | 只填解释器 |
 | **参数**（每行一个 argv） | 见下方三行 | 表单把命令与参数分开，正好免掉引号地狱 |
 | 高级 | 可不动 | 超时等 |
 
 **参数三行**（逐行填）：
 
 ```
-C:\Users\HP\.guardrail-engine\hooks\agentguard-gate.py
+C:\Users\<用户名>\.guardrail-engine\hooks\agentguard-gate.py
 zcode
 PostToolUse
 ```

@@ -32,7 +32,7 @@ UPSTREAM = "https://opencode.ai/zen/go/v1"
 KEYNAME = "OPENCODE_GO_API_KEY"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) opencode-go-proxy"
 
-# Hermes `.env` 的候选位置（2026-09-18 批次 5）：原先写死 `C:/Users/HP/AppData/Local/hermes/.env`
+# Hermes `.env` 的候选位置（2026-09-18 批次 5）：原先写死 `C:/Users/<用户名>/AppData/Local/hermes/.env`
 # —— 维护者本机的用户名与布局，同事机器上必然找不到，而且报错里连"该往哪儿放"都看不出来。
 # 判据是"**这个文件真的在**"而不是"目录在"：空目录会让 open() 抛得更晚、更难懂。
 _ENV_CANDIDATES = [

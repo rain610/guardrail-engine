@@ -103,7 +103,7 @@ sh ~/.codex/codex-go.sh exec "在 src/ 下建个含 console.log 的 .vue，做�
 Codex 是否把钩子输出显示在非交互（`-q`）会话里。要定性得多跑几次 + 抓 Codex 自己的日志。
 
 **顺带证实两条环境事实**（留档里模型自己报的）：
-1. `apply_patch` 在本机被沙箱拒（`Access is denied`，bat 位于 `C:\Users\HP\.codex\tmp\arg0\…`），
+1. `apply_patch` 在本机被沙箱拒（`Access is denied`，bat 位于 `C:\Users\<用户名>\.codex\tmp\arg0\…`），
    模型改用 PowerShell 直写——这正是钩子 `WRITE_HINTS` 里维护那些 PowerShell 形态的原因；
 2. 机器**没装 node** → PC 语法校验按设计**出声告警**（"未找到 node —— SYNTAX 规则本次已跳过，不会拦语法错（假绿风险）"），
    而不是静默通过。这条"宁可吵不可漏"的设计在真实会话里得到验证 ✅
