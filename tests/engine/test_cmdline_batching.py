@@ -32,6 +32,10 @@ os.environ["HARNESS_LOG_FILE"] = os.path.join(
 
 PY = sys.executable
 WINDOWS_CMDLINE_LIMIT = 32767
+# `_batch._CMD_BUDGET` 随平台取 24000(Win)/100000(POSIX)。本文件锁的是 Windows 上限，
+# 所以在 POSIX 上必须显式传 Windows 预算 —— 否则 400 个约 95 字符的路径在 100000 预算下
+# 本来就不该切批，断言会假红（CI 实测 2026-11-03：ubuntu 上两条用例因此失败）。
+WINDOWS_BUDGET = 24000
 
 
 def _realistic(n):
@@ -61,7 +65,7 @@ class SplitTest(unittest.TestCase):
         files = _realistic(400)
         prefix = [PY, os.path.join(HARNESS, "run_gate.py"), "example",
                   "--repo", "D:/Rain/project/gxgk_pc"]
-        batches = list(_batch.split(files, prefix))
+        batches = list(_batch.split(files, prefix, budget=WINDOWS_BUDGET))
         self.assertGreater(len(batches), 1, "400 个路径必须被切成多批")
         for batch in batches:
             self.assertLess(len(" ".join(prefix + batch)), WINDOWS_CMDLINE_LIMIT)
@@ -107,7 +111,7 @@ class RealSubprocessTest(unittest.TestCase):
     def test_batched_launch_succeeds(self):
         files = _realistic(400)
         prefix = [PY, "-c", "import sys; sys.exit(0 if len(sys.argv) > 1 else 3)"]
-        batches = list(_batch.split(files, prefix))
+        batches = list(_batch.split(files, prefix, budget=WINDOWS_BUDGET))
         self.assertGreater(len(batches), 1)
         rcs = [subprocess.run(prefix + b, stdin=subprocess.DEVNULL).returncode
                for b in batches]
