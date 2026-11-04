@@ -41,10 +41,14 @@ CONFIG_KEYS = frozenset()
 
 problems, warns = [], []
 
-# ② 零第三方依赖的扫描范围：引擎层 + 打包壳（2026-09-16 补打包壳；
-# 2026-10-25 改名后主包是 guardrail_engine、agentguard 是迁移期兼容壳，
-# 与 tests/engine/test_stdlib_only.py 的 SCAN_DIRS 保持一致——两处都用手写清单，别单边改）。
-_SCAN_SUBS = ("harness", "checks", "sandbox", "guardrail_engine", "agentguard")
+# ② 零第三方依赖的扫描范围：引擎层（2026-09-16 补打包壳；
+# 2026-10-25 改名后主包是 guardrail_engine、agentguard 是迁移期兼容壳）。
+# P3-4（评审 2026-11-04）：与 tests/engine/test_stdlib_only.py 的 SCAN_DIRS 及
+# .github/workflows/ci.yml 统一口径 —— 三份清单必须逐字一致，都用手写顶层目录，
+# 都不含 sandbox/（sandbox 是工具脚本，不属于引擎层，零依赖约束不覆盖）。
+# harness/hooks 和 harness/agents 是 harness/ 的子目录，必须显式列出（os.listdir
+# 非递归）。三份扫描一律非递归，口径对齐。
+_SCAN_SUBS = ("checks", "harness", "harness/hooks", "harness/agents", "guardrail_engine", "agentguard")
 
 
 def _load_by_path(rel, name):
@@ -98,33 +102,36 @@ def check_stdlib_only():
         # 顶层包目录（guardrail_engine/ agentguard/）本身也是合法导入名
         if os.path.isfile(os.path.join(ROOT, sub, "__init__.py")):
             local.add(sub)
-        for dirpath, _, files in os.walk(os.path.join(ROOT, sub)):
-            for f in files:
+        # P3-4：非递归（os.listdir），与 test_stdlib_only.py 和 ci.yml 同口径。
+        # harness/hooks 和 harness/agents 已在 _SCAN_SUBS 里显式列出。
+        sub_dir = os.path.join(ROOT, sub)
+        if os.path.isdir(sub_dir):
+            for f in os.listdir(sub_dir):
                 if f.endswith(".py"):
                     local.add(os.path.splitext(f)[0])
     bad = []
     for sub in _SCAN_SUBS:
-        for dirpath, _, files in os.walk(os.path.join(ROOT, sub)):
-            if "__pycache__" in dirpath:
+        sub_dir = os.path.join(ROOT, sub)
+        if not os.path.isdir(sub_dir):
+            continue
+        for f in sorted(os.listdir(sub_dir)):
+            if not f.endswith(".py"):
                 continue
-            for f in sorted(files):
-                if not f.endswith(".py"):
-                    continue
-                p = os.path.join(dirpath, f)
-                try:
-                    tree = ast.parse(pathlib.Path(p).read_text(encoding="utf-8", errors="replace"))
-                except Exception:
-                    continue
-                for node in ast.walk(tree):
-                    names = []
-                    if isinstance(node, ast.Import):
-                        names = [a.name.split(".")[0] for a in node.names]
-                    elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                        names = [node.module.split(".")[0]]
-                    for n in names:
-                        if n in _sys.stdlib_module_names or n in local or n in ("__future__",):
-                            continue
-                        bad.append("%s: import %s" % (os.path.relpath(p, ROOT).replace("\\", "/"), n))
+            p = os.path.join(sub_dir, f)
+            try:
+                tree = ast.parse(pathlib.Path(p).read_text(encoding="utf-8", errors="replace"))
+            except Exception:
+                continue
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [a.name.split(".")[0] for a in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    names = [node.module.split(".")[0]]
+                for n in names:
+                    if n in _sys.stdlib_module_names or n in local or n in ("__future__",):
+                        continue
+                    bad.append("%s: import %s" % (os.path.relpath(p, ROOT).replace("\\", "/"), n))
     if bad:
         problems.append("② 引擎层出现第三方依赖（零依赖承诺被破坏）：%s" % "; ".join(sorted(set(bad))[:8]))
 

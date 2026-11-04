@@ -57,7 +57,8 @@ class TestD1SelfGate(unittest.TestCase):
 
     def test_self_check_goes_red_on_third_party_import(self):
         """行为：注入一个第三方 import → 自检必须 ❌（否则这条 gate 是摆设）。"""
-        probe = os.path.join(ROOT, "sandbox", "_z_probe_stdlib.py")
+        # P3-4：sandbox/ 不再纳入零依赖扫描（工具脚本，非引擎层），探针改放 checks/。
+        probe = os.path.join(ROOT, "checks", "_z_probe_stdlib.py")
         with io.open(probe, "w", encoding="utf-8", newline="") as f:
             f.write("import requests  # 反向验证\n")
         try:
