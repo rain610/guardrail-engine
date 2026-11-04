@@ -16,6 +16,12 @@
   查找 AGENTS.md 里指向本引擎（agentguard / guardrail-engine）的绝对路径。
   只匹配特定模式（含引擎名），避免误报 URL 等。发现即 ❌ 阻断。
 
+已知边界（P3-6，评审 2026-11-04）：
+  绝对路径匹配要求路径里含引擎名（agentguard / guardrail-engine）。如果引擎被克隆到
+  不含这两个名字的目录（如 `/home/user/my-project/`），AGENTS.md 里写的绝对路径
+  不会被本检查捕获。这是刻意取舍：放宽匹配会误报 URL 和文档示例；收紧匹配会漏掉
+  改名场景。当前选择"宁可漏、不可误报"。
+
 退出码：0=通过，1=违规，2=配置错误（判都没判成，不能读成通过）
 """
 import sys
@@ -36,6 +42,11 @@ sys.path.insert(0, os.path.join(ROOT, "harness"))
 # 引擎名两种写法都认（2026-10-28 第六轮评审 P1-2②）：改名后 POSIX 上的
 # /opt/guardrail-engine 这类路径原先**一个字符都匹配不上**，检查形同虚设。
 _ENGINE_NAME = r"(?:agentguard|guardrail[-_]engine)"
+# P3-6（评审 2026-11-04）：检查面窄的已知边界 —— 绝对路径匹配要求路径里含引擎名
+# （agentguard / guardrail-engine）。如果用户把引擎克隆到不含这两个名字的目录
+# （如 `/home/user/my-project/`），AGENTS.md 里写 `D:/my-project/harness/...` 不会被
+# 本检查捕获。这是刻意取舍：放宽匹配会误报 URL（`https://github.com/.../agentguard`）
+# 和文档示例路径；收紧匹配会漏掉改名场景。当前选择"宁可漏、不可误报"，文档在此。
 
 # Windows: D:/.../agentguard 或 D:\\...\\guardrail-engine
 #   排除 URL：https:/ 里的 s:/ 会被误判为盘符，故 lookbehind 排除字母（盘符前不应有字母）
