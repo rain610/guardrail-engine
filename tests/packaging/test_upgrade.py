@@ -338,6 +338,25 @@ class TestInitMarkerContract(unittest.TestCase):
         self.assertEqual(up, cli,
                          "两处所有权标记常量不一致 —— init 写下的标记 upgrade.py 会认不出")
 
+    def test_guard_side_marker_names_match_shell(self):
+        """guard 读侧 `harness/_init_marker.MARKER_NAMES` 必须 == 写侧 `_shell` 的两个标记名。
+
+        2026-11-04（评审 P0）：guard 靠"ROOT 下有没有 init 标记"判安装副本形态。它分处 harness/，
+        不能 import guardrail_engine/_shell（引擎层不依赖壳层），只能各写一份文件名。漂移**没有报错**：
+        init 写 A、guard 找 B ⇒ 安装副本永远认不出 ⇒ guard 又退回一律 fail-closed rc=2（正是 P0 的坏法，
+        而测试全程绿）。与 upgrade.py 那份同理，用 AST 对拍钉死。
+        """
+        shell = _consts(os.path.join(ROOT, "guardrail_engine", "_shell.py"),
+                        {"INIT_MARKER", "LEGACY_INIT_MARKER"})
+        guard_side = _consts(os.path.join(ROOT, "harness", "_init_marker.py"), {"MARKER_NAMES"})
+        self.assertEqual(sorted(shell), ["INIT_MARKER", "LEGACY_INIT_MARKER"],
+                         "_shell 的标记文件名常量被改名/删掉了：%s" % sorted(shell))
+        self.assertIn("MARKER_NAMES", guard_side,
+                      "harness/_init_marker.py 的 MARKER_NAMES 被改名/删掉了")
+        self.assertEqual(tuple(guard_side["MARKER_NAMES"]),
+                         (shell["INIT_MARKER"], shell["LEGACY_INIT_MARKER"]),
+                         "guard 读侧标记文件名与写侧 _shell 不一致 —— 安装副本会认不出 → 退回一律 fail-closed")
+
 
 class TestEngineCopyTargets(unittest.TestCase):
     """[5/7] 的**选靶**判据（纯逻辑，不跑 init）。

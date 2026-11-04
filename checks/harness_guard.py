@@ -194,6 +194,46 @@ def _is_engine_family(path):
     return bool(root_common) and _repo_common_dir(path) == root_common
 
 
+def _install_copy_verdict():
+    """ROOT 是 `init` 装出来的**安装副本**（无 .git）时的篡改判定 → 退出码；不是副本则返回 None。
+
+    2026-11-04（评审 P0）：安装副本不是 git 工作树，"未提交改动"这个概念根本不存在，于是
+    `changed_paths_ex(ROOT)` 必然报 err。旧版把这种 err 和"真·git 故障"一视同仁 fail-closed rc=2 →
+    README 主推的 pip install→init→hooks install 路径第一次 commit 就被拦，用户退到 --no-verify，
+    门禁整体关闭（复现 A）。判别信号是 init 所有权标记的存在与否（写侧 cli.py::_write_init_marker）：
+
+      · 有标记 + 合法 engine_sha 信任锚 → 重算当前副本 engine_sha 比对：
+          一致 → 0（判定代码没被动过，放行）；不一致 → 1（副本被改弱，拦下并明说）。
+      · 有标记但无可用锚（旧副本 / 写锚失败）→ 2（是副本却无从验证 → fail-closed，不假装查过）。
+      · 没有标记 → None：不是安装副本，err 是真·git 故障，交回调用方 fail-closed rc=2。
+    """
+    if LIB not in sys.path:
+        sys.path.insert(0, LIB)
+    import _init_marker
+    if not _init_marker.find_marker(ROOT):
+        return None
+    anchor = _init_marker.read_engine_sha(ROOT)
+    if not anchor:
+        print("[harness_guard] [X] 这是 init 安装副本，但标记里没有可用的 engine_sha 信任锚 →"
+              " 无从验证副本是否被改弱，按 fail-closed 阻断（rc=2）。")
+        print("    修复：在源工程重跑 `guardrail-engine init --force`（重装会重新写入信任锚）。")
+        return 2
+    try:
+        import _engine_meta
+        cur = _engine_meta._engine_sha()
+    except Exception as e:
+        print("[harness_guard] [X] 安装副本形态下算不出当前 engine_sha（%r）→ fail-closed 阻断（rc=2）。" % (e,))
+        return 2
+    if cur == anchor:
+        print("[harness_guard] 安装副本形态（无 .git）：engine_sha 与 init 信任锚一致（%s）→ 副本未被改动，放行。" % cur)
+        return 0
+    print("[harness_guard] [X] 安装副本的判定代码与 init 信任锚不一致 → 副本已被改动/改弱，拦下本次提交（rc=1）。")
+    print("    init 时 engine_sha: %s" % anchor)
+    print("    当前 engine_sha   : %s" % cur)
+    print("    这是**引擎安装副本**问题，不是业务代码问题；修复：在源工程重跑 `guardrail-engine init --force` 重装。")
+    return 1
+
+
 def main():
     argv, commit_repo = _take_repo_arg(sys.argv[1:])
     self_mode, gate_name, commit_msg = _parse_args(argv)
@@ -264,6 +304,15 @@ def main():
     # 提示里必须说清，免得人去改业务代码。
     paths, err = changed_paths_ex(ROOT)
     if err:
+        # 2026-11-04（评审 P0）：读不出 git 改动有两种完全不同的情形，不能一律 fail-closed——
+        #   (a) ROOT 是 init 装出来的**安装副本**（无 .git，本就不存在"未提交改动"这个概念）：
+        #       走信任锚分支（重算 engine_sha 与 init 标记比对），见 _install_copy_verdict。
+        #   (b) ROOT 本该是 git 工作树却读不出（.git 被清理 / git 坏 / 超时 / 权限）：保持 fail-closed rc=2。
+        # 旧版把 (a) 也当 (b)，于是 README 主推的 pip install→init→hooks install 路径第一次 commit
+        # 就被拦，用户退到 --no-verify，门禁整体关闭（复现 A）。判别信号是 init 标记的存在与否。
+        _ic = _install_copy_verdict()
+        if _ic is not None:
+            return _ic
         print("[harness_guard] [X] 读不出工程仓的未提交改动 → 无法验证门禁文件是否被弱化，"
               "按 fail-closed 阻断本次提交（rc=2）。")
         print("    原因：%s" % err)

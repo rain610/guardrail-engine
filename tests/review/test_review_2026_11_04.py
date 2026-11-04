@@ -26,9 +26,19 @@ P1-1：引擎仓的 git worktree 提交绕过 [harness] 把关（复现 B：主�
       相对 `$1` 解析到 worktree 自己的消息（不读主检出旧消息）；主检出行为不回归。
   W2  guard `_is_engine_family` 认出 worktree（同族）、主检出（同族）、无关仓（非同族）；
       行为锁：guard `--repo=<worktree>` 出声"本仓提交"按 self 模式把关。
+
+P0：默认安装形态（pip install→init→hooks install）下所有提交被阻断。init 副本**无 .git**，
+guard 用"未提交改动"判篡改时 git 报错 → 旧版一律 fail-closed rc=2 → 第一次 commit 就被拦，用户退到
+--no-verify，门禁整体关闭（复现 A）。修法：init 标记补 engine_sha 信任锚；guard 在副本形态（ROOT 读不出
+git 改动 + 存在标记）重算 engine_sha 比对——一致放行/不一致拦/无可用锚才 fail-closed；`_engine_known_shas`
+无 git 历史时用标记 sha 当基线。本模块的锁：
+  A1  行为锁（真复制整份引擎、无 .git）：副本未改动 → guard rc=0；改弱一个 checks/*.py → rc=1；
+      有标记但锚为空 → rc=2。标记由真实 `cli._write_init_marker` 写出（锁写侧↔读侧格式一致）。
+  A2  `_engine_known_shas` 在无 git 历史 + 有标记时回退到标记里的 engine_sha。
 """
 import os
 import re
+import json
 import shutil
 import subprocess
 import sys
@@ -556,6 +566,106 @@ class TestGuardWorktreeSelfMode(unittest.TestCase):
                            capture_output=True, text=True)
             _rmtree_force(wt_dir)
             copy.cleanup()
+
+
+# ============================ P0：安装副本形态不再一律 fail-closed ============================
+
+@_slow("复制整份引擎 + 真跑 run_gate/guard 子进程（每例数秒）")
+class TestInstallCopyGuardBranch(unittest.TestCase):
+    """P0 行为锁（复现 A）：`init` 装出来的引擎副本（**无 .git**）下，guard 不再一律 fail-closed rc=2。
+
+    README 主推 `pip install . → init → hooks install`。副本不是 git 工作树，"未提交改动"无从谈起，
+    `changed_paths_ex(ROOT)` 必然报 err——旧版把它和"真·git 故障"一视同仁 rc=2，于是第一次 commit 就被拦，
+    用户退到 --no-verify，门禁整体关闭。修复后按 init 标记里的 engine_sha 信任锚判定：
+      · 副本判定代码与锚一致 → 放行（rc=0）；
+      · 被改动（engine_sha 偏离锚）→ 拦下（rc=1）；
+      · 有标记但无可用锚 → fail-closed（rc=2，是副本却无从验证，不假装查过）。
+    标记由**真实 cli._write_init_marker** 写出，顺带锁住写侧↔读侧（harness/_init_marker）格式一致。
+    """
+
+    def _make_copy(self, dest):
+        # ignore_patterns 返回的是普通函数，挂成类属性会被描述符协议绑成方法（多塞一个 self）→
+        # copytree 调用时参数对不上。故在方法内现造，不经类属性。
+        ignore = shutil.ignore_patterns(
+            ".git", "__pycache__", "*.pyc", "reports", ".tox", "node_modules",
+            ".guardrail-engine-init.json", ".agentguard-init.json")
+        shutil.copytree(ROOT, dest, ignore=ignore)
+        self.assertFalse(os.path.exists(os.path.join(dest, ".git")),
+                         "夹具前提：安装副本必须无 .git（否则走 git 路径，测不到副本分支）")
+
+    def _run_guard(self, copy, business):
+        e = dict(os.environ)
+        e["PYTHONIOENCODING"] = "utf-8"
+        return subprocess.run([PY, os.path.join(copy, "checks", "harness_guard.py"),
+                               "example", "--repo", business], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", cwd=copy, env=e,
+                              stdin=subprocess.DEVNULL, timeout=180)
+
+    def test_intact_copy_passes_tampered_copy_blocks(self):
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from guardrail_engine import cli
+        base = tempfile.mkdtemp(prefix="p0copy_")
+        copy = os.path.join(base, "engine")
+        business = os.path.join(base, "biz")     # 端仓（!= 引擎族）→ 非 self 模式，走到副本分支
+        os.makedirs(business)
+        try:
+            self._make_copy(copy)
+            marker = cli._write_init_marker(copy)     # 真实写侧：连带算出副本 engine_sha 信任锚
+            self.assertTrue(os.path.isfile(marker))
+            with open(marker, encoding="utf-8") as f:
+                self.assertRegex(str(json.load(f).get("engine_sha")), r"^[0-9a-f]{16}$",
+                                 "init 标记必须写下合法 engine_sha 信任锚（P0 修复 #1）")
+            # ① 副本未被动过 → 放行（旧版这里 rc=2，正是复现 A 的坏法）
+            r0 = self._run_guard(copy, business)
+            self.assertEqual(r0.returncode, 0,
+                             "安装副本判定代码未改动应放行，而非一律 rc=2（P0 复现 A）\n%s%s"
+                             % (r0.stdout, r0.stderr))
+            self.assertIn("安装副本", r0.stdout)
+            # ② 改弱副本里一个受保护文件 → engine_sha 偏离信任锚 → 拦
+            with open(os.path.join(copy, "checks", "harness_guard.py"), "a", encoding="utf-8") as f:
+                f.write("\n# tampered\n")
+            r1 = self._run_guard(copy, business)
+            self.assertEqual(r1.returncode, 1,
+                             "安装副本被改动必须被拦（engine_sha 偏离信任锚）\n%s%s" % (r1.stdout, r1.stderr))
+            self.assertIn("不一致", r1.stdout + r1.stderr)
+        finally:
+            _rmtree_force(base)
+
+    def test_copy_without_anchor_fails_closed(self):
+        base = tempfile.mkdtemp(prefix="p0noanchor_")
+        copy = os.path.join(base, "engine")
+        business = os.path.join(base, "biz")
+        os.makedirs(business)
+        try:
+            self._make_copy(copy)
+            # 有标记但 engine_sha 为空（旧副本 / 写锚失败）→ 无从验证 → fail-closed rc=2
+            with open(os.path.join(copy, ".guardrail-engine-init.json"), "w", encoding="utf-8") as f:
+                json.dump({"kind": "guardrail-engine-init", "version": "x",
+                           "source": "repo", "engine_sha": ""}, f)
+            r = self._run_guard(copy, business)
+            self.assertEqual(r.returncode, 2,
+                             "有标记但无可用信任锚必须 fail-closed（是副本却无从验证，不假装查过）\n%s%s"
+                             % (r.stdout, r.stderr))
+            self.assertIn("信任锚", r.stdout + r.stderr)
+        finally:
+            _rmtree_force(base)
+
+    def test_known_shas_falls_back_to_marker_without_git(self):
+        """P0 修复 #3：无 git 历史时 `_engine_known_shas` 用 init 标记的 engine_sha 当已知基线。"""
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from guardrail_engine import cli
+        d = tempfile.mkdtemp(prefix="p0ks_")
+        try:
+            with open(os.path.join(d, ".guardrail-engine-init.json"), "w", encoding="utf-8") as f:
+                json.dump({"kind": "guardrail-engine-init", "version": "x",
+                           "source": "repo", "engine_sha": "abcdef0123456789"}, f)
+            shas, _since = cli._engine_known_shas(repo=d)
+            self.assertIn("abcdef0123456789", shas,
+                          "安装副本无 git 历史时应把标记里的 engine_sha 当已知基线（P0 修复 #3）")
+        finally:
+            _rmtree_force(d)
 
 
 if __name__ == "__main__":

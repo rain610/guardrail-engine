@@ -476,10 +476,38 @@ INIT_MARKER = _shell.INIT_MARKER
 INIT_MARKER_KIND = "guardrail-engine-init"
 
 
+def _engine_sha_of(dest):
+    """算**副本 dest** 的 engine_sha（跑它自己的 run_gate --engine-sha，cwd=dest）→ 16-hex 或 ""。
+
+    与 `_engine_sha_now()`（算 ROOT 的）同口径，只是目标换成刚复制出来的副本：信任锚必须描述
+    "这份副本装好时的判定代码"，而不是源工程的当前状态。算不出返回 ""（调用方据此出声告警）。
+    """
+    rc, out, _err = _run([_py(), os.path.join(dest, "harness", "run_gate.py"), "--engine-sha"],
+                         cwd=dest, timeout=120)
+    lines = (out or "").strip().splitlines()
+    cand = lines[-1].strip() if (rc == 0 and lines) else ""
+    return cand if re.fullmatch(r"[0-9a-f]{16}", cand) else ""
+
+
 def _write_init_marker(dest):
-    """标记「这个目录归 agentguard init 管」；只写所有权，不写源路径（副本可能被打包带走）。"""
+    """标记「这个目录归 agentguard init 管」；只写所有权，不写源路径（副本可能被打包带走）。
+
+    2026-11-04（评审 P0）：补 `engine_sha` 信任锚。安装副本**不是 git 工作树**，harness_guard 无法
+    用"未提交改动"判它有没有被改弱（changed_paths_ex 对无 .git 的副本返回 err）——旧版一律
+    fail-closed rc=2，于是 README 主推的 pip install→init→hooks install 路径第一次 commit 就被拦，
+    用户退到 --no-verify，门禁整体关闭（复现 A）。guard 在副本形态下重算 engine_sha 与本锚比对
+    （见 checks/harness_guard.py::_install_copy_verdict）；`gate log --verify --engine` 在无 git 历史时
+    也拿它当已知基线（见 _engine_known_shas）。
+    """
     data = {"kind": INIT_MARKER_KIND, "version": _shell.read_version(dest),
             "source": "wheel" if _shell.packaged_engine() else "repo"}
+    sha = _engine_sha_of(dest)
+    # 算不出也写**空串**而非省略键：让 guard 明确区分"有标记但无可用锚"→ fail-closed，而不是误读成
+    # "旧版标记"（旧标记没有这个键）。空锚是异常状态，出声提示便于排查（_mark_init_copy 会接着打路径）。
+    data["engine_sha"] = sha
+    if not sha:
+        print("⚠ 未能算出副本 engine_sha（信任锚缺失）：guard 在该副本上将 fail-closed 阻断提交，"
+              "请检查这份副本能否跑 `harness/run_gate.py --engine-sha`。")
     p = os.path.join(dest, INIT_MARKER)
     with open(p, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -1221,6 +1249,27 @@ def _engine_sha_now():
     return None, ((err or out or "").strip() or ("rc=%s" % rc))
 
 
+def _init_marker_engine_sha(root):
+    """读 init 标记里的 engine_sha 信任锚（安装副本形态）→ 16-hex 或 ""。
+
+    与 `harness/_init_marker.read_engine_sha` 同口径，但 cli 不 import harness/（壳层一律 shell out），
+    故就地读 JSON；标记文件名复用 `_shell.INIT_MARKER` / `LEGACY_INIT_MARKER`（写侧用的同一组常量）。
+    """
+    for name in (_shell.INIT_MARKER, _shell.LEGACY_INIT_MARKER):
+        p = os.path.join(root or "", name)
+        if not os.path.isfile(p):
+            continue
+        try:
+            with open(p, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        sha = str((data or {}).get("engine_sha") or "").strip().lower()
+        if re.fullmatch(r"[0-9a-f]{16}", sha):
+            return sha
+    return ""
+
+
 def _engine_known_shas(repo=None):
     """已提交的引擎内容哈希 → (set, 核对基线 ts)。
 
@@ -1229,35 +1278,44 @@ def _engine_known_shas(repo=None):
     就先失效了。带 `[harness]` 的提交由 CI 重算比对（见 .github/workflows/ci.yml）。
     `HARNESS_ENGINE_SHAS` / `HARNESS_ENGINE_SINCE` 只给测试与离线审计注入用 ——
     本函数是读侧，不参与任何拦截判定。
+
+    2026-11-04（评审 P0 修复 #3）：**安装副本没有 git 历史**（无 .git），git 路径必然空手而归。
+    此时把 init 标记里的 engine_sha 当已知基线，否则副本跑出的台账永远"无基线可归因"，
+    `gate log --verify --engine` 形同跳过（而副本恰恰是最需要对账的部署形态）。
     """
     injected = os.environ.get("HARNESS_ENGINE_SHAS")
     if injected is not None:
         return set(re.findall(r"[0-9a-f]{16}", injected)), os.environ.get("HARNESS_ENGINE_SINCE", "")
+    shas, oldest = set(), None
     try:
         r = subprocess.run(["git", "-C", repo or ROOT or ".", "log", "--format=%ct%x1f%B%x1e"],
                            capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=60)
+        git_ok, out = (r.returncode == 0), (r.stdout or "")
     except (OSError, subprocess.SubprocessError):
-        return set(), ""
-    if r.returncode != 0:
-        return set(), ""
-    shas, oldest = set(), None
-    for chunk in (r.stdout or "").split("\x1e"):
-        chunk = chunk.strip("\n")
-        if not chunk:
-            continue
-        ts, _, body = chunk.partition("\x1f")
-        if "[harness]" not in body:
-            continue
-        found = _ENGINE_SHA_TRAILER.findall(body)
-        if not found:
-            continue
-        shas.update(found)
-        try:
-            epoch = int(ts)
-        except ValueError:
-            continue
-        oldest = epoch if oldest is None else min(oldest, epoch)
+        git_ok, out = False, ""
+    if git_ok:
+        for chunk in out.split("\x1e"):
+            chunk = chunk.strip("\n")
+            if not chunk:
+                continue
+            ts, _, body = chunk.partition("\x1f")
+            if "[harness]" not in body:
+                continue
+            found = _ENGINE_SHA_TRAILER.findall(body)
+            if not found:
+                continue
+            shas.update(found)
+            try:
+                epoch = int(ts)
+            except ValueError:
+                continue
+            oldest = epoch if oldest is None else min(oldest, epoch)
+    if not shas:
+        # 无 git 历史（安装副本）或历史里没有带 [harness] 的尾注 → 用 init 标记的 engine_sha 兜底。
+        marker_sha = _init_marker_engine_sha(repo or ROOT or ".")
+        if marker_sha:
+            shas.add(marker_sha)
     since = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(oldest)) if oldest else ""
     return shas, since
 
