@@ -1275,17 +1275,34 @@ class TestL14BatchFileIsNotHandedToAShell(unittest.TestCase):
     # ---- ② companion：mcp.py 那份本来就没有这一支，钉住它 ----
 
     def test_mcp_run_cmd_hands_them_straight_through_too(self):
-        """`guardrail_engine/mcp.py::run_cmd` 从来没有 `.cmd` 分支 —— 别哪天有人"补"上它。"""
+        """`guardrail_engine/mcp.py::run_cmd` 从来没有 `.cmd` 分支 —— 别哪天有人"补"上它。
+
+        P2-1 后 run_cmd 改走 `subprocess.Popen` + `_shell._communicate_tree`（为的是超时杀
+        整棵进程树），不再是 `subprocess.run` —— 所以这里观察的是 **Popen** 收到的 argv。
+        判据不变：argv[0] 必须就是那个含空格的 `.cmd` 本身，没有 `cmd /c` 那层壳。
+        """
         sys.path.insert(0, ROOT)
         from guardrail_engine import mcp
         exe = self._batch_file()
-        seen, fake = self._record(text=False)
-        real_run = subprocess.run
-        subprocess.run = fake
-        self.addCleanup(setattr, subprocess, "run", real_run)
-        mcp.run_cmd([exe, "--version"], timeout=30)
+        seen = []
+
+        class _FakePopen(object):
+            def __init__(self, cmd, *a, **k):
+                seen.append(list(cmd))
+                self.returncode = 0
+                self.pid = 0
+
+            def communicate(self, timeout=None):
+                return (b"FAKE-VERSION-1.2.3\n", b"")
+
+        real_popen = subprocess.Popen
+        subprocess.Popen = _FakePopen
+        self.addCleanup(setattr, subprocess, "Popen", real_popen)
+        rc, out, _err = mcp.run_cmd([exe, "--version"], timeout=30)
         self.assertTrue(seen, "run_cmd 没起子进程")
         self.assertEqual(seen[0][0], exe, "mcp 的 run_cmd 也套了 shell：%r" % (seen[0],))
+        self.assertEqual(rc, 0, "直跑 .cmd 的退出码应原样透传")
+        self.assertIn("FAKE-VERSION-1.2.3", out, "没把子进程输出读回来")
 
     # ---- ③ 直跑真的能跑：**不加回退分支**的依据就落在这条上 ----
 
