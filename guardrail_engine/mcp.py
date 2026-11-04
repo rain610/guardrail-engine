@@ -195,13 +195,34 @@ def _list_gates_raw():
 # 「✅ rc=0 PASS」，一条规则都没跑，这条假 PASS 还以 rc=0 落进 reports/gate_log.jsonl 审计台账。
 # 修法：正向白名单 —— 用 `run_gate.py --list` 解析出的名字集合校验（同一条命令也是
 # harness_list_gates 的数据源，不另维护一份清单）。
-# 缓存键含 HARNESS_CONFIG：同一进程内夹具/工具换配置时不能吃到上一份名单。
+# 缓存键含 HARNESS_CONFIG + 配置文件 mtime：同一进程内换配置 / 改配置都不能吃到上一份名单。
+# P2-9（评审 2026-11-04）：原先只含 env + ROOT，用户编辑 config/harness.toml 后同一进程
+# 内的 MCP 调用仍返回旧 gate 名单 —— 缓存把"配置已变"这件事吞掉了。mtime 缺失 → 0，
+# 第一次 stat 失败不会让缓存永远命中（0 也是合法 key 分量，下次 stat 成功就变非 0）。
 _GATE_CACHE = {}
+
+
+def _config_mtimes():
+    """ROOT 下影响 `run_gate.py --list` 输出的配置文件的 mtime 元组。
+
+    覆盖：共享配置 `config/harness.toml` + 本机覆盖层 `config/harness.local.toml` /
+    `.yaml`（旧名兼容期）。文件不存在 → 该分量取 0（stat 失败同理），不抛异常。
+    """
+    if not ROOT:
+        return ()
+    parts = []
+    for name in ("harness.toml", "harness.local.toml", "harness.local.yaml"):
+        p = os.path.join(ROOT, "config", name)
+        try:
+            parts.append(os.path.getmtime(p))
+        except OSError:
+            parts.append(0)
+    return tuple(parts)
 
 
 def _gate_catalog():
     """返回 (名字→enabled 的 dict, 错误串)。拿不到时 dict 为空、错误串非空。"""
-    key = (os.environ.get("HARNESS_CONFIG") or "", ROOT or "")
+    key = (os.environ.get("HARNESS_CONFIG") or "", ROOT or "", _config_mtimes())
     hit = _GATE_CACHE.get(key)
     if hit is None:
         if not ROOT:

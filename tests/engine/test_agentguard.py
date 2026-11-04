@@ -1002,5 +1002,62 @@ class TestMcpEnvPositiveInt(unittest.TestCase):
         self.assertEqual(got["o"], 77, "新名优先级高于旧名")
 
 
+class TestMcpGateCatalogCacheInvalidatesOnConfigChange(unittest.TestCase):
+    """P2-9：`_gate_catalog` 缓存键必须含配置文件 mtime。
+
+    旧实现只含 `(HARNESS_CONFIG env, ROOT)` —— 用户在长驻 MCP 进程期间编辑了
+    `config/harness.toml`（加/删 gate、改 enabled），缓存照旧命中，`run_gate` 拿到的
+    是编辑前的旧名单。严重 5 的白名单校验因此可能放过新加的 gate 名、或误拦被删的。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="p29-")
+        os.makedirs(os.path.join(self.tmp, "config"))
+        self.cfg = os.path.join(self.tmp, "config", "harness.toml")
+        with open(self.cfg, "w", encoding="utf-8") as f:
+            f.write("[gates.a]\nenabled = true\n")
+        # 导入 mcp 模块（不污染 sys.modules 的正式名）
+        spec = importlib.util.spec_from_file_location("_p29_mcp", MCP)
+        self.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.mod)
+        self.orig_root = self.mod.ROOT
+        self.mod.ROOT = self.tmp
+        self.mod._GATE_CACHE.clear()
+
+    def tearDown(self):
+        self.mod.ROOT = self.orig_root
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_config_mtimes_changes_when_file_touched(self):
+        before = self.mod._config_mtimes()
+        # mtime 精度在各文件系统不同；显式改 mtime 到未来 10 秒，确保可分辨。
+        import time as _t
+        future = _t.time() + 10
+        os.utime(self.cfg, (future, future))
+        after = self.mod._config_mtimes()
+        self.assertNotEqual(before, after, "修改 harness.toml 后 _config_mtimes 必须变化")
+
+    def test_cache_invalid_after_config_change(self):
+        calls = []
+
+        def fake_list():
+            calls.append(1)
+            return (0, "", "", [{"name": "a", "enabled": True}])
+
+        orig = self.mod._list_gates_raw
+        self.mod._list_gates_raw = fake_list
+        try:
+            self.mod._gate_catalog()
+            self.mod._gate_catalog()
+            self.assertEqual(len(calls), 1, "同一配置两次调用应只查一次（缓存命中）")
+            # 改 mtime
+            import time as _t
+            os.utime(self.cfg, (_t.time() + 10, _t.time() + 10))
+            self.mod._gate_catalog()
+            self.assertEqual(len(calls), 2, "配置 mtime 变化后缓存必须失效、再查一次")
+        finally:
+            self.mod._list_gates_raw = orig
+
+
 if __name__ == "__main__":
     unittest.main()
