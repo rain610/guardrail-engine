@@ -356,6 +356,28 @@ class _Base(unittest.TestCase):
         self.assertEqual(marks, [],
                          "适配 gate 没有 loose 语义，台账却标了 mode_override 削弱：%r" % recs[0])
 
+    def test_external_adapter_emits_per_rule_stats(self):
+        """P2-10：外部适配器的每条 finding 必须 `rule_base.bump`，否则 HARNESS_STATS_FILE
+        的 `rules` 段为空 —— coverage.py 读不到外部工具规则的触发记录，会误判「从未生效」。
+
+        旧实现漏了 bump 调用：error/warn/waived_inline 三种事件都没累计，emit_stats 落盘时
+        stats_snapshot() 返回空 dict。修复后：stats.json 的 rules 段必须含规则 ID 作为键，
+        值里有 `error` / `warn` / `waived_inline` 之一且计数 >= 1。
+        """
+        stats_path = os.path.join(self.tmp, "stats.json")
+        env = self._env(**self._tool_env("AGENTGUARD_ESLINT", self._one()))
+        env["HARNESS_STATS_FILE"] = stats_path
+        rc, out = self._run(ESLINT_SCRIPT, ["app.js"], env)
+        self.assertEqual(rc, 1, "error 级 finding 必须阻断：\n" + out)
+        self.assertTrue(os.path.isfile(stats_path), "HARNESS_STATS_FILE 没被写出：\n" + out)
+        with open(stats_path, encoding="utf-8") as f:
+            stats = json.load(f)
+        rules = stats.get("rules") or {}
+        self.assertIn("no-console", rules,
+                      "stats.json 的 rules 段缺少规则 ID（bump 没被调用）：%r" % rules)
+        self.assertGreaterEqual(rules["no-console"].get("error", 0), 1,
+                                "error 级 finding 必须累计到 stats：no-console=%r" % rules["no-console"])
+
 
 if __name__ == "__main__":
     unittest.main()

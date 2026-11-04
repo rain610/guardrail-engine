@@ -331,6 +331,7 @@ def run(kind, tool, env_name, default_cmd, extra_args):
             reason = rule_base.inline_waiver(f.rule_id, f.line, _lines_of(abs_path, lines_cache))
             if reason:
                 rule_base.WAIVED_DETAILS.append((f.rule_id, f.line, reason))
+                rule_base.bump(f.rule_id, "waived_inline")
                 waived += 1
                 continue
         loc = "%s:%s" % (rel, f.line) if f.line is not None else rel
@@ -339,9 +340,11 @@ def run(kind, tool, env_name, default_cmd, extra_args):
             if f.fix:
                 print("     FIX: %s" % f.fix)
             blocking += 1
+            rule_base.bump(f.rule_id, "error")
         else:
             print("  ⚠️  %s [%s] %s" % (loc, f.rule_id, f.message))
             warns += 1
+            rule_base.bump(f.rule_id, "warn")
 
     summary = rule_base.waiver_summary()
     if summary:
