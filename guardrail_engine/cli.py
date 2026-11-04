@@ -186,10 +186,6 @@ def _print_out(rc, out, err):
     return rc
 
 
-def _ledger_path():
-    return os.environ.get("HARNESS_LOG_FILE") or os.path.join(ROOT, "reports", "gate_log.jsonl")
-
-
 def _ledger_paths():
     """台账片全集（时间序）—— 月度分片读侧（2026-09-29）。
 

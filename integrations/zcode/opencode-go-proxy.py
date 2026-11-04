@@ -111,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
         self._relay(self.rfile.read(n) if n else b"")
 
     def do_GET(self):
-        self._relay(None) if False else self._relay(b"")
+        self._relay(b"")
 
 
 def main():

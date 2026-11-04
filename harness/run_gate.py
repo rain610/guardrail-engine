@@ -821,7 +821,6 @@ def main():
         # --mode 透传分支：文件参数也做绝对化 + 统计（2026-09-12 P3-4：原实现原样透传、
         # n_files 恒 0，gate_log 统计失真且与默认分支行为不一致）
         files = []
-        skip = False
         prev_mode = False
         _mode_val = None
         # 只放行 run_gate 自己认识的旗标（2026-09-23 H1）：原先 `if a.startswith("-")` 把
