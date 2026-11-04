@@ -628,6 +628,80 @@ def changed_files(repo, exts=()):
     """
     return changed_files_ex(repo, exts)[0]
 
+
+def changed_paths_ex(repo):
+    """guard 专用：repo 里**所有**未提交改动的路径（含删除、rename 的新旧两端），不做扩展名过滤。
+
+    为什么不能复用 `changed_files_ex`（2026-11-04 评审 P1-2）：那个函数用 `--diff-filter=d`
+    排除删除、并按扩展名过滤——那是「收集待检查文件」的口径（删除的文件没有内容可交给检查脚本，
+    硬塞进去会落进「路径不存在」被误判成 rc=2）。但 `harness_guard` 问的是**另一个问题**：
+    「什么变了」。删除同样是改动——`rm checks/agents_md_check.py` 等于永久关掉那条规则，而
+    run_gate 在它缺失时**静默跳过**（run_gate.py 的 `if os.path.isfile(agents_md_check)`），
+    guard 又看不见删除 → 全程无声。改名成 `.bak` 同理（新路径不匹配任何受保护模式）。
+
+    所以这里：① 不带 `--diff-filter`（删除计入）；② `--no-renames`（rename 拆成 删旧+增新，
+    两端都出现）；③ 不按扩展名过滤（受保护面含无扩展名的分发器本体、VERSION 等）；
+    ④ 额外用 `git status --porcelain -z` 补未跟踪新文件与 rename 的原始路径 token。
+    返回 (rel_paths:set[str], err:str)，路径统一成相对 repo 的正斜杠形式（与 _in_protected 入参一致）。
+    err 非空 = git 查不动，fail-closed 交调用方判定。
+    """
+    import subprocess
+    paths = set()
+    if not repo or not os.path.isdir(repo):
+        return paths, "目标仓不存在或不是目录：%r" % (repo,)
+    # 剥离调用方仓的 git 环境变量（hook 场景 GIT_DIR/GIT_INDEX_FILE/GIT_WORK_TREE 指向端仓，
+    # 会让本函数对 harness 仓的查询读到端仓的 index —— 与 changed_files_ex 同一处置）
+    clean_env = {k: v for k, v in os.environ.items()
+                 if k not in ("GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY")}
+
+    def _norm(p):
+        # -z 输出是逐字路径，只裁掉 universal-newlines 可能带进来的 \r\n；统一成正斜杠
+        p = (p or "").rstrip("\r\n")
+        return p.replace("\\", "/") if p else None
+
+    try:
+        for args in (["diff", "--name-only", "-z", "--no-renames"],
+                     ["diff", "--cached", "--name-only", "-z", "--no-renames"]):
+            r = subprocess.run(["git", "-C", repo] + args, capture_output=True,
+                               text=True, encoding="utf-8", errors="replace", timeout=30,
+                               env=clean_env)
+            if r.returncode != 0:
+                return paths, ("git %s 失败（rc=%d）：%s"
+                               % (" ".join(args), r.returncode, (r.stderr or "").strip()[:160]))
+            for p in (r.stdout or "").split("\x00"):
+                q = _norm(p)
+                if q:
+                    paths.add(q)
+        # status：补未跟踪新文件（??）与 rename/copy 的原始路径（R/C 记录后跟一个原始路径 token）
+        r = subprocess.run(["git", "-C", repo, "status", "--porcelain", "-z", "--untracked-files=all"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=30, env=clean_env)
+        if r.returncode != 0:
+            return paths, ("git status 失败（rc=%d）：%s"
+                           % (r.returncode, (r.stderr or "").strip()[:160]))
+        toks = (r.stdout or "").split("\x00")
+        i = 0
+        while i < len(toks):
+            t = toks[i]
+            i += 1
+            if not t or len(t) < 3:
+                continue
+            xy = t[:2]
+            path = t[3:] if t[2] == " " else t[2:].lstrip()
+            q = _norm(path)
+            if q:
+                paths.add(q)
+            if "R" in xy or "C" in xy:
+                # 下一个 token 是 rename/copy 的原始路径——删除侧（旧路径）也要看见
+                if i < len(toks):
+                    orig = _norm(toks[i])
+                    i += 1
+                    if orig:
+                        paths.add(orig)
+    except Exception as e:
+        return paths, "调用 git 失败：%r" % (e,)
+    return paths, ""
+
 def gate(name, path=None):
     cfg = load(path)
     _sanity_check(cfg)

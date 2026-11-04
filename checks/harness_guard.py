@@ -199,7 +199,7 @@ def main():
     # 埋在最显眼的位置（只差调用方给它传消息）。当前 hook 不传消息所以没被触发，但分支是活的。
     # 已删除：放行只在 self 模式成立，下面这一个分支就是全部。
     sys.path.insert(0, LIB)
-    from _config import changed_files_ex
+    from _config import changed_paths_ex
 
     if self_mode and any(t.lower() in commit_msg.lower() for t in MAINT_TAGS):
         print("[harness_guard] 含维护标记，放行工程仓库 harness 文件修改。")
@@ -213,10 +213,14 @@ def main():
     # 权限不足），篡改可发现哨兵静默失效，且输出里一个字都不说**；同一时刻分发器、pre-commit
     # 读暂存区各处却都是 fail-closed（rc=2），只有这一处相反 —— 与本项目反复强调的
     # 「宁可报错、不可假装查过」正好背道而驰。
+    # 2026-11-04（评审 P1-2）：改用 `changed_paths_ex` 而非 `changed_files_ex`——后者用
+    # `--diff-filter=d` 排除删除、按扩展名过滤（那是「收集待检查文件」的口径）。guard 问的是
+    # 「什么变了」：删除/改名也是改动。`rm checks/agents_md_check.py` 会让 run_gate 静默跳过
+    # AGENTS.md 检查，旧口径下 guard 完全看不见 → 全程无声。新口径含删除、rename 新旧两端。
     # 代价已知并接受（先例：2026-09-15 分发器先跑 harness_self_check，坏了就拦全部 33 个端仓）：
     # 工程仓不健康时端仓提交会被一并拦下。这是**工程仓/环境**问题而不是业务代码问题，
     # 提示里必须说清，免得人去改业务代码。
-    files, err = changed_files_ex(ROOT)
+    paths, err = changed_paths_ex(ROOT)
     if err:
         print("[harness_guard] [X] 读不出工程仓的未提交改动 → 无法验证门禁文件是否被弱化，"
               "按 fail-closed 阻断本次提交（rc=2）。")
@@ -227,8 +231,7 @@ def main():
         print("    这是工程仓/环境问题，**不是业务代码问题**；修好工程仓后重试。")
         print("    确需跳过：git commit --no-verify（跳过=本次提交没有门禁）。")
         return 2
-    touched = [os.path.relpath(f, ROOT) for f in files]
-    touched = [t for t in touched if _in_protected(t)]
+    touched = sorted(p for p in paths if _in_protected(p))
     if touched:
         if self_mode:
             print("[harness_guard] [X] 独立工程仓库改动触碰受保护文件，已拦截：")

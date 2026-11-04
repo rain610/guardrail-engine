@@ -139,6 +139,13 @@ def check_dispatcher():
                 "harness/protected-patterns.txt", "harness/_protected.py"):
         if not os.path.isfile(os.path.join(ROOT, rel)):
             problems.append("③ 缺关键门禁文件：%s（提交期门禁会 fail-closed 阻断）" % rel)
+    # 2026-11-04（评审 P1-2）：另一类更阴险——「缺失即静默降级」的文件。它们不在时门禁不会报错，
+    # 而是**悄悄少查一项**：run_gate.py 用 `if os.path.isfile(agents_md_check)` 决定跑不跑 AGENTS.md
+    # 检查，file_types.py 缺失则 repo-wide 判定退化。删掉它们 + guard 看不见删除（P1-2 已修）=
+    # 一条规则被永久关闭而全程无声。列入必需清单，缺了就 ❌。
+    for rel in ("checks/agents_md_check.py", "checks/file_types.py"):
+        if not os.path.isfile(os.path.join(ROOT, rel)):
+            problems.append("③ 缺「缺失即静默降级」文件：%s（对应检查会被悄悄跳过，不是 fail-closed）" % rel)
 
 
 def check_guard_call_site():

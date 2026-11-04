@@ -10,7 +10,9 @@
 同一时刻链路上其它各处全是 fail-closed（分发器缺实现 exit 2、pre-commit 读不到暂存区 rc=2、
 run_gate 脚本越界 rc=2），只有这一处相反。
 
-处置（用户拍板）：改用 `changed_files_ex`，「读不了」= rc=2 fail-closed + 说清原因。
+处置（用户拍板）：改用带失败信号的收集器，「读不了」= rc=2 fail-closed + 说清原因。
+（2026-09-16 是 `changed_files_ex`；2026-11-04 评审 P1-2 换成 `changed_paths_ex`——同样带 err
+信号，但不再用 `--diff-filter=d` 排除删除，且 rename 取新旧两端，删除/改名不再对哨兵不可见。）
 代价已知并接受：工程仓不健康时 33 个端仓提交会被一并拦下（先例：分发器先跑 harness_self_check）。
 
 本文件钉住四件事
@@ -50,7 +52,9 @@ if HARNESS_LIB not in sys.path:
     sys.path.insert(0, HARNESS_LIB)
 
 PROTECTED = "checks/pc_code_check.py"
-NOT_A_REPO_ERR = "git diff --name-only --diff-filter=d -z 失败（rc=128）：fatal: not a git repository"
+# 2026-11-04（P1-2）：guard 改用含删除/改名的 `changed_paths_ex`，其首条 git 命令不再带
+# `--diff-filter=d`；错误串随之变化（本常量只作桩值，真实 rc=2 路径由 TestRealNonGitEngineBlocks 真跑）。
+NOT_A_REPO_ERR = "git diff --name-only -z --no-renames 失败（rc=128）：fatal: not a git repository"
 
 
 class _StubbedGuard(unittest.TestCase):
@@ -59,8 +63,10 @@ class _StubbedGuard(unittest.TestCase):
     def _run(self, result):
         import _config
         import harness_guard
-        orig = _config.changed_files_ex
-        _config.changed_files_ex = lambda repo, *a, **k: result
+        # 桩点随哨兵换名一起搬（2026-11-04 P1-2：guard 改用 changed_paths_ex）——还桩着旧名字
+        # 等于这条锁悄悄失效（真去读工程仓，结果取决于工作区脏不脏）。
+        orig = _config.changed_paths_ex
+        _config.changed_paths_ex = lambda repo, *a, **k: result
         buf = io.StringIO()
         old_out, old_err = sys.stdout, sys.stderr
         old_argv, old_cwd = sys.argv, os.getcwd()
@@ -74,7 +80,7 @@ class _StubbedGuard(unittest.TestCase):
             sys.stdout, sys.stderr = old_out, old_err
             sys.argv = old_argv
             os.chdir(old_cwd)
-            _config.changed_files_ex = orig
+            _config.changed_paths_ex = orig
             _rmtree_force(tmp)
         return rc, buf.getvalue()
 
@@ -96,8 +102,12 @@ class TestGuardFailsClosedWhenUnreadable(_StubbedGuard):
         self.assertEqual(rc, 0, "工程仓干净时不得拦提交：\n%s" % out)
 
     def test_dirty_query_still_blocks_with_rc1(self):
-        """② 阳性对照：读得了且脏 → rc=1（业务拦截档，不能被新逻辑改成 2）。"""
-        rc, out = self._run(([os.path.join(ROOT, PROTECTED.replace("/", os.sep))], ""))
+        """② 阳性对照：读得了且脏 → rc=1（业务拦截档，不能被新逻辑改成 2）。
+
+        2026-11-04（P1-2）：changed_paths_ex 返回**相对**路径集合，guard 直接 _in_protected(p)，
+        不再 relpath——桩值也随之改成相对路径（旧的绝对路径不会被 _in_protected 认成受保护）。
+        """
+        rc, out = self._run(({PROTECTED}, ""))
         self.assertEqual(rc, 1, "受保护文件有未提交改动时必须拦截（且是 rc=1）：\n%s" % out)
         self.assertIn("已拦截", out)
 
@@ -118,11 +128,15 @@ class TestGuardUsesFailingVariant(unittest.TestCase):
         return {n.func.id for n in ast.walk(tree)
                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
 
-    def test_guard_calls_changed_files_ex(self):
+    def test_guard_calls_changed_paths_ex(self):
+        # 2026-11-04（P1-2）：guard 的 fail-closed 收集器从 changed_files_ex 换成 changed_paths_ex
+        # （含删除/改名）。「必须用带失败信号的收集器」这条不变量照旧，只是名字随之更新。
         called = self._called_names(GUARD_SRC)
-        self.assertIn("changed_files_ex", called, "哨兵必须用带失败信号的收集器")
+        self.assertIn("changed_paths_ex", called, "哨兵必须用带失败信号、且含删除/改名的收集器")
         self.assertNotIn("changed_files", called,
                          "哨兵不得再用宽容包装 changed_files()（查不了=空清单=fail-open）")
+        self.assertNotIn("changed_files_ex", called,
+                         "哨兵不该再用 --diff-filter=d 的 changed_files_ex（会漏删除，P1-2）")
 
     def test_exit_code_documented(self):
         """退出码是跨入口契约（skill/分发器都按它分流），docstring 必须跟上。"""

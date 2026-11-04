@@ -240,5 +240,133 @@ class TestCommitMsgRedTeam(unittest.TestCase):
         self.assertIn("清单缺失", r.stdout + r.stderr)
 
 
+# ============================ P1-2：删除/改名对哨兵可见 ============================
+
+class TestChangedPathsIncludesDeletions(unittest.TestCase):
+    """P1-2 单元锁：`changed_paths_ex` 必须看见删除/改名——`changed_files_ex` 按设计看不见。
+
+    评审复现 C：删掉 checks/agents_md_check.py 后 `changed_files_ex` 返回 ([], '')，
+    因为 `--diff-filter=d` 排除了删除；guard 用它问「什么变了」→ 删除被吃掉 → 全程无声。
+    """
+
+    def setUp(self):
+        if HARNESS not in sys.path:
+            sys.path.insert(0, HARNESS)
+        import _config
+        self.C = _config
+        self.dir = tempfile.mkdtemp(prefix="p12_")
+        self._git("init", "-q")
+        self._git("config", "user.email", "t@t")
+        self._git("config", "user.name", "t")
+        self._write("checks/x.py", "x = 1\n")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "baseline")
+
+    def tearDown(self):
+        _rmtree_force(self.dir)
+
+    def _git(self, *a):
+        return subprocess.run(["git", "-C", self.dir] + list(a), capture_output=True,
+                              text=True, encoding="utf-8", errors="replace")
+
+    def _write(self, rel, text):
+        p = os.path.join(self.dir, rel.replace("/", os.sep))
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+
+    def test_unstaged_deletion_visible(self):
+        os.remove(os.path.join(self.dir, "checks", "x.py"))
+        paths, err = self.C.changed_paths_ex(self.dir)
+        self.assertEqual(err, "")
+        self.assertIn("checks/x.py", paths, "未暂存删除必须被看见（P1-2）")
+        # 对照：旧口径 changed_files_ex 用 --diff-filter=d 排除删除 → 看不见（那是收集待检查文件的口径）
+        files, _ = self.C.changed_files_ex(self.dir)
+        self.assertFalse(any("x.py" in f for f in files),
+                         "changed_files_ex 按设计排除删除，不该看见 x.py")
+
+    def test_staged_deletion_visible(self):
+        os.remove(os.path.join(self.dir, "checks", "x.py"))
+        self._git("add", "-A")
+        paths, err = self.C.changed_paths_ex(self.dir)
+        self.assertEqual(err, "")
+        self.assertIn("checks/x.py", paths, "已暂存删除必须被看见（P1-2）")
+
+    def test_rename_both_ends_visible(self):
+        """改名成 .bak：旧路径（受保护）与新路径都要出现，否则「改名绕过」无声。"""
+        self._git("mv", "checks/x.py", "checks/x.bak")
+        paths, err = self.C.changed_paths_ex(self.dir)
+        self.assertEqual(err, "")
+        self.assertIn("checks/x.py", paths, "rename 旧路径必须被看见")
+        self.assertIn("checks/x.bak", paths, "rename 新路径必须被看见")
+
+    def test_untracked_new_file_visible(self):
+        self._write("checks/new.py", "y = 2\n")
+        paths, err = self.C.changed_paths_ex(self.dir)
+        self.assertEqual(err, "")
+        self.assertIn("checks/new.py", paths, "未跟踪新文件必须被看见")
+
+
+class TestGuardWiringP12(unittest.TestCase):
+    """S：guard 必须走含删除的口径；self-check 必须把「缺失即静默降级」文件列为必需。"""
+
+    def test_guard_uses_changed_paths_ex(self):
+        with open(os.path.join(ROOT, "checks", "harness_guard.py"), encoding="utf-8", errors="replace") as f:
+            src = f.read()
+        # 只查 import 语句本身（裸词会命中注释里的历史说明）：guard 必须导入含删除/改名的口径
+        self.assertIn("from _config import changed_paths_ex", src,
+                      "guard 必须用含删除/改名的 changed_paths_ex（P1-2）")
+        self.assertNotIn("from _config import changed_files_ex", src,
+                         "guard 不该再导入 --diff-filter=d 的 changed_files_ex（会漏删除）")
+
+    def test_self_check_requires_silent_degrade_files(self):
+        with open(os.path.join(ROOT, "checks", "harness_self_check.py"), encoding="utf-8", errors="replace") as f:
+            src = f.read()
+        for rel in ("checks/agents_md_check.py", "checks/file_types.py"):
+            self.assertIn(rel, src, "self-check 必需清单应含 %s（缺失即静默降级，P1-2）" % rel)
+
+
+@_slow("真起子进程跑副本里的 guard / self-check")
+class TestGuardSeesDeletionBehavior(unittest.TestCase):
+    """P1-2 行为锁：在干净工程副本里删掉一个受保护文件 → guard 必须 rc=1（旧口径下会静默 rc=0）。"""
+
+    def _run(self, script, *args):
+        e = dict(os.environ)
+        e["PYTHONIOENCODING"] = "utf-8"
+        return subprocess.run([PY, script] + list(args), capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", cwd=os.path.dirname(script),
+                              env=e, stdin=subprocess.DEVNULL, timeout=180)
+
+    def test_guard_blocks_deletion_of_protected_file(self):
+        from _engine_copy import EngineCopy
+        copy = EngineCopy()
+        dummy = tempfile.mkdtemp(prefix="p12biz_")
+        try:
+            # 干净基线 → 放行（--repo 指向 != 副本的路径，确保非 self 模式，走到删除检查）
+            r0 = self._run(copy.guard, "example", "--repo", dummy)
+            self.assertEqual(r0.returncode, 0, "干净副本应放行\n%s%s" % (r0.stdout, r0.stderr))
+            # 删掉受保护文件（未暂存删除）→ 必须拦
+            os.remove(copy.p("checks/agents_md_check.py"))
+            r1 = self._run(copy.guard, "example", "--repo", dummy)
+            self.assertEqual(r1.returncode, 1,
+                             "删除受保护文件必须被 guard 拦（P1-2）\n%s%s" % (r1.stdout, r1.stderr))
+            self.assertIn("agents_md_check.py", r1.stdout + r1.stderr)
+        finally:
+            _rmtree_force(dummy)
+            copy.cleanup()
+
+    def test_self_check_flags_missing_silent_degrade_file(self):
+        from _engine_copy import EngineCopy
+        copy = EngineCopy()
+        try:
+            os.remove(copy.p("checks/agents_md_check.py"))
+            r = self._run(copy.p("checks/harness_self_check.py"))
+            self.assertEqual(r.returncode, 1,
+                             "self-check 必须因缺 agents_md_check.py 而 ❌\n%s%s" % (r.stdout, r.stderr))
+            self.assertIn("agents_md_check.py", r.stdout + r.stderr)
+        finally:
+            copy.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

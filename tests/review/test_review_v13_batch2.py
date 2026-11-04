@@ -196,13 +196,14 @@ class TestZhong12GuardNotBypassedByTag(_Fixture):
             sys.path.insert(0, HARNESS_LIB)
         import _config
         import harness_guard
-        orig = _config.changed_files_ex
-        # 桩点随哨兵换用 `changed_files_ex` 一起搬（2026-09-16）：哨兵改用带失败信号的版本后，
-        # 还桩着旧名字等于**这条锁悄悄失去作用** —— 真去读工程仓，结果就取决于跑测试时工作区
-        # 脏不脏，那不是锁，是碰运气（本类 docstring 里已经写明这个顾虑）。
-        _config.changed_files_ex = (
-            (lambda repo, *a, **k: ([os.path.join(repo, self.PROTECTED.replace("/", os.sep))], ""))
-            if dirty else (lambda repo, *a, **k: ([], "")))
+        # 桩点随哨兵换名一起搬：2026-09-16 换成 changed_files_ex，2026-11-04（P1-2）再换成
+        # changed_paths_ex（含删除/改名）。还桩着旧名字等于**这条锁悄悄失去作用** —— 真去读工程仓，
+        # 结果就取决于跑测试时工作区脏不脏，那不是锁，是碰运气（本类 docstring 里已写明这个顾虑）。
+        # 语义也随之变：changed_paths_ex 返回**相对**路径集合，guard 直接 _in_protected(p)，不再 relpath。
+        orig = _config.changed_paths_ex
+        _config.changed_paths_ex = (
+            (lambda repo, *a, **k: ({self.PROTECTED}, ""))
+            if dirty else (lambda repo, *a, **k: (set(), "")))
         old_argv, old_cwd = sys.argv, os.getcwd()
         try:
             sys.argv = ["harness_guard.py"] + list(argv)
@@ -211,7 +212,7 @@ class TestZhong12GuardNotBypassedByTag(_Fixture):
         finally:
             sys.argv = old_argv
             os.chdir(old_cwd)
-            _config.changed_files_ex = orig
+            _config.changed_paths_ex = orig
 
     def test_tag_in_message_does_not_pass_in_end_repo(self):
         """端仓库提交消息里带 [harness] ≠ harness 维护 → 门禁文件脏时仍须拦截。"""
