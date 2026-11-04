@@ -74,7 +74,7 @@ jobs:
         run: python tests/packaging/test_release_artifact.py TestRealArtifactPasses -v
 
       - name: 上传构建产物（release / publish 共用）
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag: v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # tag: v7.0.2
         with:
           name: release-dist
           # 只传下游真要用的东西：公开发布物、出货件目录、出货 zip。
