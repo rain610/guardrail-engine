@@ -56,10 +56,32 @@ MSG_FILE="$1"
 if [ ! -f "$MSG_FILE" ]; then exit 0; fi
 MSG=$(cat "$MSG_FILE")
 # 暂存的改动里是否有受保护文件（排除 __pycache__/.pyc 构建产物）
-# 评审 v9（V9-6）：受保护面还要覆盖**没有扩展名的分发器本体**（hooks-dir/ 下两个），
-# 否则改它们不算"碰门禁文件"，[harness] 标记把关形同虚设。
-CHANGED=$(git diff --cached --name-only | grep -v '__pycache__' \
-  | grep -E '\.(py|yaml)$|(^|/)harness/hooks-dir/(pre-commit|commit-msg)$' || true)
+# 2026-11-04（评审 P1-3 / P2-8）：受保护面清单收敛到 harness/protected-patterns.txt（唯一事实源），
+# 与 checks/harness_guard._in_protected 共用同一份。原先这里手写 `\.(py|yaml)$|...`，只认旧扩展名，
+# 漏掉 config/harness.toml、.github/workflows/*.yml、sandbox/*.sh、VERSION、pyproject.toml、
+# setup.py、MANIFEST.in —— 与 guard 的清单漂移，于是一个无 [harness] 的提交能悄悄改策略/CI，
+# 而 CI 的 Engine-Sha 校验又只在消息含 [harness] 时触发，连内容校验都一并跳过。
+PATTERNS="$ENGROOT/harness/protected-patterns.txt"
+if [ ! -f "$PATTERNS" ]; then
+    # 清单缺失 = 无法判定本次提交是否触碰门禁文件 → fail-closed（报平安比报错危险）。
+    echo "✗ 受保护清单缺失：$PATTERNS —— 无法判定是否触碰门禁文件，按 fail-closed 阻断本次提交。"
+    echo "  这是工程仓/环境问题（清单被删或安装不完整），不是业务代码问题。"
+    exit 1
+fi
+STAGED=$(git diff --cached --name-only | grep -v '__pycache__' || true)
+CHANGED=""
+if [ -n "$STAGED" ]; then
+    # grep 退出码：0=有匹配 / 1=无匹配 / 2=出错（清单含非法 ERE）。set -e 下 rc=1 会中止脚本，
+    # 故临时关掉；rc>1 视为清单损坏 → fail-closed，绝不静默放行。
+    set +e
+    CHANGED=$(printf '%s\n' "$STAGED" | grep -Ef "$PATTERNS")
+    _prc=$?
+    set -e
+    if [ "$_prc" -gt 1 ]; then
+        echo "✗ 受保护清单匹配失败（grep rc=$_prc，$PATTERNS 可能含非法正则）→ 按 fail-closed 阻断本次提交。"
+        exit 1
+    fi
+fi
 if [ -z "$CHANGED" ]; then
     exit 0  # 没改受保护文件，放行
 fi

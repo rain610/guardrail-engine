@@ -1,0 +1,36 @@
+# 受保护路径清单（唯一事实源）—— guard._in_protected 与 commit-msg 都读这一份。
+# 格式：每行一条 POSIX ERE（锚定 ^...$），匹配「相对工程根、正斜杠」的路径。
+# Python 侧 harness/_protected.py 用 re 编译；shell 侧 commit-msg 用 grep -Ef 消费。
+# 以 # 开头的行是注释：Python 会跳过，grep 视为「匹配不到任何路径」的惰性模式。
+# 硬约束：本文件不得有空行（grep -f 会把空行当成「匹配一切」→ 全部文件被误判受保护）；
+#         每行必须是合法 ERE（否则 grep -f 报错 → commit-msg 匹配失败）。两者都有测试钉住。
+# checks 规则实现与规则集
+^checks/.*\.py$
+# checks 组件白名单
+^checks/components_allowlist(_h5)?\.yaml$
+# 调度层：harness/ 下所有 .py（与 _engine_meta._engine_files 的递归 walk 语义对齐——
+# 凡计入 engine_sha 的判定代码都受保护，杜绝「内容面里有、受保护面里没有」的漂移）
+^harness/.*\.py$
+# 共享 hook 分发器实体（所有接入仓 pre-commit/commit-msg 的本体，无扩展名）
+^harness/hooks-dir/(pre-commit|commit-msg)$
+# 受保护清单本体（改它等于改整个受保护面）
+^harness/protected-patterns\.txt$
+# 客户端编辑期门禁钩子
+^integrations/hooks/.*\.py$
+# 壳包（CLI/MCP/run/done/log --verify 会产出判定与凭证）
+^guardrail_engine/.*\.py$
+^agentguard/.*\.py$
+# 变异冒烟与锁清单
+^sandbox/mutation_smoke\.py$
+^tests/tooling/test_lock_inventory\.py$
+^tests/lock-inventory\.json$
+# 策略配置
+^config/harness\.(toml|yaml)$
+# 打包元数据与安装脚本（P1-3：原先漏保护，可被无 [harness] 提交悄悄改）
+^pyproject\.toml$
+^setup\.py$
+^VERSION$
+^MANIFEST\.in$
+^sandbox/.*\.sh$
+# CI 信任根（.yml 不是 .yaml；Engine-Sha 校验就住在这里）
+^\.github/workflows/.*\.ya?ml$

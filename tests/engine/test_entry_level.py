@@ -368,10 +368,18 @@ class TestCommitMsgIsScoped(unittest.TestCase):
         os.makedirs(os.path.join(self.eng, "harness", "hooks-dir"), exist_ok=True)
         self.hook = os.path.join(self.eng, "harness", "hooks-dir", "commit-msg")
         shutil.copyfile(src, self.hook)
+        # 2026-11-04（评审 P1-3）：commit-msg 改成读 harness/protected-patterns.txt（唯一事实源），
+        # 临时"工程仓"里也得有这份清单，否则会走「清单缺失 → fail-closed」分支而不是真实判定。
+        shutil.copyfile(os.path.join(ROOT, "harness", "protected-patterns.txt"),
+                        os.path.join(self.eng, "harness", "protected-patterns.txt"))
         self._git_init(self.eng)
-        with open(os.path.join(self.eng, "dummy_check.py"), "w", encoding="utf-8", newline="") as f:
+        # 2026-11-04（评审 P1-3）：受保护面统一到 harness/protected-patterns.txt 后，根级散落的
+        # .py 不再算受保护（旧 commit-msg 的 `\.(py|yaml)$` 会匹配任意 .py，guard 从来不会）。
+        # 探针文件放到 checks/ 下——它才是清单认可的受保护路径，与真实语义对齐。
+        os.makedirs(os.path.join(self.eng, "checks"), exist_ok=True)
+        with open(os.path.join(self.eng, "checks", "dummy_check.py"), "w", encoding="utf-8", newline="") as f:
             f.write("x = 1\n")
-        subprocess.run(["git", "add", "dummy_check.py"], cwd=self.eng, capture_output=True)
+        subprocess.run(["git", "add", "checks/dummy_check.py"], cwd=self.eng, capture_output=True)
         # 端仓（工作区里也有一个 py，用来证明"拦的判据来自被提交仓而不是工程仓"）
         self.repo = os.path.join(self.dir, "endrepo")
         os.makedirs(self.repo, exist_ok=True)

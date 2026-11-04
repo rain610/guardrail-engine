@@ -341,9 +341,15 @@ class TestProtectedPathContract(unittest.TestCase):
                     "checks/example_ruleset.py",               # 规则集
                     "config/harness.toml",                     # 策略配置
                     "config/harness.yaml",                     # 旧版策略配置（兼容层）
-                    "integrations/hooks/agentguard-gate.py"):  # ★ 本次漂移的那一类
+                    "integrations/hooks/agentguard-gate.py",   # ★ 2026-09-13 漂移的那一类
+                    # 2026-11-04（评审 P1-3）：受保护面加宽，以下原先被 commit-msg 漏掉
+                    "sandbox/install_hooks.sh",                # 安装器（能改所有仓的钩子安装）
+                    ".github/workflows/ci.yml",                # CI 信任根（.yml 不是 .yaml）
+                    "VERSION", "pyproject.toml", "setup.py", "MANIFEST.in",
+                    "harness/protected-patterns.txt"):         # 清单本体
             self.assertTrue(_in_protected(rel), "%s 应属受保护文件（保护循环会拦未提交改动）" % rel)
-        for rel in ("docs/x.md", "tests/test_x.py", "README.md", "sandbox/install_hooks.sh"):
+        for rel in ("docs/x.md", "tests/test_x.py", "README.md",
+                    "config/harness.local.toml"):              # 本机事实，gitignored，不受保护
             self.assertFalse(_in_protected(rel), "%s 不该算受保护（否则测试会大面积误跳）" % rel)
 
     def test_guard_call_site_exists_in_pre_commit(self):

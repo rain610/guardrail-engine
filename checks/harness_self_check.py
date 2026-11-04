@@ -132,8 +132,11 @@ def check_stdlib_only():
 def check_dispatcher():
     """③ 分发器完整性：缺实现文件时提交期门禁会整体 fail-closed 阻断（G2）。"""
     # 评审 P0-1：哨兵 checks/harness_guard.py 被删 = 保护永久关闭，而这里原来没查它（鸡生蛋）。
+    # 2026-11-04（评审 P1-3）：受保护面清单收敛到 harness/protected-patterns.txt + _protected.py，
+    # guard 与 commit-msg 都依赖它们；缺失 = 无法判定「哪些改动算碰门禁」→ 提交期 fail-closed。
     for rel in ("harness/hooks-dir/pre-commit", "harness/hooks-dir/commit-msg",
-                "harness/hooks/pre-commit.py", "checks/harness_guard.py"):
+                "harness/hooks/pre-commit.py", "checks/harness_guard.py",
+                "harness/protected-patterns.txt", "harness/_protected.py"):
         if not os.path.isfile(os.path.join(ROOT, rel)):
             problems.append("③ 缺关键门禁文件：%s（提交期门禁会 fail-closed 阻断）" % rel)
 

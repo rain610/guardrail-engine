@@ -54,42 +54,19 @@ MAINT_TAGS = ["[harness]", "harness-maintenance", "HARNESS:"]
 
 
 def _in_protected(rel):
-    """相对工程根的路径是否属于受保护文件。checks/ 下任何 .py 都受保护（新增检查脚本也算）。
-    2026-09-12 扩展（外部评审 P0-2）：原清单只覆盖门禁"内容"，未覆盖"调度层"——
-    run_gate.py/hooks/agents/_config.py 改弱不提交时 guard 零反应，是篡改可发现模型唯一漏档。"""
-    r = rel.replace("\\", "/")
-    if r.startswith("checks/") and r.endswith(".py"):
-        return True
-    # 调度层（hooks-dir 分发器也保护——它是全部接入仓 pre-commit 的实体）
-    # 2026-10-21（外部评审 5.7-C）：审计器与锁清单同属「让证据好看」的入口 ——
-    # 改弱它们同样能冒充通过，不能只在 checks/ 里设防。
-    if r in ("harness/run_gate.py", "harness/_config.py",
-             "harness/_validate.py", "harness/_engine_meta.py",
-             "harness/_yaml_compat.py", "harness/_errors.py",
-             "harness/coverage.py", "harness/_eol_policy.py",
-             "harness/hooks-dir/pre-commit",
-             # N5 修复（第二轮评审）：commit-msg 同属共享分发器实体，漏保护=可被静默改弱
-             "harness/hooks-dir/commit-msg",
-             "sandbox/mutation_smoke.py",
-             "tests/tooling/test_lock_inventory.py",
-             "tests/lock-inventory.json"):
-        return True
-    if r.startswith("harness/hooks/") and r.endswith(".py"):
-        return True
-    # 第三轮 N-δ：Claude/Codex 的自动门禁钩子与 harness/** 同等对待——它决定"AI 改完代码
-    # 谁来跑门禁"，改弱它等于让门禁在编辑期静默消失（提交期仍有 pre-commit 兜底）。
-    if r.startswith("integrations/hooks/") and r.endswith(".py"):
-        return True
-    if r.startswith("harness/agents/") and r.endswith(".py"):
-        return True
-    # 2026-10-26 第四轮评审 §4.2：改名后的壳包不是纯转发层 —— run / done / log --verify /
-    # hooks / mcp 都会产出判定与凭证，改弱它同样能骗过编辑期自检与 MCP 返回值。
-    if (r.startswith("guardrail_engine/") or r.startswith("agentguard/")) and r.endswith(".py"):
-        return True
-    return r in ("checks/components_allowlist.yaml",
-                 "checks/components_allowlist_h5.yaml",
-                 "config/harness.toml",
-                 "config/harness.yaml")
+    """相对工程根的路径是否属于受保护面。
+
+    2026-11-04（评审 P1-3 / P2-8）：判定清单收敛到 `harness/protected-patterns.txt`
+    （唯一事实源，每行一条 POSIX ERE）。commit-msg 用 `grep -Ef` 读同一份，本函数是它的
+    Python 消费方——不再自带手写清单。原先 guard 与 commit-msg 各写一份、必然漂移
+    （commit-msg 停留在 `.py|.yaml`，漏掉 toml/yml/sh/VERSION/pyproject/setup.py/MANIFEST.in），
+    于是一个无 [harness] 的提交能悄悄改策略文件或 CI。清单损坏时 `_protected` 会出声抛错，
+    不静默降级成「什么都不受保护」（fail-open 比 fail-closed 危险）。
+    """
+    if LIB not in sys.path:
+        sys.path.insert(0, LIB)
+    import _protected
+    return _protected.is_protected(rel)
 
 
 def _commit_msg():
