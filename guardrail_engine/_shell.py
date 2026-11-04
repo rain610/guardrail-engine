@@ -166,9 +166,11 @@ def find_root():
       ① 环境变量 `GUARDRAIL_ENGINE_DIR` / `AGENTGUARD_DIR`（旧名）/ `HARNESS_DIR`（更旧）
       ② `config/harness.local.toml` → `harness` 键（本机配置，gitignored；
          旧版 `harness.local.yaml` 的 `harness:` 键仍可读）
-      ③ 指针文件 `~/.guardrail-engine/harness.path`，其次旧目录
-         `~/.agentguard/harness.path`（迁移期双读）
-      ④ 从 cwd 向上找（最后的兜底，要求该目录下有 harness/run_gate.py）
+      ③ 从**本模块所在目录**（`__file__`）向上找（源码树 / init 安装副本据此自定位；
+         排在指针之前，免得陈旧指针把本地检出劫持到别的引擎 —— 评审 P1-4）
+      ④ 指针文件 `~/.guardrail-engine/harness.path`，其次旧目录
+         `~/.agentguard/harness.path`（迁移期双读）—— 只服务「包不在任何引擎树内」的
+         pip/wheel 形态：随包没有引擎，靠 init 写下的指针定位
 
     判据是「该目录下有 harness/run_gate.py」——认文件、不认目录名，
     这样 clone 到任何路径、改成任何目录名都能跑（分享给同事的前提）。
@@ -200,7 +202,19 @@ def find_root():
             break
         d = os.path.dirname(d)
 
-    #  指针文件（新目录优先，旧目录迁移期继续认）
+    # ③ 从**本模块所在目录**（__file__）向上找：源码树 / init 安装副本据此自定位。
+    #    为什么排在指针之前 —— 包就躺在某棵引擎树里时，那棵树才是本次真正要用的引擎；
+    #    若让用户级指针抢先，一个陈旧/外来指针会把本地检出「劫持」到别的目录，跑的是
+    #    别的仓的门禁（评审 P1-4）。pip/wheel 形态下这里找不到 harness/run_gate.py，
+    #    自然落到 ④ 指针。注意是从 __file__ 而非 cwd 向上：源码树里的 CLI 无论从哪个
+    #    工作目录被调用都能自定位（cwd 兜不住 `python <绝对路径>/cli.py` 这种用法）。
+    d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(5):
+        cands.append(d)
+        d = os.path.dirname(d)
+
+    # ④ 指针文件（新目录优先，旧目录迁移期继续认）—— 只服务「包不在任何引擎树内」的
+    #    pip/wheel 形态：随包没有引擎，靠 init 写下的指针定位。
     home = os.path.expanduser("~")
     for ptr in (os.path.join(home, CONFIG_DIRNAME, "harness.path"),
                 os.path.join(home, LEGACY_CONFIG_DIRNAME, "harness.path"),
@@ -212,12 +226,6 @@ def find_root():
                     cands.append(val)
         except OSError:
             pass
-
-    # ④ 从 cwd 向上找
-    d = os.path.dirname(os.path.abspath(__file__))
-    for _ in range(5):
-        cands.append(d)
-        d = os.path.dirname(d)
 
     for c in cands:
         try:

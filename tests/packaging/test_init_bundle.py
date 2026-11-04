@@ -289,6 +289,35 @@ class TestPointerResolvesAfterInit(_InitBase):
         self.assertEqual(rc, 2, out)
         self.assertIn("init", out, "未初始化时没告诉用户怎么继续：\n%s" % out)
 
+    def test_source_tree_self_locates_over_foreign_pointer(self):
+        """P1-4：包**躺在引擎树内**时，自定位（`__file__` 向上）必须优先于用户级指针。
+
+        否则一个陈旧/外来指针会把本地检出「劫持」到别的引擎目录 —— 跑的是别的仓的门禁，
+        保护循环当场失效。造两棵都带 harness/run_gate.py 的树：srctree（包就在其中）与
+        foreign（指针指向它）；断言 find_root() 落在 srctree，而不是被指针带去 foreign。
+        """
+        srctree = os.path.join(self.tmp, "srctree")
+        os.makedirs(os.path.join(srctree, "harness"))
+        with open(os.path.join(srctree, "harness", "run_gate.py"), "w", encoding="utf-8") as f:
+            f.write("# 让 find_root 认出 srctree 是引擎树\n")
+        pkg = os.path.join(srctree, "guardrail_engine")
+        os.makedirs(pkg)
+        src = os.path.join(ROOT, "guardrail_engine")
+        for n in os.listdir(src):
+            if n.endswith(".py"):
+                shutil.copyfile(os.path.join(src, n), os.path.join(pkg, n))
+        foreign = os.path.join(self.tmp, "foreign")
+        os.makedirs(os.path.join(foreign, "harness"))
+        with open(os.path.join(foreign, "harness", "run_gate.py"), "w", encoding="utf-8") as f:
+            f.write("# foreign engine\n")
+        ptrdir = os.path.join(self.home, ".guardrail-engine")
+        os.makedirs(ptrdir, exist_ok=True)
+        with open(os.path.join(ptrdir, "harness.path"), "w", encoding="utf-8") as f:
+            f.write(foreign + "\n")
+        got = self._root(srctree)
+        self.assertEqual(os.path.realpath(got or ""), os.path.realpath(srctree),
+                         "源码树内的包被外来指针劫持：find_root() 应自定位到 srctree（P1-4）")
+
 
 if __name__ == "__main__":
     unittest.main()

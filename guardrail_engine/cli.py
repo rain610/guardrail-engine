@@ -841,7 +841,8 @@ def cmd_where(_a):
         print("✗ 找不到 harness 工程根", file=sys.stderr)
         home = _shell.config_home()
         print("  解析链：$GUARDRAIL_ENGINE_DIR / $AGENTGUARD_DIR(旧) / $HARNESS_DIR(更旧)"
-              " → %s/harness.path（旧 %s/harness.path 也读）→ cwd 向上查找"
+              " → config/harness.local.toml → 模块所在目录向上查找"
+              " → %s/harness.path（旧 %s/harness.path 也读，仅 pip/wheel 形态需要）"
               % (home, _shell.LEGACY_CONFIG_DIRNAME))
         print("  修复：设环境变量或写 %s/harness.path（内容 = 引擎根绝对路径）" % home)
         if _shell.packaged_engine():
@@ -849,28 +850,50 @@ def cmd_where(_a):
                   % (_cmd_prefix(), home), file=sys.stderr)
         return 1
 
-    # 反向推导解析来源（便于调试）
+    # 反向推导解析来源（便于调试）—— 顺序必须与 find_root 的优先级一致，否则标签会误导：
+    # 源码树里跑却被标成"指针"（本机 local.toml / 自定位 / 指针同指一个目录时尤其如此）。
     source = "unknown"
     if (os.environ.get("GUARDRAIL_ENGINE_DIR") or os.environ.get("AGENTGUARD_DIR")
             or os.environ.get("HARNESS_DIR")):
         source = "env ($GUARDRAIL_ENGINE_DIR / $AGENTGUARD_DIR / $HARNESS_DIR)"
     else:
-        home = _shell.config_home()
-        for path_file in (os.path.join(home, "harness.path"),
-                          os.path.join(os.path.expanduser("~"), ".agentguard", "harness.path")):
-            if not os.path.isfile(path_file):
-                continue
-            try:
-                with open(path_file, encoding="utf-8") as f:
-                    stored = f.read().strip()
-                if os.path.realpath(stored) == os.path.realpath(ROOT):
-                    source = path_file
-                    break
-            except Exception:
-                pass
+        mod_dir = os.path.dirname(os.path.abspath(_shell.__file__))
+        # ② config/harness.local.toml 的 harness 键（与 find_root 用同一个读法）
+        d = mod_dir
+        for _ in range(5):
+            cfg = os.path.join(d, "config", "harness.local.toml")
+            if os.path.isfile(cfg):
+                val = _shell._read_config_harness(cfg)
+                if val and os.path.realpath(val) == os.path.realpath(ROOT):
+                    source = cfg
+                break
+            d = os.path.dirname(d)
+        # ③ 模块所在目录向上自定位（ROOT 是模块目录的祖先或自身，且带 harness/run_gate.py）
         if source == "unknown":
-            # 可能是 cwd 向上找到的
-            source = "cwd 向上查找（或 config/harness.local.toml）"
+            d = mod_dir
+            for _ in range(5):
+                if (os.path.realpath(d) == os.path.realpath(ROOT)
+                        and os.path.isfile(os.path.join(d, "harness", "run_gate.py"))):
+                    source = "模块所在目录向上自定位（%s）" % d
+                    break
+                d = os.path.dirname(d)
+        # ④ 指针文件 —— 只服务包不在引擎树内的 pip/wheel 形态
+        if source == "unknown":
+            home = _shell.config_home()
+            for path_file in (os.path.join(home, "harness.path"),
+                              os.path.join(os.path.expanduser("~"), ".agentguard", "harness.path")):
+                if not os.path.isfile(path_file):
+                    continue
+                try:
+                    with open(path_file, encoding="utf-8") as f:
+                        stored = f.read().strip()
+                    if os.path.realpath(stored) == os.path.realpath(ROOT):
+                        source = path_file
+                        break
+                except Exception:
+                    pass
+        if source == "unknown":
+            source = "（未能反推；见 find_root 解析链）"
 
     print(ROOT)
     if getattr(_a, "verbose", False):

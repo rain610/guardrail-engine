@@ -714,6 +714,14 @@ class TestVersionSingleSourceInWheelForm(unittest.TestCase):
         #                  同一条命令带上 sys.path.insert 那句 → 正常导入。
         for k in ("GUARDRAIL_ENGINE_DIR", "AGENTGUARD_DIR", "HARNESS_DIR"):   # 不能漏回真实仓库
             env.pop(k, None)
+        # P1-4：还必须隔离 HOME/USERPROFILE —— 否则本机 `~/.guardrail-engine/harness.path`
+        # 指针会让 find_root() 在「指针文件」那一步命中真实仓库，下面 assertIsNone 假红
+        # （CI 干净 runner 没有指针，所以这条只在装过引擎的开发机上暴露 = 本地红/CI 绿）。
+        # Windows 的 expanduser 读 USERPROFILE、POSIX 读 HOME，两个都指到临时家目录。
+        _home = os.path.join(d, "home")
+        os.makedirs(_home, exist_ok=True)
+        env["HOME"] = _home
+        env["USERPROFILE"] = _home
         # 子进程用 `json.dump(..., sys.stdout)` 而不是内置打印函数：`sandbox/list_entries.py`
         # 的「入口必须带 UTF-8 兜底」清单是**子串判据**（源码里出现打印调用 + 含非 ASCII 即入选），
         # 本文件含中文，一旦把打印调用的字面量写进来就会被当成控制台入口，从而要求一个

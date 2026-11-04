@@ -155,8 +155,8 @@ python checks/example_code_check.py --repo <仓库路径> --all
 echo "$GUARDRAIL_ENGINE_DIR"
 
 # ② 本机配置文件（config/harness.local.toml → harness 键）
-# ③ 指针文件（~/.guardrail-engine/harness.path）
-# ④ 从 cwd 向上找（兜底）
+# ③ 从模块所在目录（__file__）向上找（源码树 / 安装副本自定位）
+# ④ 指针文件（~/.guardrail-engine/harness.path）—— 仅 pip/wheel 形态需要
 
 # 不确定工程根时跑
 python guardrail_engine/cli.py where
