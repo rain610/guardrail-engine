@@ -1,0 +1,40 @@
+version: 2
+updates:
+  # GitHub Actions：按 commit SHA 固定后，Dependabot 会定期提 PR 把 SHA 升到最新版
+  # （同时更新行尾 `# tag:` 注释）。这里只覆盖 .github/workflows 里的 `uses:`。
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    # 只升版本，不改 workflow 结构（Dependabot 默认就只动 `uses:` 行）。
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  # Python 依赖：本工程零三方依赖（agents.md 红线），但 pip 子进程本身、
+  # build/twine（只在 CI/release 脚本里临时装）也需要有人盯着 CVE。
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # 本工程 pyproject 声明零运行时依赖；pip ecosystem 只会在 CI 脚本里
+    # 用到 build/twine 时提 PR，不会动 pyproject 的 dependency 段。
+    allow:
+      - dependency-type: "all"
