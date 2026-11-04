@@ -43,8 +43,54 @@
 - **artifact 漏传隐藏文件**：`upload-artifact` 默认 `include-hidden-files: false`，
   而出货件里的 `marketplace/.claude-plugin/`、`plugins/agentguard/.claude-plugin/`、
   `plugins/agentguard/.mcp.json` 全部以点开头。实测删掉这三处后 `verify_release.py`
-  报 7 项不符（含整包指纹），即 release job 会以“产物不完整”失败。已显式打开
+  报 7 项不符（含整包指纹），即 release job 会以”产物不完整”失败。已显式打开
   该开关，并在 `test_pypi_publish` 里锁住。
+- **评审报告 2026-11-04 全数处理**（P0×1 / P1×4 / P2×10 / P3×6，15 条独立提交）：
+  - **P0 安装副本信任锚**：`init` 落盘的 marker 现在记 `engine_sha`，副本无 git 历史时
+    `gate log --verify --engine` 也能核对基线，不再只报”尚无尾注”。
+  - **P1-1 worktree 提交不再绕过 `[harness]` 把关**：`commit-msg` 与 `guard` 改判
+    git common-dir（worktree 与主检出共享），不再用字面工作树路径比较。
+  - **P1-2 guard 收集删除/改名**：`harness_guard` 现在能观察到受保护文件的删除与重命名，
+    不再只盯修改。
+  - **P1-3 统一受保护路径 manifest**：`harness_guard._in_protected`、`commit-msg` 的
+    `grep -Ef`、`_engine_files`、`harness_self_check` 必需文件四份清单收敛到
+    `harness/protected-patterns.txt` 单一事实源，测试断言四处读同一份。
+  - **P1-4 测试夹具隔离 HOME/USERPROFILE**：夹具用 `tempfile.mkdtemp` 生成独立 HOME，
+    不再污染真实用户配置目录。
+  - **P2-1 MCP run_cmd 超时杀整棵进程树**：`mcp.run_cmd` 改用 `Popen` + 
+    `_shell._communicate_tree`，与 cli/run_gate 同源同纪律，超时杀整棵进程树。
+  - **P2-2 MCP 环境变量导入期 int() 崩溃**：`DEFAULT_TIMEOUT` / `MAX_OUTPUT` 改用
+    `_env_positive_int`，非整数 / ≤0 回退默认值并 warn，不再让 server 起不来。
+  - **P2-3 示例 gate 全量扫描剪枝**：`example_code_check.py --all` 现在跳过
+    `node_modules` / `.venv` / `.git` 等 vendor/VCS/缓存目录，不再把第三方代码的
+    `console.log` 当成业务违规。
+  - **P2-4 sh/TS 解释器探针要求 Python 3.11+**：9 处 sh 入口与 `integrations/opencode`
+    的 pickPython 现在校验 `>=3.11`，不再接受任意 Python 3（3.10 会因 `tomllib`
+    缺失而失败）。
+  - **P2-5 coverage --last 0/负数归 0 条**：`load_records` 的 `last` 参数现在
+    `≤0 → []`，与 cli `_read_jsonl` 的 L10 修复同源。
+  - **P2-7 CI Actions 按 SHA 固定 + Dependabot**：20 处 `uses:` 全部按 commit SHA
+    固定（行尾 `# tag:` 注释保留），新增 `.github/dependabot.yml` 周更。
+  - **P2-9 MCP gate 名单缓存加 config mtime**：`_gate_catalog` 缓存键追加配置文件
+    mtime，长驻 MCP 会话中改配置后不再命中旧名单。
+  - **P2-10 外部适配器补 rule_base.bump**：`external_adapter.py` 每条 finding
+    （error/warn/waived）现在调用 `rule_base.bump`，`HARNESS_STATS_FILE` 的 `rules`
+    段不再为空 dict，coverage.py 能正确统计外部工具规则的触发记录。
+  - **P3-1 commit-msg 链式调用死代码修复**：`set -e` 下 `if` 体失败会立即退出，
+    `chained_rc=$?` 永远执行不到。改用 `set +e` / `set -e` 包裹，显式捕获退出码。
+  - **P3-2 _cmd_verify 坏行计数不再被 extra > 0 短路**：锚定段里插入垃圾行同时后面
+    有未锚定新增时，旧实现静默放过。现在无论 extra 是多少，bad 增加都出声（extra > 0
+    时警告，extra == 0 时阻断）。
+  - **P3-3 死代码清理**：删除 `_ledger_path()`（全仓无引用）、`run_gate.py --mode`
+    分支的 `skip = False`（赋值后未读取）、`opencode-go-proxy.py` 的
+    `self._relay(None) if False else ...`（简化为 `self._relay(b””)`）。
+  - **P3-4 零依赖扫描口径统一**：`harness_self_check.py` 去掉 `sandbox/`（工具脚本，
+    非引擎层），显式列出 `harness/hooks` / `harness/agents`，扫描循环从 `os.walk`
+    改成 `os.listdir`，与 `test_stdlib_only.py` 和 CI 同源。
+  - **P3-5 CI 矩阵加 Python 3.14**：本机 3.14.5 全量套件已验证兼容，提前发现未来
+    版本的回归。
+  - **P3-6 agents_md_check 文档说明**：绝对路径检查只匹配含引擎名的路径，克隆目录被
+    改名时会漏。这是刻意取舍（”宁可漏、不可误报”），在模块文档和代码注释里明说。
 
 ## [0.2.0] — 2026-10-25
 
