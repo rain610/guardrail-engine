@@ -17,6 +17,15 @@ r"""外部评审 2026-11-04 落地回归锁 —— P1-3：受保护面清单收�
   S4  引擎内容面 ⊆ 受保护面：_engine_files() 里每个文件都必须 _in_protected（防危险方向漂移）。
   B1  行为锁（真 git）：暂存 config/harness.toml / .github/workflows/ci.yml / sandbox/install_hooks.sh /
       VERSION / pyproject.toml 且消息无 [harness] → commit-msg rc=1；带 [harness] → rc=0。
+
+P1-1：引擎仓的 git worktree 提交绕过 [harness] 把关（复现 B：主检出 rc=1 而 worktree rc=0）。
+根因是 commit-msg 与 guard 都用字面工作树路径判"是不是引擎仓"，worktree 根 ≠ 主检出根 → 漏判。
+修法：按 git common-dir 判"同一仓库族"（worktree 与主检出共享 common-dir）；commit-msg 在 cd 前
+把相对的 `$1` 按 TOP 绝对化（复现 F 的潜伏问题），暂存区查询改用 `git -C "$TOP"`。本模块的锁：
+  W1  行为锁（真 git worktree）：worktree 改受保护文件无 [harness] → commit-msg rc=1；带 [harness] → rc=0；
+      相对 `$1` 解析到 worktree 自己的消息（不读主检出旧消息）；主检出行为不回归。
+  W2  guard `_is_engine_family` 认出 worktree（同族）、主检出（同族）、无关仓（非同族）；
+      行为锁：guard `--repo=<worktree>` 出声"本仓提交"按 self 模式把关。
 """
 import os
 import re
@@ -365,6 +374,187 @@ class TestGuardSeesDeletionBehavior(unittest.TestCase):
                              "self-check 必须因缺 agents_md_check.py 而 ❌\n%s%s" % (r.stdout, r.stderr))
             self.assertIn("agents_md_check.py", r.stdout + r.stderr)
         finally:
+            copy.cleanup()
+
+
+# ============================ P1-1：worktree 提交不再绕过把关 ============================
+
+@_slow("真起 git 仓 + worktree + 真跑 commit-msg")
+class TestCommitMsgWorktree(unittest.TestCase):
+    """P1-1 行为锁（复现 B / F）：引擎仓的 **worktree** 提交不得绕过 [harness] 把关。
+
+    旧判据 `[ "$TOP" = "$ENGROOT" ]` 比字面工作树路径——worktree 根 ≠ 主检出根 → `exit 0` 放行，
+    [harness] 把关整体失效（复现 B：MAIN_RC=1 而 WORKTREE_RC=0）。改为按 git common-dir 判
+    "同一仓库族"，worktree 与主检出一视同仁。
+
+    另锁被第一个 bug 掩盖的潜伏问题（复现 F）：git 传给 commit-msg 的 `$1` 是**相对** cwd 的路径
+    （实测 `.git/COMMIT_EDITMSG`），旧脚本先 `cd "$ENGROOT"` 再读 `$1`；一旦修好 worktree 判定，
+    worktree 提交就会去读**主检出**的旧消息。修复要求在 cd 之前按 TOP 绝对化 `$1`。
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="p11_")
+        self.main = os.path.join(self.dir, "main")
+        os.makedirs(os.path.join(self.main, "harness", "hooks-dir"), exist_ok=True)
+        os.makedirs(os.path.join(self.main, "checks"), exist_ok=True)
+        shutil.copyfile(COMMIT_MSG, os.path.join(self.main, "harness", "hooks-dir", "commit-msg"))
+        shutil.copyfile(PATTERNS, os.path.join(self.main, "harness", "protected-patterns.txt"))
+        self.hook = os.path.join(self.main, "harness", "hooks-dir", "commit-msg")
+        self._git(self.main, "init", "-q")
+        self._git(self.main, "config", "user.email", "t@t")
+        self._git(self.main, "config", "user.name", "t")
+        # worktree add 需要至少一个 commit → 先建基线
+        self._write(self.main, "README.md", "# base\n")
+        self._git(self.main, "add", "-A")
+        self._git(self.main, "commit", "-qm", "baseline")
+
+    def tearDown(self):
+        _rmtree_force(self.dir)
+
+    def _git(self, repo, *a):
+        return subprocess.run(["git", "-C", repo] + list(a), capture_output=True,
+                              text=True, encoding="utf-8", errors="replace")
+
+    def _write(self, base, rel, text):
+        p = os.path.join(base, rel.replace("/", os.sep))
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        return p
+
+    def _worktree(self, name="wt"):
+        wt = os.path.join(self.dir, name)
+        r = self._git(self.main, "worktree", "add", "-q", wt, "-b", name)
+        self.assertEqual(r.returncode, 0, "worktree 夹具创建失败：%s%s" % (r.stderr, r.stdout))
+        return wt
+
+    def _run_hook(self, cwd, msg_file):
+        e = dict(os.environ)
+        e["PYTHONIOENCODING"] = "utf-8"
+        return subprocess.run([_SH, self.hook, msg_file], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", cwd=cwd, env=e,
+                              stdin=subprocess.DEVNULL, timeout=60)
+
+    def test_main_protected_change_blocked(self):
+        """回归：主检出改受保护文件无 [harness] → rc=1（本来就对，别被 worktree 修复带坏）。"""
+        self._write(self.main, "checks/pwn.py", "x=1\n")
+        self._git(self.main, "add", "checks/pwn.py")
+        msg = self._write(self.main, "msg_plain.txt", "普通提交\n")
+        r = self._run_hook(self.main, msg)
+        self.assertEqual(r.returncode, 1,
+                         "主检出受保护改动无 [harness] 应被拦\n%s%s" % (r.stdout, r.stderr))
+
+    def test_worktree_protected_change_blocked(self):
+        """复现 B：worktree 改受保护文件无 [harness] → rc=1（旧版 rc=0 绕过）。"""
+        wt = self._worktree()
+        self._write(wt, "checks/pwn.py", "x=1\n")
+        self._git(wt, "add", "checks/pwn.py")
+        msg = self._write(wt, "msg_plain.txt", "普通提交\n")
+        r = self._run_hook(wt, msg)
+        self.assertEqual(r.returncode, 1,
+                         "worktree 受保护改动无 [harness] 必须被拦（P1-1 复现 B）\n%s%s" % (r.stdout, r.stderr))
+
+    def test_worktree_with_marker_allowed(self):
+        """反向：worktree 带 [harness] → rc=0（别把合法维护出口一起堵了）。"""
+        wt = self._worktree()
+        self._write(wt, "checks/pwn.py", "x=1\n")
+        self._git(wt, "add", "checks/pwn.py")
+        msg = self._write(wt, "msg_h.txt", "[harness] 维护\n")
+        r = self._run_hook(wt, msg)
+        self.assertEqual(r.returncode, 0,
+                         "worktree 带 [harness] 应放行\n%s%s" % (r.stdout, r.stderr))
+
+    def test_worktree_relative_msg_not_stale_main(self):
+        """复现 F：相对 `$1` 必须按 worktree(TOP) 解析，不能读到主检出的旧消息。
+
+        主检出放一条**带 [harness] 的旧 msg.txt**；若脚本仍 `cd "$ENGROOT"` 再读相对 `$1`，
+        会读到它 → 误放行（rc=0）。修复后读 worktree 自己的 msg.txt（无标记）→ rc=1。
+        """
+        wt = self._worktree()
+        self._write(self.main, "msg.txt", "STALE MAIN [harness]\n")   # 主检出的旧消息（陷阱）
+        self._write(wt, "checks/pwn.py", "x=1\n")
+        self._git(wt, "add", "checks/pwn.py")
+        self._write(wt, "msg.txt", "普通提交\n")                       # worktree 自己的相对 msg.txt
+        r = self._run_hook(wt, "msg.txt")                            # 传**相对**路径，cwd=worktree
+        self.assertEqual(r.returncode, 1,
+                         "相对 $1 必须解析到 worktree 的 msg.txt（无标记→拦），不能读主检出旧 [harness] 消息\n%s%s"
+                         % (r.stdout, r.stderr))
+
+
+@_slow("真起 git 仓 + worktree + 加载副本 guard")
+class TestGuardWorktreeSelfMode(unittest.TestCase):
+    """P1-1：guard 的 self 模式判据必须认出"引擎仓的 worktree"也是本仓提交。
+
+    旧判据 `normcase(abspath(commit_repo)) == normcase(abspath(ROOT))` 比字面路径——worktree 根
+    ≠ 主检出根 → 被判成"端仓提交" → 只检查主仓工作区（干净）→ 放行。改为补一条 git common-dir
+    判据（`_is_engine_family`）：同仓库族即本仓。
+    """
+
+    def _load_guard(self, guard_path):
+        """按文件路径加载副本里的 guard（其 ROOT 由 __file__ 推导 = 副本根），不污染 sys.modules。"""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("guard_wt_probe", guard_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def _worktree_of(self, copy, wt):
+        r = subprocess.run(["git", "-C", copy.path, "worktree", "add", "-q", wt, "-b", "wtbranch"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return r
+
+    def test_is_engine_family_recognizes_worktree(self):
+        from _engine_copy import EngineCopy
+        copy = EngineCopy()
+        wt_dir = tempfile.mkdtemp(prefix="p11wt_")
+        unrel_dir = tempfile.mkdtemp(prefix="p11unrel_")
+        wt = os.path.join(wt_dir, "wt")
+        try:
+            r = self._worktree_of(copy, wt)
+            self.assertEqual(r.returncode, 0, "worktree 创建失败：%s%s" % (r.stderr, r.stdout))
+            # 无关仓：另起一个独立 git 仓（不同 common-dir），比"非 git 目录"更稳（不受父目录偶然是仓影响）
+            subprocess.run(["git", "-C", unrel_dir, "init", "-q"], capture_output=True, text=True)
+            mod = self._load_guard(copy.guard)
+            self.assertEqual(os.path.normcase(mod.ROOT), os.path.normcase(copy.path),
+                             "副本 guard 的 ROOT 应是副本根（否则这条锁没测到东西）")
+            self.assertTrue(mod._is_engine_family(copy.path), "主检出本身当然属于引擎仓族")
+            self.assertTrue(mod._is_engine_family(wt),
+                            "引擎仓的 worktree 必须被判为同一仓库族（P1-1）——旧版按字面路径漏判")
+            self.assertFalse(mod._is_engine_family(unrel_dir),
+                             "无关仓库不该被判为引擎仓族（否则 self 模式会误放行端仓提交）")
+        finally:
+            subprocess.run(["git", "-C", copy.path, "worktree", "remove", "--force", wt],
+                           capture_output=True, text=True)
+            _rmtree_force(wt_dir)
+            _rmtree_force(unrel_dir)
+            copy.cleanup()
+
+    def test_guard_self_mode_message_for_worktree_repo(self):
+        """行为锁：guard `--repo=<worktree>`（pre-commit 阶段无消息）→ 出声"本仓提交"并按 self 放行。
+
+        判别点在**输出**：旧版把 worktree 判成端仓时不会打印"本仓提交"，而是直接去查主仓工作区。
+        """
+        from _engine_copy import EngineCopy
+        copy = EngineCopy()
+        wt_dir = tempfile.mkdtemp(prefix="p11wt2_")
+        wt = os.path.join(wt_dir, "wt")
+        try:
+            r = self._worktree_of(copy, wt)
+            self.assertEqual(r.returncode, 0, "worktree 创建失败：%s%s" % (r.stderr, r.stdout))
+            e = dict(os.environ)
+            e["PYTHONIOENCODING"] = "utf-8"
+            run = subprocess.run([PY, copy.guard, "example", "--repo", wt], capture_output=True,
+                                 text=True, encoding="utf-8", errors="replace",
+                                 cwd=os.path.dirname(copy.guard), env=e,
+                                 stdin=subprocess.DEVNULL, timeout=180)
+            self.assertEqual(run.returncode, 0,
+                             "干净副本 + worktree --repo 应放行\n%s%s" % (run.stdout, run.stderr))
+            self.assertIn("本仓提交", run.stdout,
+                          "worktree --repo 必须被 guard 认成本仓提交（self 模式），而非端仓（P1-1）")
+        finally:
+            subprocess.run(["git", "-C", copy.path, "worktree", "remove", "--force", wt],
+                           capture_output=True, text=True)
+            _rmtree_force(wt_dir)
             copy.cleanup()
 
 

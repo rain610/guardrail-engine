@@ -264,6 +264,13 @@ def main():
     ap.add_argument("files", nargs="*")
     ap.parse_args()
 
+    # 2026-11-04（评审 P1-1）：`--repo` / `files` 被接受但**有意不参与判定**，这是设计而非漏接线。
+    # 下面每一项 check_* 都读"自己所在的那份引擎检出"（ROOT 由 __file__ 推导），而不是 args.repo 的
+    # 暂存内容：分发器（pre-commit）跑的是**主检出**的 self_check，它要保证的是"此刻正在把关端仓的
+    # 这份引擎本身是健康的"，与"某个 worktree 暂存了什么"是两件事。worktree 提交里被改动的引擎文件
+    # 由 commit-msg 的 [harness] 把关 + harness_guard 的受保护面检查兜住——二者已按 git common-dir
+    # 认出 worktree（见 P1-1 修复），不依赖 self_check 去读暂存区。保留这两个参数只为兼容分发器
+    # 统一的调用约定（它给所有 gate 脚本都传 --repo/files）。
     check_utf8_fallback()
     check_stdlib_only()
     check_dispatcher()

@@ -152,6 +152,48 @@ def _not_a_worktree_hint():
     return ""
 
 
+def _repo_common_dir(path):
+    """返回 path 所在仓库族的 git common-dir（规范化物理路径 + normcase）；查不到返回 ""。
+
+    git worktree 与其主检出**共享 common-dir**（都指向主仓的 .git），不同仓库族则不同。
+    所以"common-dir 相同"== "同一个仓库族"，是判 worktree 提交是否属于引擎仓的可靠判据。
+    相对形态的 common-dir（在仓根跑返回 `.git`）相对于 `-C` 目录，故按 path 绝对化。
+    """
+    if not path:
+        return ""
+    try:
+        import subprocess as _sp
+        r = _sp.run(["git", "-C", path, "rev-parse", "--git-common-dir"],
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=30)
+        if r.returncode != 0:
+            return ""
+        d = (r.stdout or "").strip()
+        if not d:
+            return ""
+        if not os.path.isabs(d):
+            d = os.path.join(path, d)
+        return os.path.normcase(os.path.realpath(d))
+    except Exception:
+        return ""
+
+
+def _is_engine_family(path):
+    """path 是否就是引擎仓 ROOT、或 ROOT 的一个 git worktree（同一仓库族）。
+
+    2026-11-04（评审 P1-1）：self 模式原先只比 `normcase(abspath(path)) == normcase(abspath(ROOT))`。
+    引擎仓的 worktree 提交（path=worktree 根 ≠ ROOT 主检出根）于是被判成"端仓提交"→ 只检查主仓
+    工作区（干净）→ 放行，[harness] 把关整体失效（复现 B）。补一条 common-dir 判据：同族即本仓。
+    """
+    try:
+        if os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(ROOT)):
+            return True
+    except Exception:
+        pass        # 路径畸形 → 落到 common-dir 判据（查不出则 False，保持非 self：宁可多查一次）
+    root_common = _repo_common_dir(ROOT)
+    return bool(root_common) and _repo_common_dir(path) == root_common
+
+
 def main():
     argv, commit_repo = _take_repo_arg(sys.argv[1:])
     self_mode, gate_name, commit_msg = _parse_args(argv)
@@ -166,22 +208,22 @@ def main():
     if not self_mode and commit_repo is not None:
         # 调用方显式指定了"正在提交哪个仓" → 它就是权威，**不叠加 cwd 推断**
         # （cwd 可被调用方覆盖 —— 严重 4 的成因正是"覆盖了 cwd 还照样推断"）。
-        try:
-            if os.path.normcase(os.path.abspath(commit_repo)) == os.path.normcase(os.path.abspath(ROOT)):
-                self_mode = True
-                print("[guard] 本仓提交（调用方指定 --repo=工程根）→ 按 self 模式把关")
-        except Exception:
-            pass        # 路径畸形 → 保持非 self：走下方真实检查（宁可多查一次，不可少查）
+        # 2026-11-04（评审 P1-1）：判据从"字面等于工程根"放宽到"同一仓库族"——引擎仓的 worktree
+        # 提交（commit_repo=worktree 根 ≠ 主检出根）也是本仓提交；旧判据把它当端仓 → 只查主仓
+        # 工作区（干净）→ 放行，[harness] 把关整体失效。
+        if _is_engine_family(commit_repo):
+            self_mode = True
+            print("[guard] 本仓提交（调用方指定 --repo=工程根/其 worktree）→ 按 self 模式把关")
     elif not self_mode:
         try:
             import subprocess as _sp     # 本模块按惯例只在函数内局部导入（别用模块级名字，会 NameError）
             _top = _sp.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
                            text=True, timeout=30).stdout.strip()
-            if _top and os.path.normcase(os.path.abspath(_top)) == os.path.normcase(os.path.abspath(ROOT)):
-                self_mode = True
-                print("[guard] 本仓提交（cwd=工程根）→ 按 self 模式把关")
         except Exception:
-            pass
+            _top = ""
+        if _top and _is_engine_family(_top):
+            self_mode = True
+            print("[guard] 本仓提交（cwd=工程根/其 worktree）→ 按 self 模式把关")
 
     # ---- (a) 的另一半：pre-commit 阶段 git 还没写 COMMIT_EDITMSG（-F 亦然），消息读不到 --------
     # 此时**延后把关**：本阶段放行，[harness] 标记由 commit-msg 钩子强制（它拿得到消息文件，

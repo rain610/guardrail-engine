@@ -4,6 +4,14 @@
 # 改受保护文件(checks/*.py, config/)但无 [harness] 标记 → 拦截；
 # 有标记 → 放行但打 ⚠ 复核提示（2026-09-12：防 agent 提交消息带标记就绕过人工确认）。
 set -e
+
+# 把目录路径规范化成可比较的**物理**绝对路径（解析 `.`/`..`/符号链接）；不是目录则输出空串。
+# 2026-11-04（评审 P1-1）：判定"本次提交是否属于引擎仓库族"要比较 git common-dir，而 common-dir
+# 可能是相对形态（`.git`）或绝对形态（worktree 指回主仓），直接比字符串会漏判 → 统一规范化后再比。
+_canon_dir() {
+    [ -n "$1" ] && [ -d "$1" ] && (cd "$1" 2>/dev/null && pwd -P) || true
+}
+
 # ⚠ 自识守卫（N2 修复，第二轮评审）：本文件位于 harness/hooks-dir/，而该目录是**所有端仓**
 # 的 core.hooksPath 共享分发器——端仓提交时本脚本也会被执行。若不判断"当前提交的是不是
 # harness 工程仓本身"，它就会 cd 进工程仓去读**工程仓**的暂存区：轻则打出无关的复核提示，
@@ -49,10 +57,40 @@ if [ -n "$ORIG" ]; then
 fi
 # ------------------------------------------------------------------------------
 
-[ "$TOP" = "$ENGROOT" ] || exit 0
-cd "$ENGROOT"
+# 引擎仓（= hook 脚本所在仓，主检出）的 common-dir。与上面 COMMON（本次提交仓的 common-dir）
+# 比较，判"本次提交是否属于同一个仓库族"。git worktree 与其主检出**共享 common-dir**。
+ENG_COMMON=$(git -C "$ENGROOT" rev-parse --git-common-dir 2>/dev/null || echo "")
+case "$ENG_COMMON" in
+    /*|[A-Za-z]:[\\/]*) ;;
+    * ) [ -n "$ENG_COMMON" ] && ENG_COMMON="$ENGROOT/$ENG_COMMON" ;;
+esac
 
+# 只有"在提交引擎仓本身（主检出或其任一 worktree）"才需要 [harness] 把关；端仓提交直接放行。
+# 2026-11-04（评审 P1-1）：原先只比字面工作树路径 `[ "$TOP" = "$ENGROOT" ]`。worktree 的 TOP
+# （worktree 根）必然 ≠ ENGROOT（主检出根）→ 引擎仓的 worktree 提交在这里 exit 0，[harness] 把关
+# 整体失效（复现 B）。改判仓库族：common-dir 相同即同族，worktree 与主检出一视同仁。
+_is_engine_repo=0
+if [ "$TOP" = "$ENGROOT" ]; then
+    _is_engine_repo=1
+else
+    _c_top=$(_canon_dir "$COMMON")
+    _c_eng=$(_canon_dir "$ENG_COMMON")
+    if [ -n "$_c_top" ] && [ -n "$_c_eng" ] && [ "$_c_top" = "$_c_eng" ]; then
+        _is_engine_repo=1
+    fi
+fi
+[ "$_is_engine_repo" = 1 ] || exit 0
+
+# git 传给 commit-msg 的 $1 是**相对路径**（实测 `.git/COMMIT_EDITMSG`，相对 hook 运行时 cwd=被提交仓根）。
+# 2026-11-04（评审 P1-1 潜伏问题，复现 F）：必须在任何 cd 之前按 TOP 绝对化。原先脚本先 `cd "$ENGROOT"`
+# 再读 `$1`，worktree 提交时会去读**主检出**的 .git/COMMIT_EDITMSG（可能还是上一次的旧消息）→ 误判。
+# 同时不再 `cd "$ENGROOT"`：下面的暂存区查询一律用 `git -C "$TOP"`，确保读的是**本次提交仓**的索引
+# （worktree 的索引与主检出各自独立），而受保护清单仍取自 ENGROOT（见下，规范源不许被 worktree 分支篡改）。
 MSG_FILE="$1"
+case "$MSG_FILE" in
+    /*|[A-Za-z]:[\\/]*) ;;
+    * ) [ -n "$MSG_FILE" ] && MSG_FILE="$TOP/$MSG_FILE" ;;
+esac
 if [ ! -f "$MSG_FILE" ]; then exit 0; fi
 MSG=$(cat "$MSG_FILE")
 # 暂存的改动里是否有受保护文件（排除 __pycache__/.pyc 构建产物）
@@ -61,6 +99,8 @@ MSG=$(cat "$MSG_FILE")
 # 漏掉 config/harness.toml、.github/workflows/*.yml、sandbox/*.sh、VERSION、pyproject.toml、
 # setup.py、MANIFEST.in —— 与 guard 的清单漂移，于是一个无 [harness] 的提交能悄悄改策略/CI，
 # 而 CI 的 Engine-Sha 校验又只在消息含 [harness] 时触发，连内容校验都一并跳过。
+# 清单**故意**取自 ENGROOT（主检出）而非 TOP（本次提交仓）：worktree 可能在某条分支上把清单改弱/删空，
+# 用规范源判定才不会被"正在提交的这份规则"自我豁免（暂存区读 TOP、规则读 ENGROOT 是刻意的分工）。
 PATTERNS="$ENGROOT/harness/protected-patterns.txt"
 if [ ! -f "$PATTERNS" ]; then
     # 清单缺失 = 无法判定本次提交是否触碰门禁文件 → fail-closed（报平安比报错危险）。
@@ -68,7 +108,7 @@ if [ ! -f "$PATTERNS" ]; then
     echo "  这是工程仓/环境问题（清单被删或安装不完整），不是业务代码问题。"
     exit 1
 fi
-STAGED=$(git diff --cached --name-only | grep -v '__pycache__' || true)
+STAGED=$(git -C "$TOP" diff --cached --name-only | grep -v '__pycache__' || true)
 CHANGED=""
 if [ -n "$STAGED" ]; then
     # grep 退出码：0=有匹配 / 1=无匹配 / 2=出错（清单含非法 ERE）。set -e 下 rc=1 会中止脚本，

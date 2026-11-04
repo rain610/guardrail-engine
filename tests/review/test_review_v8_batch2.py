@@ -69,7 +69,9 @@ class TestB1HooksPathChain(unittest.TestCase):
         i_chain = src.find("agentguard-original-hooks")
         # 收窄到那条"提交的不是 harness 仓就退出"的判定（文件里另有更早的 `|| exit 0`，
         # 泛搜会误判）——这条之后端仓就再也跑不到了。
-        i_early = src.find('[ "$TOP" = "$ENGROOT" ] || exit 0')
+        # 2026-11-04（评审 P1-1）：该判定从字面路径比较 `[ "$TOP" = "$ENGROOT" ]` 改为按 git
+        # common-dir 判仓库族（worktree 与主检出共享 common-dir），出口行随之改名；标记同步更新。
+        i_early = src.find('[ "$_is_engine_repo" = 1 ] || exit 0')
         self.assertGreater(i_chain, 0)
         self.assertLess(i_chain, i_early,
                         "链式块必须在「本仓判定 → exit 0」之前，否则端仓里根本跑不到")
