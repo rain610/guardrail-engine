@@ -1359,7 +1359,10 @@ MUTATIONS = [
             "抓包实测的形状。反锁 test_file_outside_any_repo_still_skips 刻意不受影响。"},
 
     # ── 批次 7（2026-10-15）：超时杀整树 + 全量超时分档 ─────────────────────────
-    {"id": "M143-taskkill-loses-slash-T", "file": "guardrail_engine/cli.py",
+    # 注（评审 2026-11-04 P2-1）：HARNESS-KILLTREE 块已从 cli.py 收敛进 _shell.py（cli.py 与
+    # mcp.py 共用同一份），故 M143/M145 的锚点文件随之改指 _shell.py；lock 仍是 test_agentguard
+    # 的孙进程实测（cli._run → _shell._communicate_tree → _shell._kill_tree，变异照样传导）。
+    {"id": "M143-taskkill-loses-slash-T", "file": "guardrail_engine/_shell.py",
      "kind": "exact",
      "old": '            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],\n',
      "new": '            subprocess.run(["taskkill", "/F", "/PID", str(proc.pid)],  # mutation-smoke\n',
@@ -1381,7 +1384,7 @@ MUTATIONS = [
      "expect": "test_run_all_gets_the_longer_default_timeout",
      "why": "全量扫描默认超时退回 300s：大仓全扫必然超时（实测小时级 wall），用户的 --all 又"
             "变回一次「超时报错 + 输出全丢」。"},
-    {"id": "M145-killpg-becomes-proc-kill", "file": "guardrail_engine/cli.py",
+    {"id": "M145-killpg-becomes-proc-kill", "file": "guardrail_engine/_shell.py",
      "kind": "exact",
      "old": '                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)\n',
      "new": '                proc.kill()  # mutation-smoke\n',
