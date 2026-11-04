@@ -261,6 +261,22 @@ class TestRecordLoading(unittest.TestCase):
     def test_last_n(self):
         self.assertEqual([r["gate"] for r in COV.load_records(self.log, last=2)], ["g1", "g2"])
 
+    def test_last_zero_or_negative_is_empty_not_all(self):
+        """P2-5：`--last 0` 是"要 0 条"，不是"全部"；负数同理（与 cli._read_jsonl 的 L10 同源）。
+
+        旧写法 `if last: out = out[-int(last):]`：last=0 → `if 0` 假 → 跳过切片 → 返回**全部**；
+        last=-5 → `out[5:]` → 丢掉前 5 条。两种都既不是"最后 N 条"也不是"全部"。
+        """
+        self.assertEqual(COV.load_records(self.log, last=0), [],
+                         "--last 0 必须返回 0 条，旧行为却返回全部")
+        self.assertEqual(COV.load_records(self.log, last=-5), [],
+                         "--last 负数必须返回 0 条，旧行为却丢掉前 N 条")
+
+    def test_last_none_still_means_all(self):
+        """last=None（没给 --last）仍是"不过滤=全部"——别把 P2-5 的修复矫枉过正成"默认空"。"""
+        self.assertEqual(len(COV.load_records(self.log, last=None)), 3)
+        self.assertEqual(len(COV.load_records(self.log)), 3)
+
     def test_bad_lines_skipped(self):
         self.assertEqual(len(COV.load_records(self.log)), 3)
 

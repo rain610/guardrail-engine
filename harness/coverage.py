@@ -159,8 +159,16 @@ def load_records(path=None, days=None, last=None):
     if days:
         cutoff = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - days * 86400))
         out = [r for r in out if str(r.get("ts", "")) >= cutoff]
-    if last:
-        out = out[-int(last):]
+    if last is not None:
+        # 评审 2026-11-04 P2-5：与 cli._read_jsonl 的 L10 修复同源 —— N≤0 就是 0 条。
+        # 旧写法 `if last: out = out[-int(last):]` 有两处错位：last=0 时 `if 0` 为假 → 跳过切片
+        # → 返回**全部**（"要 0 条"却给整本）；last=-5 时 `out[-(-5):]` = `out[5:]` → 丢掉前 5 条
+        # （既不是"最后 N 条"也不是"全部"）。注意 last=None 仍是"不过滤=全部"（覆盖度自评的默认），
+        # 只有**显式**给了非正数才归 0 条。
+        n = int(last)
+        if n <= 0:
+            return []
+        out = out[-n:]
     return out
 
 
