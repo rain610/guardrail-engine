@@ -4,7 +4,8 @@
 背景：WSL 上**每一次提交**都 fail-closed，报错还看不懂 —— `harness/hooks-dir/pre-commit`
 调的是裸 `python`，而 Ubuntu 上只有 `python3`。反方向也有洞：Windows 上 `python3` 常常只是
 Microsoft Store 的占位别名（`command -v` 能命中、一跑就失败）。所以约定**不是**「命令在不在」，
-而是「**真的能跑起来**」：`--version` 退出码 0 且输出 `Python 3`。
+而是「**真的能跑起来**」：`--version` 退出码 0 且输出 **Python 3.11+**（评审 2026-11-04 P2-4：
+判据从「任意 Python 3」收紧到 3.11+，因为 3.10 会让引擎 import 期失败）。
 
 本文件锁四件事，每件都对应一种真实的复发形态：
 
@@ -394,6 +395,33 @@ class TestResolverBehaviour(unittest.TestCase):
         self.assertNotEqual(got, "python3",
                             "自称 `Python 2.7.18` 的 python3 被采用了 —— 判据不在输出上。"
                             "（本机若无其它解释器，解析为空即 fail-closed，那是正确结果）")
+
+    def test_requires_311_not_just_any_python3(self):
+        """P2-4：判据是 **3.11+**，不是「任意 Python 3」。
+
+        3.10 会被旧判据（`case` 只匹配 `Python 3*`）选中，引擎 `import ...` 当场失败，而失败提示
+        只在「找不到任何 Python 3」时才出现 —— 用户看到的是看不懂的 import 错，不是「装 3.11+」。
+        这里用**只含 stub 的隔离 PATH**（不依赖本机真解释器）：3.11/3.14 采用，3.10/3.9 拒绝
+        （解析为空 ⇒ 上游 fail-closed 阻断，正是期望的安全方向）。
+        """
+        stubdir = os.path.join(self.d, "only-bin")
+        os.makedirs(stubdir, exist_ok=True)
+        stub = os.path.join(stubdir, "python3")
+        env0 = {k: v for k, v in os.environ.items() if k != "HARNESS_PYTHON"}
+
+        def resolve(version_line):
+            _write(stub, "#!/bin/sh\necho \"%s\"\n" % version_line, mode=0o755)
+            # PATH 里只有 stub 目录：拒绝即解析为空，不会被本机真解释器兜底掩盖。
+            env = dict(env0, HARNESS_PYTHON="", PATH=stubdir)
+            return (self._run(self.probe, env).stdout or "").strip()
+
+        for ok in ("Python 3.11.0", "Python 3.11.9", "Python 3.14.0", "Python 3.12.3"):
+            self.assertEqual(resolve(ok), "python3",
+                             "%s 是 3.11+，却没被采用（探针过严）" % ok)
+        for bad in ("Python 3.10.5", "Python 3.9.13", "Python 3.8.0", "Python 3.0.0"):
+            self.assertEqual(resolve(bad), "",
+                             "%s 低于 3.11，却被采用了（P2-4 未修：会让引擎 import 期炸）" % bad)
+
 
 
 if __name__ == "__main__":

@@ -140,7 +140,8 @@ function findHarness(): string | null {
 
 /**
  * 解释器解析（2026-09-18 批次 5）。判据不是「命令在不在」，而是「**真能跑起来**」：
- * `--version` 退出码 0 且输出 `Python 3`。候选顺序与 sandbox 各脚本的
+ * `--version` 退出码 0 且输出 **Python 3.11+**（评审 2026-11-04 P2-4：3.10 会让引擎 import
+ * 期失败）。候选顺序与 sandbox 各脚本的
  * `HARNESS-PY-CANDIDATES:` 标记行同源：HARNESS_PYTHON → python3 → python → py -3。
  *
  * 同时挡掉三种真实情形：Ubuntu/WSL 上常常只有 `python3`（裸 `python` 直接 ENOENT）/
@@ -163,7 +164,11 @@ function pickPython(): string[] {
     try {
       const r = spawnSync(c[0], [...c.slice(1), "--version"],
         { encoding: "utf8", timeout: 20_000, windowsHide: true })
-      if (r.status === 0 && /Python 3/.test(`${r.stdout || ""}${r.stderr || ""}`)) {
+      // 判据是 **3.11+**，不是「任意 Python 3」（评审 2026-11-04 P2-4，与 sh 入口的 _py_ok 同源）：
+      // 3.10 会被选中 → 引擎 import 期失败。取 major.minor 数值比较，只有 3.11+ 才采用。
+      const out = `${r.stdout || ""}${r.stderr || ""}`
+      const m = /[Pp]ython (\d+)\.(\d+)/.exec(out)
+      if (r.status === 0 && m && Number(m[1]) === 3 && Number(m[2]) >= 11) {
         pyMemo = c
         return c
       }
@@ -171,7 +176,7 @@ function pickPython(): string[] {
       /* 试下一个 */
     }
   }
-  log("找不到能跑的 Python 3（已试：HARNESS_PYTHON / python3 / python / py -3）")
+  log("找不到能跑的 Python 3.11+（已试：HARNESS_PYTHON / python3 / python / py -3）")
   pyMemo = ["python3"]     // 退回最可能的名字：让调用处照常失败，并在日志里**如实**记下
   return pyMemo
 }

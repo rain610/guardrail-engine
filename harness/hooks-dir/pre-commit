@@ -30,19 +30,28 @@ fi
 # 任何同级新文件都不会被拷过去，钩子在那两条锁里会当场失效。本文件是全仓唯一的
 # fail-closed 起点，少一个外部依赖就少一种「门禁整体失效」的形态。
 HARNESS_PY=""
+# 判据不是「像不像 Python 3」，而是「是不是 3.11+」（评审 2026-11-04 P2-4）：3.10 会被
+# 选中，引擎 import 直接失败，而提示只在「找不到任何 Python 3」时才出现。_py_ok 从
+# --version 输出取 major.minor 做数值比较，只有 3.11+ 回 0。
+_py_ok() {
+    # 纯参数展开（不 fork sed/awk）：这些 .sh 会在最小环境里跑，少一个外部命令少一种失效。
+    _s=${1##*[Pp]ython }              # 去掉到最后一个 "Python "/"python " 的前缀 → 3.11.4
+    _maj=${_s%%.*}                    # 3
+    _min=${_s#*.}; _min=${_min%%.*}   # 11
+    case "$_maj$_min" in
+        '' | *[!0-9]*) return 1 ;;    # 解析不出版本号 → 不采用（判据落在输出上，不是名字上）
+    esac
+    [ "$_maj" -eq 3 ] && [ "$_min" -ge 11 ]
+}
 for _c in "${HARNESS_PYTHON:-}" python3 python; do
     [ -n "$_c" ] || continue
     command -v "$_c" >/dev/null 2>&1 || continue
     _v=$("$_c" --version 2>&1) || continue
-    case "$_v" in
-        Python\ 3*) HARNESS_PY="$_c"; break ;;
-    esac
+    if _py_ok "$_v"; then HARNESS_PY="$_c"; break; fi
 done
 if [ -z "$HARNESS_PY" ] && command -v py >/dev/null 2>&1; then
     _v=$(py -3 --version 2>&1)
-    case "$_v" in
-        Python\ 3*) HARNESS_PY="py -3" ;;
-    esac
+    if _py_ok "$_v"; then HARNESS_PY="py -3"; fi
 fi
 if [ -z "$HARNESS_PY" ]; then
     echo "✗ 找不到可用的 Python 3 解释器（已试：HARNESS_PYTHON / python3 / python / py -3）"
