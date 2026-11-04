@@ -175,6 +175,27 @@ class TestChainWrite(_Sealed):
         self.assertEqual(r.returncode, 1)
         self.assertIn("坏行数变化", r.stdout)
 
+    def test_bad_lines_change_warned_when_extra_gt_0(self):
+        """P3-2：锚定段后有新增记录（extra > 0）时，坏行变化必须出声（至少警告）。
+
+        旧实现 `if extra == 0 and bad != a_bad` —— 锚定段里插入垃圾行（bad+1）同时后面
+        还有未锚定新增（extra > 0）时，bad 变了但校验返回 0，防线被绕过。
+        修法：extra > 0 时不阻断（新增段本身可能引入坏行），但必须打警告。
+        """
+        log = self._sealed()
+        m = _load(RUN_GATE, "rg_bad2")
+        m._log_run("t_pc", "test", 1, 0, 5)
+        self.assertEqual(self._cli("log", "--anchor").returncode, 0)
+        # 先加一条坏行（在锚定段之后、新增记录之前）
+        with open(log, "a", encoding="utf-8") as f:
+            f.write("垃圾行不是JSON\n")
+        # 再加一条正常记录（让 extra > 0）
+        m._log_run("t_pc", "test", 0, 0, 3)
+        r = self._cli("log", "--verify")
+        # extra > 0 时不阻断（警告），但必须出声
+        self.assertIn("坏行数变化", r.stdout,
+                      "extra > 0 时坏行变化必须出声（旧实现静默放过）：\n%s" % r.stdout)
+
 
 class TestSharding(_Sealed):
     """分片模式（不设 HARNESS_LOG_FILE）：当月片写入 / 跨片不断链 / 三读者同判据。"""

@@ -1411,9 +1411,17 @@ def _cmd_verify(engine=False):
         return 1
     a_bad = int(anchor.get("bad_lines") or 0)
     extra = len(recs) - n_a
-    if extra == 0 and bad != a_bad:
-        print("✗ 坏行数变化：锚点记 %d，现在 %d —— 有行被改坏（或被修复），先核对" % (a_bad, bad))
-        return 1
+    # P3-2（评审 2026-11-04）：原先 `if extra == 0 and bad != a_bad` —— 坏行计数只在锚定段
+    # 之后没有新增记录时才比对。后果：锚定段里插入一条垃圾行（bad+1）同时后面还有未锚定
+    # 新增（extra > 0）时，bad 变了但校验返回 0，防线被绕过。
+    # 修法：无论 extra 是多少，bad 增加都必须出声。extra > 0 时新增段本身也可能引入坏行，
+    # 所以只打警告（不阻断）；extra == 0 时坏行变化一定发生在锚定段内，仍阻断。
+    if bad != a_bad:
+        if extra == 0:
+            print("✗ 坏行数变化：锚点记 %d，现在 %d —— 有行被改坏（或被修复），先核对" % (a_bad, bad))
+            return 1
+        print("⚠ 坏行数变化：锚点记 %d，现在 %d（其后有 %d 条未锚定新增，坏行可能来自新增段）"
+              % (a_bad, bad, extra))
     if extra == 0:
         print("✓ 链完整且锚点吻合：n=%d，链起于第 %d 行，尾 h=%s" % (len(recs), chain_start, prev_h))
         return _engine_report(recs) if engine else 0
