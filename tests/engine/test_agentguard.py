@@ -962,5 +962,45 @@ class TestKillTree(unittest.TestCase):
         self.assertIn("超时", err)
 
 
+class TestMcpEnvPositiveInt(unittest.TestCase):
+    """P2-2：MCP 导入期解析时限/输出上限的环境变量必须是「正整数否则回退」，不许崩。
+
+    旧实现 `DEFAULT_TIMEOUT = int(os.environ.get(...) or "180")` 是模块级求值：
+    `GUARDRAIL_MCP_TIMEOUT=3m`（手滑）→ server 导入即 ValueError，宿主只看到「起不来」；
+    `0`/负数还被照单全收（timeout=0 ⇒ 每个调用立刻超时）。现照搬 editor hook 的
+    `_env_positive_int`（L11 同款）。用子进程按路径 exec mcp.py 读回模块常量（隔离环境变量，
+    且不污染本测试进程）。
+    """
+
+    def _probe(self, env):
+        code = ("import importlib.util,os,json;"
+                "s=importlib.util.spec_from_file_location('m',%r);"
+                "m=importlib.util.module_from_spec(s);s.loader.exec_module(m);"
+                "print(json.dumps({'t':m.DEFAULT_TIMEOUT,'o':m.MAX_OUTPUT}))" % MCP)
+        rc, out, err = _run([PY, "-c", code], env=env)
+        self.assertEqual(rc, 0, "带坏环境变量导入 mcp.py 竟然崩了（正是 P2-2 要消灭的）：\n%s" % err)
+        line = [ln for ln in out.splitlines() if ln.strip().startswith("{")][-1]
+        return json.loads(line)
+
+    def test_bad_timeout_falls_back_not_crash(self):
+        got = self._probe({"GUARDRAIL_MCP_TIMEOUT": "3m"})
+        self.assertEqual(got["t"], 180, "非整数时限必须回退默认 180")
+
+    def test_zero_or_negative_timeout_falls_back(self):
+        self.assertEqual(self._probe({"GUARDRAIL_MCP_TIMEOUT": "0"})["t"], 180)
+        self.assertEqual(self._probe({"GUARDRAIL_MCP_TIMEOUT": "-5"})["t"], 180)
+
+    def test_valid_timeout_passes_through(self):
+        self.assertEqual(self._probe({"GUARDRAIL_MCP_TIMEOUT": "99"})["t"], 99)
+
+    def test_legacy_name_still_honored_and_bad_falls_back(self):
+        self.assertEqual(self._probe({"AGENTGUARD_MCP_MAX_OUTPUT": "500"})["o"], 500)
+        self.assertEqual(self._probe({"AGENTGUARD_MCP_MAX_OUTPUT": "abc"})["o"], 12000)
+
+    def test_new_name_wins_over_legacy(self):
+        got = self._probe({"GUARDRAIL_MCP_MAX_OUTPUT": "77", "AGENTGUARD_MCP_MAX_OUTPUT": "1"})
+        self.assertEqual(got["o"], 77, "新名优先级高于旧名")
+
+
 if __name__ == "__main__":
     unittest.main()

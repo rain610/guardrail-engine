@@ -43,12 +43,49 @@ except Exception:
 
 SERVER_NAME = "guardrail-engine"
 PROTO_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
-DEFAULT_TIMEOUT = int(os.environ.get("GUARDRAIL_MCP_TIMEOUT")
-                      or os.environ.get("AGENTGUARD_MCP_TIMEOUT")   # 旧名，v0.3 移除
-                      or "180")
-MAX_OUTPUT = int(os.environ.get("GUARDRAIL_MCP_MAX_OUTPUT")
-                 or os.environ.get("AGENTGUARD_MCP_MAX_OUTPUT")     # 旧名，v0.3 移除
-                 or "12000")
+
+_ENV_WARNED = set()   # 同类环境变量写坏时，每进程只提示一次（见 _env_positive_int）
+
+
+def _env_positive_int(names, default):
+    """按顺序读**第一个非空**环境变量，当**正整数**解析；写坏/为零/为负 → 回退默认值 +
+    stderr 提示一次，**绝不在导入期崩**。
+
+    评审 2026-11-04 P2-2：原先是 `DEFAULT_TIMEOUT = int(os.environ.get(...) or "180")` ——
+    模块级求值，于是 `GUARDRAIL_MCP_TIMEOUT=3m`（手滑）会让整个 MCP server **导入即崩**，
+    宿主只看到「起不来」，正是本工程最想消灭的「坏得没人知道」。`0`/负数同样回退
+    （timeout=0 会立刻超时 ⇒ 等于每个调用都失败）。与 editor hook（agentguard-gate.py）
+    的 `_env_positive_int` 同款修复，只是这里要兼顾新名 + 旧名两个 key。
+    """
+    raw = ""
+    used = None
+    for name in names:
+        v = (os.environ.get(name) or "").strip()
+        if v:
+            raw, used = v, name
+            break
+    if not raw:
+        return default
+    try:
+        val = int(raw)
+    except ValueError:
+        val = None
+    if val is None or val <= 0:
+        if used not in _ENV_WARNED:
+            _ENV_WARNED.add(used)
+            try:
+                sys.stderr.write("[guardrail-engine] 环境变量 %s=%r 不是正整数，已回退默认值 %d"
+                                 "（本次仍照常跑，不会因此失效）\n" % (used, raw, default))
+            except Exception:
+                pass
+        return default
+    return val
+
+
+DEFAULT_TIMEOUT = _env_positive_int(
+    ("GUARDRAIL_MCP_TIMEOUT", "AGENTGUARD_MCP_TIMEOUT"), 180)   # AGENTGUARD_* 旧名，v0.3 移除
+MAX_OUTPUT = _env_positive_int(
+    ("GUARDRAIL_MCP_MAX_OUTPUT", "AGENTGUARD_MCP_MAX_OUTPUT"), 12000)
 
 
 # ---------- 工程根定位 / 版本（转发壳层公用件 _shell.py，与 cli.py 同一份实现） ----------
