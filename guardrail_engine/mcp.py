@@ -92,11 +92,26 @@ def _child_env():
 
 
 def run_cmd(args, cwd=None, timeout=None):
-    p = subprocess.run(args, cwd=cwd or ROOT or os.getcwd(), env=_child_env(),
-                       capture_output=True, timeout=timeout or DEFAULT_TIMEOUT)
-    out = (p.stdout or b"").decode("utf-8", "replace")
-    err = (p.stderr or b"").decode("utf-8", "replace")
-    return p.returncode, out, err
+    """跑子进程 → (rc, stdout, stderr)。超时杀掉**整棵进程树**并归 rc=2。
+
+    P2-1：原先用 `subprocess.run(timeout=)`，超时只杀直接子进程 —— 孙进程（run_gate→检查
+    脚本）变孤儿继续跑并持有管道写端，父进程阻塞在 EOF 上（cli/run_gate 早为此改成杀整树，
+    MCP 这条入口漏了）。复用 _shell 的 HARNESS-KILLTREE 块，与 cli._run 同源同纪律。
+    """
+    try:
+        p = subprocess.Popen(args, cwd=cwd or ROOT or os.getcwd(), env=_child_env(),
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             start_new_session=(os.name != "nt"))
+    except (FileNotFoundError, NotADirectoryError, PermissionError, OSError) as e:
+        return (2, "", "✗ 起不了子进程（rc=2，属环境/配置问题，**不是**代码不合规）：%r" % (e,))
+    try:
+        out_b, err_b = _shell._communicate_tree(p, timeout or DEFAULT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return (2, "", "✗ 子进程超时（>%ss，已连同其子进程树一并终止）：%s"
+                % (timeout or DEFAULT_TIMEOUT, " ".join(str(x) for x in args[:3])))
+    return (p.returncode,
+            (out_b or b"").decode("utf-8", "replace"),
+            (err_b or b"").decode("utf-8", "replace"))
 
 
 def _tail(out, err):

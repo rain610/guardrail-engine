@@ -150,51 +150,6 @@ def _env():
     return e
 
 
-# HARNESS-KILLTREE-BEGIN（跨文件契约：本块与另一端**逐字节相同**；对拍锁 tests/engine/test_agentguard.py）
-# 2026-10-15 批次 7（实测病灶）：`subprocess.run(timeout=...)` 超时只 kill **直接子进程** ——
-# 孙进程（例：cli→run_gate→检查脚本里的最后那个）变孤儿继续跑：一次「300s 超时」的全量扫描
-# 实测孤儿又跑了约 100 分钟，父进程阻塞在管道 EOF 上，最终输出全丢。
-def _kill_tree(proc):
-    """杀掉 proc 及其**整棵进程树**（超时路径专用）。
-
-    Windows: `taskkill /F /T`（按父子链杀整棵）；POSIX: 子进程须自成进程组
-    （spawn 时 start_new_session=True），再 killpg。
-    """
-    try:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                           capture_output=True, timeout=30)
-        else:
-            import signal
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except Exception:
-                proc.kill()
-    except Exception:
-        try:
-            proc.kill()
-        except Exception:
-            pass
-
-
-def _communicate_tree(p, timeout):
-    """带「超时杀整树」的 communicate → (out_bytes, err_bytes)；超时抛 TimeoutExpired。
-
-    ★ 杀树之后必须**再 communicate 一次**收尾：管道写端被孙进程持有时，只杀不读仍会
-    阻塞在读端（旧实现卡死 100 分钟的直接机制）。二次收尾给 30s 上限。
-    """
-    try:
-        return p.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _kill_tree(p)
-        try:
-            p.communicate(timeout=30)
-        except Exception:
-            pass
-        raise
-# HARNESS-KILLTREE-END
-
-
 def _run(args, cwd=None, timeout=None):
     """跑子进程 → (rc, stdout, stderr)。
 
@@ -203,7 +158,7 @@ def _run(args, cwd=None, timeout=None):
     退出码是 1 —— **与"门禁拦截"同码**，超时被读成业务不通过）。两者都归成 rc=2
     （配置/环境错误），并把原因打在 stderr 上：退出码契约 0/1/2/3 是跨三入口的，
     基础设施问题不许冒充 1。
-    2026-10-15 批次 7：超时改为**杀掉整棵进程树**（见 _kill_tree 的注释）；超时文案
+    2026-10-15 批次 7：超时改为**杀掉整棵进程树**（见 _shell._kill_tree 的注释）；超时文案
     同步点名新出路（--timeout / 全量默认 3600）。
     """
     try:
@@ -213,7 +168,7 @@ def _run(args, cwd=None, timeout=None):
     except (FileNotFoundError, NotADirectoryError, PermissionError, OSError) as e:
         return (2, "", "✗ 起不了子进程（rc=2，属环境/配置问题，**不是**代码不合规）：%r" % (e,))
     try:
-        out_b, err_b = _communicate_tree(p, timeout or 300)
+        out_b, err_b = _shell._communicate_tree(p, timeout or 300)
     except subprocess.TimeoutExpired:
         return (2, "", "✗ 子进程超时（>%ss，已连同其子进程树一并终止；`cli.py run` 可用"
                        " --timeout 加大、全量扫描默认 3600s 或直调 harness/run_gate.py）：%s"

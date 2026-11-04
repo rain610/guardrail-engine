@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 import tomllib
 
@@ -270,6 +271,51 @@ def read_version(root=None, fallback="0.0.0-dev"):
 def py_exe():
     """跑子进程用的解释器：就用当前解释器（保证「同一份引擎、同一个 Python」）。"""
     return sys.executable or "python"
+
+
+# HARNESS-KILLTREE-BEGIN（跨文件契约：本块与另一端**逐字节相同**；对拍锁 tests/engine/test_agentguard.py）
+# 2026-10-15 批次 7（实测病灶）：`subprocess.run(timeout=...)` 超时只 kill **直接子进程** ——
+# 孙进程（例：cli→run_gate→检查脚本里的最后那个）变孤儿继续跑：一次「300s 超时」的全量扫描
+# 实测孤儿又跑了约 100 分钟，父进程阻塞在管道 EOF 上，最终输出全丢。
+def _kill_tree(proc):
+    """杀掉 proc 及其**整棵进程树**（超时路径专用）。
+
+    Windows: `taskkill /F /T`（按父子链杀整棵）；POSIX: 子进程须自成进程组
+    （spawn 时 start_new_session=True），再 killpg。
+    """
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=30)
+        else:
+            import signal
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception:
+                proc.kill()
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _communicate_tree(p, timeout):
+    """带「超时杀整树」的 communicate → (out_bytes, err_bytes)；超时抛 TimeoutExpired。
+
+    ★ 杀树之后必须**再 communicate 一次**收尾：管道写端被孙进程持有时，只杀不读仍会
+    阻塞在读端（旧实现卡死 100 分钟的直接机制）。二次收尾给 30s 上限。
+    """
+    try:
+        return p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_tree(p)
+        try:
+            p.communicate(timeout=30)
+        except Exception:
+            pass
+        raise
+# HARNESS-KILLTREE-END
 
 
 def require_python(vi=None):

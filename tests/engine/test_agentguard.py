@@ -913,9 +913,11 @@ class TestKillTree(unittest.TestCase):
                 src = f.read().replace("\r\n", "\n")
             m = re.search(r"# HARNESS-KILLTREE-BEGIN.*?# HARNESS-KILLTREE-END", src, re.S)
             return m.group(0) if m else ""
-        a = block("guardrail_engine/cli.py")
+        # P2-1：块从 cli.py 收敛进公用件 _shell.py（cli.py + mcp.py 共用同一份，不再各拷一遍）；
+        # 独立钩子 agentguard-gate.py 不能 import 包，仍保留内联副本 —— 两端逐字节对拍。
+        a = block("guardrail_engine/_shell.py")
         b = block("integrations/hooks/agentguard-gate.py")
-        self.assertTrue(a, "cli.py 里找不到 KILLTREE 块（标记被拆了？）")
+        self.assertTrue(a, "_shell.py 里找不到 KILLTREE 块（标记被拆了？）")
         self.assertEqual(a, b, "杀树块两份实现漂移了（跨文件契约，改一处必须同步另一处）")
 
     def test_run_all_gets_the_longer_default_timeout(self):
@@ -939,6 +941,25 @@ class TestKillTree(unittest.TestCase):
             self.assertIsNone(seen["timeout"], "定向检查沿用 _run 的默认 300s（别在这里放大）")
         finally:
             cli._run = orig
+
+    def test_mcp_run_cmd_timeout_returns_rc2_and_does_not_hang(self):
+        """P2-1：MCP 的 run_cmd 超时必须杀整树并归 rc=2。
+
+        旧实现用 `subprocess.run(timeout=)`：超时只杀直接子进程，且**抛 TimeoutExpired**
+        （server 当场崩，孙进程变孤儿持管道）。现复用 _shell 的 HARNESS-KILLTREE 块。
+        用会睡 20s 的命令 + 1s 超时：必须快速返回（<10s，证明没等满）且 rc=2、文案点名超时。
+        mcp.py 按路径 exec_module 加载（无包上下文 → 走它自己的裸导入兜底，同 test_preflight）。
+        """
+        spec = importlib.util.spec_from_file_location(
+            "mcp_under_test", os.path.join(ROOT, "guardrail_engine", "mcp.py"))
+        mcp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mcp)
+        t0 = time.time()
+        rc, _out, err = mcp.run_cmd([sys.executable, "-c", "import time; time.sleep(20)"], timeout=1)
+        elapsed = time.time() - t0
+        self.assertEqual(rc, 2, "MCP run_cmd 超时必须归 rc=2（基础设施错误不许冒充业务拦截 1）：%s" % err)
+        self.assertLess(elapsed, 10, "超时后仍被阻塞（没杀整树/没及时返回）：%.1fs" % elapsed)
+        self.assertIn("超时", err)
 
 
 if __name__ == "__main__":
