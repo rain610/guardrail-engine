@@ -879,6 +879,60 @@ class TestExampleGateFailsClosed(unittest.TestCase):
         self.assertIn("无法读取", out, "没有报出读取失败：\n" + out[-600:])
 
 
+class TestExampleGateAllPrunesVendor(unittest.TestCase):
+    """P2-3：全量扫描（--all）不许扫进依赖树 / VCS / 缓存。
+
+    修复前 os.walk 不剪枝 ⇒ `node_modules/pkg/index.js` 里的第三方 console.log 被 rc=1 拦下，
+    README quickstart 又直接教用户 `--all`，第一次跑就被别人的代码拦住。剪枝只作用于全量遍历，
+    点名传进来的文件仍照查（见 TestExampleGateFailsClosed）。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="egprune_")
+        self.repo = os.path.join(self.tmp, "repo")
+        os.makedirs(os.path.join(self.repo, "src"))
+
+    def tearDown(self):
+        _rmtree_force(self.tmp)
+
+    def _write(self, rel, text):
+        p = os.path.join(self.repo, *rel.split("/"))
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+
+    def _run_all(self):
+        return subprocess.run(
+            [sys.executable, os.path.join(ROOT, "checks", "example_code_check.py"),
+             "--repo", self.repo, "--all"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL, timeout=120)
+
+    def test_vendor_and_vcs_dirs_are_pruned(self):
+        # 第三方 / 元数据 / 缓存里的违规：全量扫描一律不该看见。
+        self._write("node_modules/pkg/index.js", "console.log(1);\n")
+        self._write(".venv/lib/x.py", "import socket; socket.connect(('10.0.0.1', 9))\n")
+        self._write(".git/hooks/x.py", "console = 1\n")
+        self._write("__pycache__/gen.js", "console.log(2);\n")
+        # 本仓真正的第一方代码：必须仍被扫到（否则就是"剪过头"报平安）。
+        self._write("src/app.js", "const ok = 1;\n")
+        r = self._run_all()
+        out = (r.stdout or "") + (r.stderr or "")
+        self.assertEqual(r.returncode, 0,
+                         "vendor/VCS/缓存里的第三方违规被全量扫描拦下了（P2-3 未修）：\n" + out[-800:])
+        # 只剩第一方那 1 个文件被扫到；vendor 4 个若没剪掉，这里会是 5 且 rc=1。
+        self.assertIn("检查 1 个文件", out,
+                      "剪枝后应只剩第一方 src/app.js 一个文件（多了=没剪，少了=剪过头）：\n" + out[-800:])
+
+    def test_first_party_violation_still_blocked_under_all(self):
+        self._write("src/bad.js", "console.log('here');\n")
+        r = self._run_all()
+        out = (r.stdout or "") + (r.stderr or "")
+        self.assertEqual(r.returncode, 1,
+                         "第一方违规没被拦（剪枝误伤）：\n" + out[-800:])
+        self.assertIn("NO-CONSOLE", out)
+
+
 # ---------------------------------------------------------------- 示例规则误报边界
 class TestExampleRuleFalsePositives(unittest.TestCase):
     """首屏体验锁：注释不算命中，字符串里的 console.log 只提示，版本号不算 IP。

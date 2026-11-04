@@ -28,6 +28,18 @@ import rule_base
 # 显式声明，让 run_gate --validate 能把「写了但没人读」的键当场拦下（返回 None 会跳过校验）。
 CONFIG_KEYS = frozenset({"mode"})
 
+# 全量扫描（--all / 无位置参数）时剪掉的目录：依赖树 / 构建产物 / VCS 元数据 / 缓存。
+# 评审 2026-11-04 P2-3：os.walk 不剪枝 ⇒ `node_modules/pkg/index.js` 里的 console.log 会被
+# rc=1 拦下——那是第三方代码，不是本仓写的，README 的 quickstart 又直接教用户 `--all`，
+# 于是第一次跑就被别人的代码拦住。剪枝只作用于**全量遍历**；点名传进来的文件照查不误。
+_PRUNE_DIRS = frozenset({
+    ".git", ".svn", ".hg",                          # VCS 元数据
+    "node_modules", "bower_components",             # 前端依赖
+    ".venv", "venv", "env", ".tox", "site-packages",  # Python 虚拟环境 / 依赖
+    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache",  # 缓存
+})
+
+
 
 def _read_content(filepath):
     """读待查内容：走 `rule_base.read_bytes`，提交期才会读到**暂存区**而不是工作区。
@@ -63,7 +75,9 @@ def main():
     # 所以 --repo <目录> 单独出现时必须照此执行，不能退回"缺参数"错误。
     if a.all or not a.files:
         targets = []
-        for dirpath, _, filenames in os.walk(repo):
+        for dirpath, dirnames, filenames in os.walk(repo):
+            # 就地剪枝：os.walk 只会递归进 dirnames 里剩下的目录（见 _PRUNE_DIRS 的缘由）。
+            dirnames[:] = [d for d in dirnames if d not in _PRUNE_DIRS]
             for f in filenames:
                 if f.endswith((".js", ".ts", ".vue", ".jsx", ".tsx", ".py", ".cs")):
                     targets.append(os.path.join(dirpath, f))
