@@ -48,10 +48,23 @@ if [ -n "$ORIG" ] && head -2 "$ORIG" | grep -q "agentguard dispatcher" 2>/dev/nu
 fi
 if [ -n "$ORIG" ]; then
     echo "[chain] 调用端仓原有 commit-msg：$ORIG"
-    if [ -x "$ORIG" ]; then "$ORIG" "$@"; else sh "$ORIG" "$@"; fi
-    chained_rc=$?
+    # P3-1（评审 2026-11-04）：原先 `if [ -x "$ORIG" ]; then "$ORIG" "$@"; fi` + `chained_rc=$?`
+    # 在 `set -e` 下是死代码 —— 实测 sh（dash/bash POSIX 模式）里 `if` 体内命令失败**会**触发
+    # set -e 立即退出，`chained_rc=$?` 和下面的"本次提交已阻断"永远执行不到。
+    # 改用 `if ! cmd; then ... fi`：`!` 反转是 POSIX 明确豁免 set -e 的唯一可靠形态。
+    if [ -x "$ORIG" ]; then
+        set +e
+        "$ORIG" "$@"
+        chained_rc=$?
+        set -e
+    else
+        set +e
+        sh "$ORIG" "$@"
+        chained_rc=$?
+        set -e
+    fi
     if [ "$chained_rc" -ne 0 ]; then
-        echo "✗ 端仓原有 commit-msg 未通过（由 guardrail-engine 链式调用），本次提交已阻断。"
+        echo "✗ 端仓原有 commit-msg 未通过（由 guardrail-engine 链式调用，rc=$chained_rc），本次提交已阻断。"
         exit "$chained_rc"
     fi
 fi
