@@ -16,7 +16,7 @@ Guardrail Engine is a code-gate framework. Security issues fall into two categor
 
 ### How to report
 
-- **Preferred**: open a [GitHub Security Advisory](https://github.com/<OWNER>/guardrail-engine/security/advisories/new) (private).
+- **Preferred**: open a [GitHub Security Advisory](https://github.com/rain610/guardrail-engine/security/advisories/new) (private).
 - **Email**: send details to the maintainer via the email on the GitHub profile.
 
 Include: affected version, reproduction steps, impact assessment.
