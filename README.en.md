@@ -666,6 +666,10 @@ locally: run `python sandbox/pack_release.py`, then
 
 | Document | Content |
 |---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to add a rule and make it pass mutation smoke |
+| [SECURITY.md](SECURITY.md) | Security policy: vulnerability reporting and known limitations |
+| [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) | Threat model: trust boundaries, attack surface, tamper-evident design |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 |
 | `docs/packaging/INSTALL.md` | Install, upgrade, uninstall |
 | `docs/packaging/RUNBOOK.md` | Day-to-day troubleshooting, rollback, reconciliation |
 | `docs/packaging/COMPAT.md` | Client compatibility matrix |
@@ -678,4 +682,4 @@ MIT License — see [LICENSE](LICENSE).
 
 ## Contributing
 
-Issues and pull requests are welcome.
+Issues and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first (focus: how to add a rule and make it pass mutation smoke).

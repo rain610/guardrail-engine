@@ -619,6 +619,10 @@ python -m unittest discover -s tests
 
 | 文档 | 内容 |
 |---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南：如何加一条规则并让它过变异冒烟 |
+| [SECURITY.md](SECURITY.md) | 安全策略：漏洞报告通道与已知限制 |
+| [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) | 威胁模型：信任边界、攻击面、tamper-evident 设计取舍 |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 行为准则（Contributor Covenant 2.1） |
 | `docs/packaging/INSTALL.md` | 安装、升级、卸载 |
 | `docs/packaging/RUNBOOK.md` | 日常排障、回滚、对账 |
 | `docs/packaging/COMPAT.md` | 客户端兼容矩阵 |
@@ -631,4 +635,4 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request。
+欢迎提交 Issue 和 Pull Request。贡献前请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)（重点：如何加一条规则并让它过变异冒烟）。
