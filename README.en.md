@@ -664,17 +664,17 @@ locally: run `python sandbox/pack_release.py`, then
 
 ## Documentation
 
-| Document | Content |
-|---|---|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to add a rule and make it pass mutation smoke |
-| [SECURITY.md](SECURITY.md) | Security policy: vulnerability reporting and known limitations |
-| [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) | Threat model: trust boundaries, attack surface, tamper-evident design |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 |
-| `docs/packaging/INSTALL.md` | Install, upgrade, uninstall |
-| `docs/packaging/RUNBOOK.md` | Day-to-day troubleshooting, rollback, reconciliation |
-| `docs/packaging/COMPAT.md` | Client compatibility matrix |
-| `docs/adr/` | Architecture decision records |
-| `AGENTS.md` | Agent engineering map |
+| Document | Content | Chinese |
+|---|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to add a rule and make it pass mutation smoke | — |
+| [SECURITY.md](SECURITY.md) | Security policy: vulnerability reporting and known limitations | — |
+| [docs/THREAT-MODEL.md](docs/THREAT-MODEL.en.md) | Threat model: trust boundaries, attack surface, tamper-evident design | [中文](docs/THREAT-MODEL.md) |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 | — |
+| `docs/packaging/INSTALL.md` | Install, upgrade, uninstall | [中文](docs/packaging/INSTALL.en.md) |
+| `docs/packaging/RUNBOOK.md` | Day-to-day troubleshooting, rollback, reconciliation | [中文](docs/packaging/RUNBOOK.en.md) |
+| `docs/packaging/COMPAT.md` | Client compatibility matrix | [中文](docs/packaging/COMPAT.en.md) |
+| `docs/adr/` | Architecture decision records | — |
+| `AGENTS.md` | Agent engineering map | — |
 
 ## License
 
