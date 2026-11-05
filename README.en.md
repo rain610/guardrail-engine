@@ -40,6 +40,41 @@ mechanically**. The two are complementary.
 The engine layer does **not depend on any personal** skill or tool: a colleague can clone it or
 `pip install` it and run immediately.
 
+## What you get out of the box (honest disclaimer)
+
+Guardrail Engine is a **framework**, not a ready-to-use rule set. You write your own rules or get
+them from the community.
+
+**What is included:**
+
+- 3 **sample rules** (`checks/example_ruleset.py`): `NO-CONSOLE`, `NO-HARDIP`, `EOL-UNIFIED` —
+  these demonstrate how to write rules, not a production rule set.
+- **Golden pattern library** (`golden-patterns/`): request layer, list page, form modal, backend
+  layering skeletons — these are **team examples** showing "write it like this", not universal
+  conventions.
+- **Engine infrastructure**: scheduler, ledger, coverage self-assessment, mutation smoke,
+  tamper-evident audit chain — this is the core value, letting you write your own rules and prove
+  they have teeth.
+
+**What is not included:**
+
+- Industry-standard rule sets (e.g., "no hardcoded secrets", "must write unit tests") — these need
+  to be defined by your team.
+- Business-specific rules — only you know your project conventions.
+- Third-party linter integration (ESLint, SonarQube) — optional adapters exist but are off by
+  default and introduce external dependencies.
+
+**Who it is for:**
+
+- Teams with clear conventions that need mechanical enforcement.
+- Users willing to write their own rules (refer to sample rules and golden patterns).
+- Projects that need audit trails and coverage reports to prove "the gate really ran".
+
+**Who it is not for:**
+
+- Users expecting 50 rules ready to use out of the box (consider gitleaks, pre-commit ecosystem).
+- Users who do not want to write rules and just want to run a linter (consider ESLint, SonarQube).
+
 ## Prerequisites
 
 | Dependency | Minimum | Purpose |
