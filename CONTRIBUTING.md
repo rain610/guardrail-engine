@@ -91,10 +91,10 @@ python harness/run_gate.py --engine-sha
 
 ### 第二步：写规则实现
 
-所有规则继承 `checks/rule_base.py` 的 `Rule` 基类。示例：
+所有规则继承 `checks/rule_base.py` 的 `Rule` 基类。`RegexRule` 定义在 `checks/example_ruleset.py`，是写示例规则集时的通用正则基类。示例：
 
 ```python
-from checks.rule_base import RegexRule
+from checks.example_ruleset import RegexRule
 
 NO_TODO = RegexRule(
     id="NO-TODO",
@@ -170,7 +170,7 @@ MUTATIONS = [
 ]
 ```
 
-**四种 `kind` 的写法：**
+**三种 `kind` 的写法：**
 
 | kind | 用途 | 必填字段 |
 |------|------|----------|
