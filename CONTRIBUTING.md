@@ -106,6 +106,8 @@ NO_TODO = RegexRule(
 )
 ```
 
+把它加进 `checks/example_ruleset.py` 的 `EXAMPLE_RULES` 列表（或新建规则集文件）。
+
 **关键约束：**
 
 - `id` 必须全局唯一（台账按它归因）。
@@ -150,26 +152,31 @@ class TestNoTodo(unittest.TestCase):
 
 做法：
 
-1. 在 `tests/tooling/test_lock_inventory.py` 的 `LOCKS` 字典里登记你的规则：
+1. 在 `sandbox/mutation_smoke.py` 的模块级 `MUTATIONS` 列表追加一条变异：
 
 ```python
-LOCKS = {
-    "NO-TODO": {
-        "module": "checks.example_ruleset",
-        "test": "tests.engine.test_no_todo",
-        "mutations": [
-            {
-                "id": "M999-no-todo-pattern-weakened",
-                "file": "checks/example_ruleset.py",
-                "line": 123,  # pattern = r"\bTODO\b" 那行
-                "change": r'r"\bTODO\b"',  # 原内容
-                "to": r'r"TODO"',  # 弱化：去掉词边界
-                "expect": "test_blocks_todo_in_code",  # 弱化后应该失败的测试
-            },
-        ],
+MUTATIONS = [
+    # ... 已有变异 ...
+    {
+        "id": "M999-no-todo-pattern-weakened",
+        "file": "checks/example_ruleset.py",
+        "kind": "exact",              # exact / regex / after_def
+        "old": '    pattern=r"\\bTODO\\b",',  # 原内容（exact 模式）
+        "new": '    pattern=r"TODO",',         # 弱化：去掉词边界
+        "lock": "test_no_todo.py",             # 应该被拉红的测试模块
+        "expect": "test_blocks_todo_in_code",  # 弱化后应该失败的测试名
+        "why": "去掉词边界会把 'TODAY' 误报为 TODO → 测试必须红",
     },
-}
+]
 ```
+
+**四种 `kind` 的写法：**
+
+| kind | 用途 | 必填字段 |
+|------|------|----------|
+| `exact` | 精确替换 | `old` + `new` |
+| `regex` | 正则替换 | `pattern` + `repl` |
+| `after_def` | 在函数定义后注入 | `anchor`（函数签名）+ `inject`（注入代码） |
 
 2. 跑变异冒烟：
 
@@ -182,6 +189,9 @@ python sandbox/mutation_smoke.py --only=M999-no-todo-pattern-weakened
 - 对照（未变异）必须绿。
 - 弱化 `pattern` 后，`test_blocks_todo_in_code` 必须红（因为去掉词边界会误报更多）。
 - 如果弱化后仍然绿 → 你的规则断言不够强，回去改测试。
+
+**看守测试会自动登记新变异：** `tests/tooling/test_lock_inventory.py::test_mutations_list_only_grows` 
+钉死「MUTATIONS 列表只能增长不能缩减」—— 你追加的条目会被自动看守，防止别人悄悄删除。
 
 **变异冒烟的哲学：** 不是「测试覆盖率高」就够了，而是「测试真的能发现规则被弱化」。这是 tamper-evident 的核心 —— 台账记录每次判定，变异冒烟证明判定逻辑没被偷偷改弱。
 
