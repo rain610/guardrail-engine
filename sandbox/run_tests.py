@@ -129,6 +129,18 @@ def run_one(tests_dir, fname, env):
     return info
 
 
+# 会临时弄脏真实引擎工作区的测试文件：必须独占跑。
+# `test_hooks_chain` 的 P0-3 探针会往 checks/example_code_check.py 追加一行再截回，
+# 而 engine_sha 包含该文件；与 test_gate_log_anchor 的 `--engine-sha` 对拍并行时，
+# 后者会读到「追加了一行」的中间态，得到另一个合法哈希（2026-11-14 Nightly 红）。
+SERIAL_FILES = ("engine/test_hooks_chain.py",)
+
+
+def _is_serial(fname):
+    norm = fname.replace("\\", "/")
+    return any(norm == s or norm.endswith("/" + s) for s in SERIAL_FILES)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="套件并行跑（文件级，标准库）")
     ap.add_argument("-j", "--jobs", type=int, default=0, help="并行度（默认 min(6, CPU)）")
@@ -158,6 +170,12 @@ def main(argv=None):
         jobs = 1
     jobs = max(1, min(jobs, len(files)))
 
+    serial = [f for f in files if _is_serial(f)]
+    parallel = [f for f in files if f not in serial]
+    if serial and jobs > 1:
+        print("[run_tests] 串行独占 %d 个文件（会临时弄脏真实引擎）：%s"
+              % (len(serial), ", ".join(serial)))
+
     print("[run_tests] %d 个文件 ｜ 并行度 %d ｜ 模式 %s ｜ %s"
           % (len(files), jobs, mode, args.tests_dir))
     t0 = time.time()
@@ -170,14 +188,22 @@ def main(argv=None):
                 verdict(r), f, r["seconds"], r["ran"],
                 ", skipped %d" % r["skipped"] if r["skipped"] else ""), flush=True)
     else:
-        with cf.ThreadPoolExecutor(max_workers=jobs) as ex:
-            futs = {ex.submit(run_one, args.tests_dir, f, env): f for f in files}
-            for fut in cf.as_completed(futs):
-                r = fut.result()
-                results.append(r)
-                print("  %s %-38s %5.1fs  (Ran %d%s)" % (
-                    verdict(r), r["file"], r["seconds"], r["ran"],
-                    ", skipped %d" % r["skipped"] if r["skipped"] else ""), flush=True)
+        # 先独占跑会弄脏工作区的文件，再并行跑其余文件。
+        for f in serial:
+            r = run_one(args.tests_dir, f, env)
+            results.append(r)
+            print("  %s %-38s %5.1fs  (Ran %d%s) [serial]" % (
+                verdict(r), f, r["seconds"], r["ran"],
+                ", skipped %d" % r["skipped"] if r["skipped"] else ""), flush=True)
+        if parallel:
+            with cf.ThreadPoolExecutor(max_workers=min(jobs, len(parallel))) as ex:
+                futs = {ex.submit(run_one, args.tests_dir, f, env): f for f in parallel}
+                for fut in cf.as_completed(futs):
+                    r = fut.result()
+                    results.append(r)
+                    print("  %s %-38s %5.1fs  (Ran %d%s)" % (
+                        verdict(r), r["file"], r["seconds"], r["ran"],
+                        ", skipped %d" % r["skipped"] if r["skipped"] else ""), flush=True)
 
     total_s = time.time() - t0
     ran = sum(r["ran"] for r in results)
