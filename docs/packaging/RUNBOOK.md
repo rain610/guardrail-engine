@@ -3,8 +3,8 @@
 > 读者：要在一台机器 / 一个端仓接入 guardrail-engine 门禁的人（**不需要读过任何其他文档**）。
 > 一页速查 → 三入口 → 台账 → 旁路 → 回滚 → 排障 → 已知限制 → 演进建议。
 > 路径约定：`<HARNESS>` = guardrail-engine 引擎根。两种来源都成立：
-> ① 安装本包（源码树 `pip install .` 或本地 wheel；PyPI 尚未发布）并 `guardrail-engine init`
->    之后是 `~/.guardrail-engine/engine`；
+> ① 安装本包（`pip install guardrail-engine`，或源码树 `pip install .` / 本地 wheel）并
+>    `guardrail-engine init` 之后是 `~/.guardrail-engine/engine`；
 > ② clone 源码时是工程根（如 `D:/Rain/project/guardrail-engine`）。
 > ① 的形态下，下文 `python <HARNESS>/guardrail_engine/cli.py …` 都可换成 `guardrail-engine …`（迁移期 `agentguard` 别名仍可用）。
 
@@ -14,8 +14,8 @@
 
 ```bash
 # ⓪ 只有 pip 包时：先把随包引擎落到本机（clone 源码的跳过）
-#    PyPI 尚未发布：在源码树根目录用 pip install .（或装本地 wheel）
-pip install . && guardrail-engine init
+pip install guardrail-engine && guardrail-engine init
+#    开发/未发布版本可用源码树：pip install . && guardrail-engine init
 
 # ① 自检（3 秒，任何目录）——同时打印全部接入方式
 python <HARNESS>/guardrail_engine/cli.py quickstart
@@ -178,9 +178,8 @@ claude plugin marketplace remove agentguard-tools
 
 ## 7. 已知限制（诚实版）
 
-- pip 包形态**已提供**（`pyproject.toml` + `[project.scripts] guardrail-engine`）；公开发布到
-  PyPI 由 `v*` tag 触发的 `release.yml` 完成（见 §7.5）。**首个 tag 发布之前**，
-  `pip install guardrail-engine` 仍会 404，此时用源码树 `pip install .` 或离线安装包。
+- pip 包形态**已提供**（`pyproject.toml` + `[project.scripts] guardrail-engine`），并已发布到
+  PyPI：`pip install guardrail-engine` 可用。发布由 `v*` tag 触发的 `release.yml` 完成（见 §7.5）。
 - Claude 插件原型按机器打戳（配置含绝对路径），宿主市场分发形态未验证（见 `COMPAT.md`）。
 - `bypass` 只记录"声明"，无法强制拦截 `--no-verify`（需钩子侧配合，属后续增量）。
 - MCP/CLI 的**持久化回归测试已入库**（`tests/engine/test_agentguard.py`，10 例：协议 fixtures / 工具行为 / 三入口一致性）。

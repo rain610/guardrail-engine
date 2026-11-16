@@ -3,7 +3,7 @@
 > Audience: Anyone who needs to integrate guardrail-engine gates on a machine / in a business repo (**no other documentation required**).
 > One-page quick reference → Three entry points → Ledger → Bypass → Rollback → Troubleshooting → Known limitations → Evolution suggestions.
 > Path convention: `<HARNESS>` = guardrail-engine engine root. Both sources work:
-> ① After installing this package (source tree `pip install .` or local wheel; PyPI not yet released) and running `guardrail-engine init`,
+> ① After installing this package (`pip install guardrail-engine`, or source tree `pip install .` / local wheel) and running `guardrail-engine init`,
 >    it's `~/.guardrail-engine/engine`;
 > ② When cloning source, it's the project root (e.g., `D:/Rain/project/guardrail-engine`).
 > In form ①, `python <HARNESS>/guardrail_engine/cli.py …` below can be replaced with `guardrail-engine …` (legacy `agentguard` alias still works during migration).
@@ -14,8 +14,8 @@
 
 ```bash
 # ⓪ When you only have pip package: first land the bundled engine locally (skip if cloning source)
-#    PyPI not yet released: use pip install . in source tree root (or install local wheel)
-pip install . && guardrail-engine init
+pip install guardrail-engine && guardrail-engine init
+#    For development / unreleased builds: pip install . && guardrail-engine init
 
 # ① Self-check (3 seconds, any directory) — also prints all integration methods
 python <HARNESS>/guardrail_engine/cli.py quickstart
@@ -178,9 +178,8 @@ claude plugin marketplace remove agentguard-tools
 
 ## 7. Known Limitations (Honest Version)
 
-- pip package form **provided** (`pyproject.toml` + `[project.scripts] guardrail-engine`); public release to
-  PyPI completed by `release.yml` triggered by `v*` tag (see §7.5). **Before first tag release**,
-  `pip install guardrail-engine` still returns 404, use source tree `pip install .` or offline installation package.
+- pip package form **provided** (`pyproject.toml` + `[project.scripts] guardrail-engine`), and published to
+  PyPI: `pip install guardrail-engine` works. Release is completed by `release.yml` triggered by a `v*` tag (see §7.5).
 - Claude plugin prototype stamped per machine (config contains absolute paths), host marketplace distribution form not verified (see `COMPAT.md`).
 - `bypass` only records "declaration", cannot force-intercept `--no-verify` (requires hook-side cooperation, future increment).
 - MCP/CLI **persistent regression tests in repo** (`tests/engine/test_agentguard.py`, 10 cases: protocol fixtures / tool behavior / three-entry consistency).

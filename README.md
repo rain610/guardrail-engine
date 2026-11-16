@@ -72,16 +72,21 @@ Guardrail Engine 是一个**框架**，不是即装即用的规则集。你需�
 
 ### 0. pip 安装（wheel 自带引擎，不需要另 clone 引擎）
 
-> **首个 PyPI 版本发布前**：短命令 `pip install guardrail-engine` 仍会 404。发布由 `v*` tag
-> 触发的 `release.yml` 完成（OIDC 可信发布）；在那之前请在源码树根目录 `pip install .`
-> （或装本地构建的 wheel）。
+```bash
+# 从 PyPI 安装（推荐）
+pip install guardrail-engine
+guardrail-engine init             # 把随包引擎落到 ~/.guardrail-engine/engine，并写 ~/.guardrail-engine/harness.path
+guardrail-engine quickstart       # 自检 + 打印 MCP 接入配置
+```
+
+也可以从源码安装（开发或未发布版本）：
 
 ```bash
 git clone https://github.com/rain610/guardrail-engine.git
 cd guardrail-engine
-pip install .               # 从源码装：wheel 自带引擎
-guardrail-engine init             # 把随包引擎落到 ~/.guardrail-engine/engine，并写 ~/.guardrail-engine/harness.path
-guardrail-engine quickstart       # 自检 + 打印 MCP 接入配置
+pip install .                     # 从源码装：wheel 自带引擎
+guardrail-engine init
+guardrail-engine quickstart
 ```
 
 `init` 只复制、不删除：目标已存在且内容不同时要求 `--force`，旧目录会改名归档为
